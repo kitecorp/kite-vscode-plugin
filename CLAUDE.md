@@ -218,23 +218,65 @@ Skip "Cannot resolve symbol" warnings for:
 
 The `any` keyword is a **type keyword**, not an identifier. Handle it specially in type positions alongside `string`, `number`, `boolean`, etc.
 
-## Commands
+## Quick Start - Running the Extension
+
+### First Time Setup
 
 ```bash
-# Install dependencies
+cd /Users/mimedia/IdeaProjects/kite-vscode-plugin
+
+# 1. Install dependencies
 npm install
 
-# Compile
+# 2. Compile TypeScript
 npm run compile
+```
 
-# Watch mode
+### Run the Extension (Option A: From VS Code - Recommended)
+
+1. Open the `kite-vscode-plugin` folder in VS Code
+2. Press **F5** (or Run > Start Debugging)
+3. A new VS Code window opens with the extension loaded
+4. Open any `.kite` file from `examples/` folder
+5. You should see syntax highlighting!
+
+### Run the Extension (Option B: Watch Mode)
+
+```bash
+# Terminal 1: Watch for changes (auto-recompile)
 npm run watch
 
-# Package extension
-vsce package
+# Then press F5 in VS Code to launch
+```
 
-# Run tests
-npm test
+### What to Test
+
+Open `examples/simple.kite` or `examples/component.kite` in the test VS Code window:
+
+- **Keywords** (`resource`, `component`, `schema`, `if`, `for`) - highlighted as keywords
+- **Types** (`string`, `number`, `boolean`, `any`) - highlighted in blue
+- **Strings** - highlighted in green (with interpolation `${var}`)
+- **Comments** (`//` and `/* */`) - grey/italic
+- **Decorators** (`@cloud`) - highlighted
+- **Numbers** - highlighted
+
+### Package for Distribution
+
+```bash
+npm run package   # Creates kite-language-0.1.0.vsix
+```
+
+Install with: `code --install-extension kite-language-0.1.0.vsix`
+
+## All Commands
+
+```bash
+npm install        # Install dependencies
+npm run compile    # Compile TypeScript once
+npm run watch      # Watch mode (auto-recompile)
+npm run package    # Package extension as .vsix
+npm test           # Run tests
+npm run lint       # Lint TypeScript code
 ```
 
 ## Dependencies

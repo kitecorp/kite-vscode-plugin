@@ -4,6 +4,10 @@
   "description": "Language support for Kite - Infrastructure as Code language",
   "version": "0.1.0",
   "publisher": "kitelang",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/kitelang/kite-vscode-plugin"
+  },
   "engines": {
     "vscode": "^1.85.0"
   },
