@@ -14,6 +14,7 @@ import {
     MarkupKind,
     Range,
     Position,
+    InsertTextFormat,
 } from 'vscode-languageserver/node';
 
 import { TextDocument } from 'vscode-languageserver-textdocument';
@@ -43,7 +44,7 @@ interface Declaration {
 // Cache of declarations per document
 const declarationCache: Map<string, Declaration[]> = new Map();
 
-connection.onInitialize((params: InitializeParams): InitializeResult => {
+connection.onInitialize((_params: InitializeParams): InitializeResult => {
     return {
         capabilities: {
             textDocumentSync: TextDocumentSyncKind.Incremental,
@@ -81,31 +82,34 @@ const TYPES = ['string', 'number', 'boolean', 'any', 'object', 'void'];
 // Built-in decorators with descriptions (from DECORATORS.md)
 interface DecoratorInfo {
     name: string;
-    category: string;
+    category: 'validation' | 'resource' | 'metadata';
     description: string;
     example: string;
+    snippet?: string;      // Snippet with placeholder, e.g., "minValue($1)"
+    argHint?: string;      // Argument hint, e.g., "(n)" or "(regex)"
+    sortOrder: number;     // For sorting within category
 }
 
 const DECORATORS: DecoratorInfo[] = [
-    // Validation decorators
-    { name: 'minValue', category: 'validation', description: 'Minimum value for numbers/arrays', example: '@minValue(1)' },
-    { name: 'maxValue', category: 'validation', description: 'Maximum value for numbers/arrays', example: '@maxValue(100)' },
-    { name: 'minLength', category: 'validation', description: 'Minimum length for strings/arrays', example: '@minLength(3)' },
-    { name: 'maxLength', category: 'validation', description: 'Maximum length for strings/arrays', example: '@maxLength(255)' },
-    { name: 'nonEmpty', category: 'validation', description: 'Ensures strings/arrays are not empty', example: '@nonEmpty' },
-    { name: 'validate', category: 'validation', description: 'Custom validation with regex', example: '@validate(regex: "^[a-z]+$")' },
-    { name: 'allowed', category: 'validation', description: 'Whitelist of allowed values', example: '@allowed(["dev", "prod"])' },
-    { name: 'unique', category: 'validation', description: 'Ensures array elements are unique', example: '@unique' },
-    // Resource decorators
-    { name: 'existing', category: 'resource', description: 'Reference existing cloud resources', example: '@existing' },
-    { name: 'sensitive', category: 'resource', description: 'Mark sensitive data', example: '@sensitive' },
-    { name: 'dependsOn', category: 'resource', description: 'Explicit dependency declaration', example: '@dependsOn(["vpc"])' },
-    { name: 'tags', category: 'resource', description: 'Add cloud provider tags', example: '@tags({env: "prod"})' },
-    { name: 'provisionOn', category: 'resource', description: 'Target specific cloud providers', example: '@provisionOn(["aws"])' },
-    { name: 'cloud', category: 'resource', description: 'Property is set by cloud provider', example: '@cloud' },
-    // Metadata decorators
-    { name: 'description', category: 'metadata', description: 'Documentation for inputs/outputs', example: '@description("Port number")' },
-    { name: 'count', category: 'metadata', description: 'Create N instances (injects $count)', example: '@count(3)' },
+    // Validation decorators (sortOrder 0-99)
+    { name: 'allowed', category: 'validation', description: 'Whitelist of allowed values', example: '@allowed(["dev", "prod"])', snippet: 'allowed([$1])', argHint: '([values])', sortOrder: 0 },
+    { name: 'minValue', category: 'validation', description: 'Minimum value for numbers/arrays', example: '@minValue(1)', snippet: 'minValue($1)', argHint: '(n)', sortOrder: 1 },
+    { name: 'maxValue', category: 'validation', description: 'Maximum value for numbers/arrays', example: '@maxValue(100)', snippet: 'maxValue($1)', argHint: '(n)', sortOrder: 2 },
+    { name: 'minLength', category: 'validation', description: 'Minimum length for strings/arrays', example: '@minLength(3)', snippet: 'minLength($1)', argHint: '(n)', sortOrder: 3 },
+    { name: 'maxLength', category: 'validation', description: 'Maximum length for strings/arrays', example: '@maxLength(255)', snippet: 'maxLength($1)', argHint: '(n)', sortOrder: 4 },
+    { name: 'validate', category: 'validation', description: 'Custom validation with regex', example: '@validate(regex: "^[a-z]+$")', snippet: 'validate(regex: "$1")', argHint: '(regex)', sortOrder: 5 },
+    { name: 'nonEmpty', category: 'validation', description: 'Ensures strings/arrays are not empty', example: '@nonEmpty', sortOrder: 6 },
+    { name: 'unique', category: 'validation', description: 'Ensures array elements are unique', example: '@unique', sortOrder: 7 },
+    // Resource decorators (sortOrder 100-199)
+    { name: 'existing', category: 'resource', description: 'Reference existing cloud resources', example: '@existing', sortOrder: 100 },
+    { name: 'sensitive', category: 'resource', description: 'Mark sensitive data', example: '@sensitive', sortOrder: 101 },
+    { name: 'cloud', category: 'resource', description: 'Property is set by cloud provider', example: '@cloud', sortOrder: 102 },
+    { name: 'dependsOn', category: 'resource', description: 'Explicit dependency declaration', example: '@dependsOn(["vpc"])', snippet: 'dependsOn([$1])', argHint: '([resources])', sortOrder: 103 },
+    { name: 'tags', category: 'resource', description: 'Add cloud provider tags', example: '@tags({env: "prod"})', snippet: 'tags({$1})', argHint: '({key: value})', sortOrder: 104 },
+    { name: 'provisionOn', category: 'resource', description: 'Target specific cloud providers', example: '@provisionOn(["aws"])', snippet: 'provisionOn([$1])', argHint: '([providers])', sortOrder: 105 },
+    // Metadata decorators (sortOrder 200-299)
+    { name: 'description', category: 'metadata', description: 'Documentation for inputs/outputs', example: '@description("Port number")', snippet: 'description("$1")', argHint: '("text")', sortOrder: 200 },
+    { name: 'count', category: 'metadata', description: 'Create N instances (injects $count)', example: '@count(3)', snippet: 'count($1)', argHint: '(n)', sortOrder: 201 },
 ];
 
 // Completion handler
@@ -120,17 +124,40 @@ connection.onCompletion((params: TextDocumentPositionParams): CompletionItem[] =
 
     // Check if we're after @ (decorator context)
     if (beforeCursor.match(/@\s*\w*$/)) {
-        // Only show decorator names with description visible immediately
-        DECORATORS.forEach(dec => {
-            completions.push({
-                label: dec.name,
+        // Detect context for prioritization
+        const context = getDecoratorContext(text, offset);
+
+        // Sort decorators: prioritize by context, then by sortOrder
+        const sortedDecorators = [...DECORATORS].sort((a, b) => {
+            // Prioritize decorators matching the context
+            const aContextMatch = context && a.category === context ? -1000 : 0;
+            const bContextMatch = context && b.category === context ? -1000 : 0;
+            return (a.sortOrder + aContextMatch) - (b.sortOrder + bContextMatch);
+        });
+
+        sortedDecorators.forEach((dec, index) => {
+            const item: CompletionItem = {
+                label: dec.argHint ? `${dec.name}${dec.argHint}` : dec.name,
                 kind: CompletionItemKind.Event,
                 detail: dec.description,
+                sortText: String(index).padStart(3, '0'), // Preserve our sort order
+                filterText: dec.name, // Filter by name only, not argHint
                 documentation: {
                     kind: MarkupKind.Markdown,
-                    value: `*${dec.category}*\n\n\`\`\`kite\n${dec.example}\n\`\`\``
+                    value: dec.example
                 }
-            });
+            };
+
+            // Use snippet if available, otherwise plain text
+            if (dec.snippet) {
+                item.insertText = dec.snippet;
+                item.insertTextFormat = InsertTextFormat.Snippet;
+                item.commitCharacters = ['('];
+            } else {
+                item.insertText = dec.name;
+            }
+
+            completions.push(item);
         });
         return completions;
     }
@@ -213,6 +240,34 @@ connection.onCompletion((params: TextDocumentPositionParams): CompletionItem[] =
 
     return completions;
 });
+
+// Helper: Detect decorator context for prioritization
+function getDecoratorContext(text: string, offset: number): 'validation' | 'resource' | 'metadata' | null {
+    // Look at the lines around the cursor to determine context
+    // Find start of current line
+    let lineStart = offset;
+    while (lineStart > 0 && text[lineStart - 1] !== '\n') {
+        lineStart--;
+    }
+
+    // Look at next few lines to see what declaration follows
+    let lookAhead = text.substring(offset, Math.min(text.length, offset + 200));
+    // Remove the current partial decorator if any
+    lookAhead = lookAhead.replace(/^\w*/, '');
+
+    // Check what follows
+    if (/^\s*\n?\s*(input|output)\b/.test(lookAhead)) {
+        return 'validation'; // input/output -> prioritize validation decorators
+    }
+    if (/^\s*\n?\s*(resource|component)\b/.test(lookAhead)) {
+        return 'resource'; // resource/component -> prioritize resource decorators
+    }
+    if (/^\s*\n?\s*(schema)\b/.test(lookAhead)) {
+        return 'metadata';
+    }
+
+    return null;
+}
 
 // Helper: Check if we're after '=' on the same line (value context)
 function isAfterEquals(text: string, offset: number): boolean {
