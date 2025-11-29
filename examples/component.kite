@@ -8,7 +8,7 @@ component WebServer {
 
   var client = "myClient"
 
-  @a
+
   resource VM.Instance server {
     size        = instanceType
     tag         = {
@@ -20,7 +20,7 @@ component WebServer {
     }
     private_ips = ["172.16.10.100"]
   }
-  
+
   output string endpoint = server.size
   output string tag      = server.tag.Name
   output string tagNameA = server.tag.New.a
@@ -59,3 +59,4 @@ fun greet(string name) {
 }
 
 greet("alice")
+greet()

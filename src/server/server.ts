@@ -15,6 +15,9 @@ import {
     Range,
     Position,
     InsertTextFormat,
+    SignatureHelp,
+    SignatureInformation,
+    ParameterInformation,
 } from 'vscode-languageserver/node';
 
 import { TextDocument } from 'vscode-languageserver-textdocument';
@@ -28,6 +31,12 @@ const documents: TextDocuments<TextDocument> = new TextDocuments(TextDocument);
 // Declaration types in Kite
 type DeclarationType = 'variable' | 'input' | 'output' | 'resource' | 'component' | 'schema' | 'function' | 'type' | 'for';
 
+// Represents a function parameter
+interface FunctionParameter {
+    type: string;
+    name: string;
+}
+
 // Represents a declaration found in a Kite file
 interface Declaration {
     name: string;
@@ -35,6 +44,8 @@ interface Declaration {
     typeName?: string;         // For var/input/output: the type (string, number, etc.)
     schemaName?: string;       // For resource: the schema type
     componentType?: string;    // For component: the type name
+    parameters?: FunctionParameter[];  // For functions: parameter list
+    returnType?: string;       // For functions: return type
     range: Range;
     nameRange: Range;          // Range of just the name identifier
     uri: string;
@@ -51,6 +62,10 @@ connection.onInitialize((_params: InitializeParams): InitializeResult => {
             completionProvider: {
                 resolveProvider: false,
                 triggerCharacters: ['.', '@']
+            },
+            signatureHelpProvider: {
+                triggerCharacters: ['(', ','],
+                retriggerCharacters: [',']
             },
             definitionProvider: true,
             referencesProvider: true,
@@ -459,6 +474,116 @@ connection.onHover((params: TextDocumentPositionParams): Hover | null => {
     return null;
 });
 
+// Signature Help handler - shows function parameter hints
+connection.onSignatureHelp((params: TextDocumentPositionParams): SignatureHelp | null => {
+    const document = documents.get(params.textDocument.uri);
+    if (!document) return null;
+
+    const text = document.getText();
+    const offset = document.offsetAt(params.position);
+
+    // Find the function call we're inside
+    const callInfo = findFunctionCallAtPosition(text, offset);
+    if (!callInfo) return null;
+
+    // Find the function declaration
+    const declarations = declarationCache.get(params.textDocument.uri) || [];
+    const funcDecl = declarations.find(d => d.type === 'function' && d.name === callInfo.functionName);
+
+    if (!funcDecl || !funcDecl.parameters) return null;
+
+    // Build parameter info
+    const parameters: ParameterInformation[] = funcDecl.parameters.map(p => ({
+        label: `${p.type} ${p.name}`,
+        documentation: undefined
+    }));
+
+    // Build signature label: "functionName(type1 param1, type2 param2): returnType"
+    const paramsStr = funcDecl.parameters.map(p => `${p.type} ${p.name}`).join(', ');
+    let signatureLabel = `${funcDecl.name}(${paramsStr})`;
+    if (funcDecl.returnType) {
+        signatureLabel += `: ${funcDecl.returnType}`;
+    }
+
+    const signature: SignatureInformation = {
+        label: signatureLabel,
+        documentation: funcDecl.documentation,
+        parameters
+    };
+
+    return {
+        signatures: [signature],
+        activeSignature: 0,
+        activeParameter: callInfo.activeParameter
+    };
+});
+
+// Helper: Find function call at cursor position and determine active parameter
+interface FunctionCallInfo {
+    functionName: string;
+    activeParameter: number;
+}
+
+function findFunctionCallAtPosition(text: string, offset: number): FunctionCallInfo | null {
+    // Walk backwards to find the opening parenthesis of a function call
+    let pos = offset - 1;
+    let parenDepth = 0;
+    let commaCount = 0;
+
+    while (pos >= 0) {
+        const char = text[pos];
+
+        if (char === ')') {
+            parenDepth++;
+        } else if (char === '(') {
+            if (parenDepth === 0) {
+                // Found the opening paren - now find the function name
+                let nameEnd = pos - 1;
+                // Skip whitespace before (
+                while (nameEnd >= 0 && /\s/.test(text[nameEnd])) {
+                    nameEnd--;
+                }
+                // Find start of identifier
+                let nameStart = nameEnd;
+                while (nameStart > 0 && /\w/.test(text[nameStart - 1])) {
+                    nameStart--;
+                }
+
+                if (nameStart <= nameEnd) {
+                    const functionName = text.substring(nameStart, nameEnd + 1);
+
+                    // Verify this is a function call (not a declaration)
+                    // Check that 'fun' doesn't precede it
+                    let checkPos = nameStart - 1;
+                    while (checkPos >= 0 && /\s/.test(text[checkPos])) {
+                        checkPos--;
+                    }
+                    const beforeName = text.substring(Math.max(0, checkPos - 3), checkPos + 1);
+                    if (beforeName.endsWith('fun')) {
+                        return null; // This is a function declaration, not a call
+                    }
+
+                    return {
+                        functionName,
+                        activeParameter: commaCount
+                    };
+                }
+                return null;
+            }
+            parenDepth--;
+        } else if (char === ',' && parenDepth === 0) {
+            commaCount++;
+        } else if (char === '{' || char === '}' || char === ';') {
+            // Hit a block boundary - not inside a function call
+            return null;
+        }
+
+        pos--;
+    }
+
+    return null;
+}
+
 // Helper: Check if cursor is on a property in a property access (e.g., server.tag.New.a)
 interface PropertyAccessContext {
     chain: string[];      // Full chain: ['server', 'tag', 'New', 'a']
@@ -716,6 +841,36 @@ function scanDocument(document: TextDocument): Declaration[] {
                         );
                     }
                     // Otherwise it's a component type definition, name is already correct
+                }
+
+                // Handle function - extract parameters and return type
+                if (pattern.type === 'function') {
+                    // Pattern: fun name(type1 param1, type2 param2) returnType {
+                    const funcMatch = line.match(/^\s*fun\s+\w+\s*\(([^)]*)\)\s*(\w+)?\s*\{?/);
+                    if (funcMatch) {
+                        const paramsStr = funcMatch[1];
+                        const returnType = funcMatch[2];
+
+                        decl.parameters = [];
+                        if (paramsStr.trim()) {
+                            // Parse parameters: "type1 name1, type2 name2"
+                            const paramParts = paramsStr.split(',');
+                            for (const part of paramParts) {
+                                const trimmed = part.trim();
+                                const paramMatch = trimmed.match(/^(\w+(?:\[\])?)\s+(\w+)$/);
+                                if (paramMatch) {
+                                    decl.parameters.push({
+                                        type: paramMatch[1],
+                                        name: paramMatch[2]
+                                    });
+                                }
+                            }
+                        }
+
+                        if (returnType) {
+                            decl.returnType = returnType;
+                        }
+                    }
                 }
 
                 // Look for preceding comment
