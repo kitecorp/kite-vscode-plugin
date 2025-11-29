@@ -112,23 +112,23 @@ Key tokens from the ANTLR lexer (`../kite-intellij-plugin/src/main/antlr/cloud/k
 
 ## Features to Implement
 
-### Priority 1: Basic Language Support
+### Completed: Basic Language Support
 | Feature | IntelliJ File | LSP Method | Status |
 |---------|--------------|------------|--------|
-| Syntax Highlighting | `KiteSyntaxHighlighter.java` | TextMate grammar | ⬜ |
-| Bracket Matching | Built-in | `language-configuration.json` | ⬜ |
-| Comment Toggling | Built-in | `language-configuration.json` | ⬜ |
-| Code Folding | Built-in | TextMate regions | ⬜ |
+| Syntax Highlighting | `KiteSyntaxHighlighter.java` | TextMate grammar | ✅ |
+| Bracket Matching | Built-in | `language-configuration.json` | ✅ |
+| Comment Toggling | Built-in | `language-configuration.json` | ✅ |
+| Code Folding | Built-in | TextMate regions | ✅ |
 
-### Priority 2: Semantic Features
+### Completed: Semantic Features
 | Feature | IntelliJ File | LSP Method | Status |
 |---------|--------------|------------|--------|
-| Go to Definition | `KiteGotoDeclarationHandler.java` | `textDocument/definition` | ⬜ |
-| Find References | `KiteReferenceContributor.java` | `textDocument/references` | ⬜ |
-| Autocomplete | `KiteCompletionContributor.java` | `textDocument/completion` | ⬜ |
-| Hover/Quick Docs | `KiteDocumentationProvider.java` | `textDocument/hover` | ⬜ |
+| Go to Definition | `KiteGotoDeclarationHandler.java` | `textDocument/definition` | ✅ |
+| Find References | `KiteReferenceContributor.java` | `textDocument/references` | ✅ |
+| Autocomplete | `KiteCompletionContributor.java` | `textDocument/completion` | ✅ |
+| Hover/Quick Docs | `KiteDocumentationProvider.java` | `textDocument/hover` | ✅ |
 
-### Priority 3: Advanced Features
+### Priority 1: Advanced Features
 | Feature | IntelliJ File | LSP Method | Status |
 |---------|--------------|------------|--------|
 | Diagnostics/Errors | `KiteTypeCheckingAnnotator.java` | `textDocument/publishDiagnostics` | ⬜ |
@@ -339,3 +339,79 @@ kite-vscode-plugin/
 ├── syntaxes/
 │   └── kite.tmLanguage.json    # TextMate grammar for syntax highlighting
 └── examples/                   # Test files (copied from IntelliJ)
+
+## Intellij plugin
+The original implementation which we need to migrate to vs code plugin
+../kite-intellij-plugin/
+
+## VS Code Extension Development
+
+### Overview
+
+To port the Kite plugin to VS Code, you'll need to create a Language Server Protocol (LSP) based extension. VS Code
+extensions use TypeScript/JavaScript and communicate with a Language Server for advanced features.
+
+### Architecture Options
+
+**Option 1: TextMate Grammar Only (Basic)**
+
+- Quick to implement
+- Provides: Syntax highlighting, bracket matching, basic code folding
+- No semantic features (go to definition, completion, etc.)
+
+**Option 2: Full LSP Implementation (Recommended)**
+
+- Provides all features including semantic analysis
+- Reuse ANTLR grammar: Generate TypeScript parser from same `.g4` files
+- Can use existing IntelliJ logic as reference
+
+### Project Structure
+
+```
+kite-vscode/
+├── package.json           # Extension manifest
+├── tsconfig.json          # TypeScript config
+├── src/
+│   ├── extension.ts       # Extension entry point
+│   └── server/
+│       ├── server.ts      # Language server main
+│       ├── parser/        # ANTLR-generated TypeScript parser
+│       └── providers/     # LSP providers (completion, hover, etc.)
+├── syntaxes/
+│   └── kite.tmLanguage.json  # TextMate grammar for highlighting
+└── language-configuration.json  # Brackets, comments config
+```
+
+### Key Files to Create
+
+1. **package.json** - Extension manifest with:
+    - Language contribution (`.kite` files)
+    - Grammar contribution
+    - Commands and configuration
+
+2. **syntaxes/kite.tmLanguage.json** - TextMate grammar:
+    - Convert ANTLR lexer tokens to TextMate scopes
+    - Map to VS Code semantic token types
+
+3. **Language Server** (using `vscode-languageserver`):
+    - `textDocument/completion` - Autocompletion
+    - `textDocument/hover` - Quick documentation
+    - `textDocument/definition` - Go to definition
+    - `textDocument/references` - Find usages
+    - `textDocument/formatting` - Code formatting
+    - `textDocument/publishDiagnostics` - Errors/warnings
+
+### Feature Mapping: IntelliJ → VS Code LSP
+
+| IntelliJ Feature             | VS Code/LSP Equivalent             |
+|------------------------------|------------------------------------|
+| `KiteSyntaxHighlighter`      | TextMate grammar + Semantic tokens |
+| `KiteCompletionContributor`  | `textDocument/completion`          |
+| `KiteDocumentationProvider`  | `textDocument/hover`               |
+| `KiteGotoDeclarationHandler` | `textDocument/definition`          |
+| `KiteReferenceContributor`   | `textDocument/references`          |
+| `KiteParameterInfoHandler`   | `textDocument/signatureHelp`       |
+| `KiteInlayHintsProvider`     | `textDocument/inlayHint`           |
+| `KiteTypeCheckingAnnotator`  | `textDocument/publishDiagnostics`  |
+| `KiteBlock` (formatter)      | `textDocument/formatting`          |
+| `KiteStructureViewElement`   | `textDocument/documentSymbol`      |
