@@ -26,6 +26,9 @@ import {
 } from 'vscode-languageserver/node';
 
 import { TextDocument } from 'vscode-languageserver-textdocument';
+import * as fs from 'fs';
+import * as path from 'path';
+import { URI } from 'vscode-uri';
 
 // Create a connection for the server using Node's IPC
 const connection = createConnection(ProposedFeatures.all);
@@ -60,7 +63,19 @@ interface Declaration {
 // Cache of declarations per document
 const declarationCache: Map<string, Declaration[]> = new Map();
 
-connection.onInitialize((_params: InitializeParams): InitializeResult => {
+// Workspace folders for cross-file resolution
+let workspaceFolders: string[] = [];
+
+connection.onInitialize((params: InitializeParams): InitializeResult => {
+    // Store workspace folders for cross-file resolution
+    if (params.workspaceFolders) {
+        workspaceFolders = params.workspaceFolders.map(folder => URI.parse(folder.uri).fsPath);
+    } else if (params.rootUri) {
+        workspaceFolders = [URI.parse(params.rootUri).fsPath];
+    } else if (params.rootPath) {
+        workspaceFolders = [params.rootPath];
+    }
+
     return {
         capabilities: {
             textDocumentSync: TextDocumentSyncKind.Incremental,
@@ -357,6 +372,68 @@ connection.onCompletion((params: TextDocumentPositionParams): CompletionItem[] =
     // Check if we're after '=' (value context - types should not be shown)
     const isValueContext = isAfterEquals(text, offset);
 
+    // If inside a resource/component body and NOT after '=', show only schema/input properties
+    if (enclosingBlock && !isValueContext) {
+        // Check if we're on a line that already has a property assignment started
+        // (i.e., cursor is after the property name, not at the start of a new property)
+        const lineStart = text.lastIndexOf('\n', offset - 1) + 1;
+        const lineBeforeCursor = text.substring(lineStart, offset);
+        const isStartOfProperty = /^\s*\w*$/.test(lineBeforeCursor);
+
+        // Check if we're inside a nested structure (object literal, array) within the block
+        // by counting unmatched braces/brackets from block start to cursor
+        const isInsideNestedValue = isInsideNestedStructure(text, enclosingBlock.start, offset);
+
+        if (isInsideNestedValue) {
+            // Inside a nested structure (object literal, array) - don't show schema properties
+            // Return empty to avoid cluttering with unrelated completions
+            return completions;
+        }
+
+        if (!isStartOfProperty) {
+            // Not at the start of a new property line, but still inside resource/component body
+            // Return empty - don't fall through to general completions
+            return completions;
+        } else {
+            // Find properties already set in this block
+            const alreadySet = findAlreadySetProperties(text, enclosingBlock.start, offset);
+
+            if (enclosingBlock.type === 'resource') {
+                // Show schema properties (excluding already set ones)
+                // Use cross-file resolution
+                const schemaProps = extractSchemaPropertyTypes(text, enclosingBlock.typeName, params.textDocument.uri);
+                for (const [propName, propType] of Object.entries(schemaProps)) {
+                    if (!alreadySet.has(propName)) {
+                        completions.push({
+                            label: propName,
+                            kind: CompletionItemKind.Property,
+                            detail: propType,
+                            insertText: `${propName} = `
+                        });
+                    }
+                }
+                // Always return here - don't fall through to general completions
+                return completions;
+            } else if (enclosingBlock.type === 'component') {
+                // Show component input properties (excluding already set ones)
+                // Use cross-file resolution
+                const inputTypes = extractComponentInputTypes(text, enclosingBlock.typeName, params.textDocument.uri);
+                for (const [inputName, inputType] of Object.entries(inputTypes)) {
+                    if (!alreadySet.has(inputName)) {
+                        completions.push({
+                            label: inputName,
+                            kind: CompletionItemKind.Property,
+                            detail: inputType,
+                            insertText: `${inputName} = `
+                        });
+                    }
+                }
+                // Always return here - don't fall through to general completions
+                return completions;
+            }
+        }
+    }
+
     // Add keywords
     KEYWORDS.forEach(kw => {
         completions.push({
@@ -493,13 +570,15 @@ function isAfterEquals(text: string, offset: number): boolean {
 interface BlockContext {
     name: string;
     type: 'resource' | 'component';
+    typeName: string;  // Schema name for resources, component type for components
     start: number;
     end: number;
 }
 
 function findEnclosingBlock(text: string, offset: number): BlockContext | null {
     // Find all resource/component declarations
-    const blockRegex = /\b(resource|component)\s+\w+(?:\.\w+)*\s+(\w+)\s*\{/g;
+    // Pattern: resource SchemaName instanceName { or component TypeName instanceName {
+    const blockRegex = /\b(resource|component)\s+([\w.]+)\s+(\w+)\s*\{/g;
     let match;
     let enclosing: BlockContext | null = null;
 
@@ -513,8 +592,9 @@ function findEnclosingBlock(text: string, offset: number): BlockContext | null {
             // Found a block containing our position
             // Keep searching for nested blocks (most specific)
             enclosing = {
-                name: match[2],
+                name: match[3],
                 type: match[1] as 'resource' | 'component',
+                typeName: match[2],
                 start: blockStart,
                 end: blockEnd
             };
@@ -522,6 +602,27 @@ function findEnclosingBlock(text: string, offset: number): BlockContext | null {
     }
 
     return enclosing;
+}
+
+// Helper: Find properties already set in a block
+function findAlreadySetProperties(text: string, blockStart: number, currentOffset: number): Set<string> {
+    const alreadySet = new Set<string>();
+
+    // Find the opening brace
+    let bracePos = text.indexOf('{', blockStart);
+    if (bracePos === -1) return alreadySet;
+
+    // Get the body text from opening brace to current position
+    const bodyText = text.substring(bracePos + 1, currentOffset);
+
+    // Find all property assignments: propertyName =
+    const propRegex = /^\s*(\w+)\s*=/gm;
+    let match;
+    while ((match = propRegex.exec(bodyText)) !== null) {
+        alreadySet.add(match[1]);
+    }
+
+    return alreadySet;
 }
 
 // Helper for completion (separate from the other one to avoid conflicts)
@@ -538,6 +639,256 @@ function findMatchingBraceForCompletion(text: string, openBracePos: number): num
     return pos;
 }
 
+// Helper: Find all Kite files in the workspace
+function findKiteFilesInWorkspace(): string[] {
+    const kiteFiles: string[] = [];
+
+    function scanDirectory(dir: string) {
+        try {
+            const entries = fs.readdirSync(dir, { withFileTypes: true });
+            for (const entry of entries) {
+                const fullPath = path.join(dir, entry.name);
+                if (entry.isDirectory()) {
+                    // Skip node_modules, .git, etc.
+                    if (!entry.name.startsWith('.') && entry.name !== 'node_modules') {
+                        scanDirectory(fullPath);
+                    }
+                } else if (entry.isFile() && entry.name.endsWith('.kite')) {
+                    kiteFiles.push(fullPath);
+                }
+            }
+        } catch {
+            // Ignore permission errors, etc.
+        }
+    }
+
+    for (const folder of workspaceFolders) {
+        scanDirectory(folder);
+    }
+
+    return kiteFiles;
+}
+
+// Helper: Read file content safely
+function readFileContent(filePath: string): string | null {
+    try {
+        return fs.readFileSync(filePath, 'utf-8');
+    } catch {
+        return null;
+    }
+}
+
+// Helper: Get text content for a file (from open document or file system)
+function getFileContent(filePath: string, currentDocUri?: string): string | null {
+    // First check if it's the current document
+    if (currentDocUri) {
+        const currentPath = URI.parse(currentDocUri).fsPath;
+        if (currentPath === filePath) {
+            const doc = documents.get(currentDocUri);
+            if (doc) return doc.getText();
+        }
+    }
+
+    // Check if document is open
+    const uri = URI.file(filePath).toString();
+    const openDoc = documents.get(uri);
+    if (openDoc) {
+        return openDoc.getText();
+    }
+
+    // Read from file system
+    return readFileContent(filePath);
+}
+
+// Helper: Check if cursor is inside a nested structure (object literal or array) within a block
+// Returns true if we're inside a value like `tag = { ... }` or `ips = [ ... ]`
+function isInsideNestedStructure(text: string, blockStart: number, cursorOffset: number): boolean {
+    // Find the opening brace of the block
+    let bracePos = text.indexOf('{', blockStart);
+    if (bracePos === -1 || bracePos >= cursorOffset) return false;
+
+    // Walk from after the opening brace to cursor position, tracking depth
+    // Depth 0 = at block level (where property assignments are)
+    // Depth > 0 = inside a nested structure
+    let depth = 0;
+    let inString = false;
+    let stringChar = '';
+
+    for (let i = bracePos + 1; i < cursorOffset; i++) {
+        const char = text[i];
+
+        // Handle strings (don't count braces inside strings)
+        if ((char === '"' || char === "'") && (i === 0 || text[i - 1] !== '\\')) {
+            if (!inString) {
+                inString = true;
+                stringChar = char;
+            } else if (char === stringChar) {
+                inString = false;
+            }
+            continue;
+        }
+
+        if (inString) continue;
+
+        // Track depth for braces and brackets
+        if (char === '{' || char === '[') {
+            depth++;
+        } else if (char === '}' || char === ']') {
+            depth--;
+            if (depth < 0) depth = 0; // Safety
+        }
+    }
+
+    return depth > 0;
+}
+
+// Helper: Find schema or component type definition
+function findTypeDefinition(text: string, offset: number, word: string, currentDocUri: string): Location | null {
+    // Check if this word is a type reference in a resource or component declaration
+    // Pattern: resource SchemaName instanceName { - clicking on SchemaName
+    // Pattern: component TypeName instanceName { - clicking on TypeName (for instantiation)
+
+    // Find the actual start of the word (cursor could be anywhere in the word)
+    let wordStart = offset;
+    while (wordStart > 0 && /\w/.test(text[wordStart - 1])) {
+        wordStart--;
+    }
+
+    // Look backwards from the word to see if it's preceded by 'resource' or 'component'
+    const beforeWord = text.substring(Math.max(0, wordStart - 50), wordStart);
+
+    let isSchemaRef = false;
+    let isComponentRef = false;
+
+    // Find the actual end of the word
+    let wordEnd = offset;
+    while (wordEnd < text.length && /\w/.test(text[wordEnd])) {
+        wordEnd++;
+    }
+
+    if (/\bresource\s+$/.test(beforeWord)) {
+        isSchemaRef = true;
+    } else if (/\bcomponent\s+$/.test(beforeWord)) {
+        // Check if this is an instantiation (has instance name after) or definition
+        const afterWord = text.substring(wordEnd, Math.min(text.length, wordEnd + 50));
+        if (/^\s+\w+\s*\{/.test(afterWord)) {
+            // Has instance name after - this is an instantiation, word is the type
+            isComponentRef = true;
+        }
+    }
+
+    if (isSchemaRef) {
+        // Find schema definition in current file
+        const location = findSchemaDefinition(text, word, currentDocUri);
+        if (location) return location;
+
+        // Try other files in workspace
+        try {
+            const kiteFiles = findKiteFilesInWorkspace();
+            for (const filePath of kiteFiles) {
+                const fileContent = getFileContent(filePath, currentDocUri);
+                if (fileContent) {
+                    const loc = findSchemaDefinition(fileContent, word, filePath);
+                    if (loc) return loc;
+                }
+            }
+        } catch {
+            // Ignore cross-file lookup errors
+        }
+    }
+
+    if (isComponentRef) {
+        // Find component definition in current file
+        const location = findComponentDefinition(text, word, currentDocUri);
+        if (location) return location;
+
+        // Try other files in workspace
+        try {
+            const kiteFiles = findKiteFilesInWorkspace();
+            for (const filePath of kiteFiles) {
+                const fileContent = getFileContent(filePath, currentDocUri);
+                if (fileContent) {
+                    const loc = findComponentDefinition(fileContent, word, filePath);
+                    if (loc) return loc;
+                }
+            }
+        } catch {
+            // Ignore cross-file lookup errors
+        }
+    }
+
+    return null;
+}
+
+// Helper: Find schema definition location in text
+function findSchemaDefinition(text: string, schemaName: string, filePathOrUri: string): Location | null {
+    const regex = new RegExp(`\\bschema\\s+(${escapeRegex(schemaName)})\\s*\\{`, 'g');
+    const match = regex.exec(text);
+
+    if (match) {
+        const nameStart = match.index + match[0].indexOf(schemaName);
+        const nameEnd = nameStart + schemaName.length;
+
+        // Convert to Position
+        const lines = text.substring(0, nameStart).split('\n');
+        const line = lines.length - 1;
+        const character = lines[lines.length - 1].length;
+
+        const endLines = text.substring(0, nameEnd).split('\n');
+        const endLine = endLines.length - 1;
+        const endCharacter = endLines[endLines.length - 1].length;
+
+        const uri = filePathOrUri.startsWith('file://') ? filePathOrUri : URI.file(filePathOrUri).toString();
+
+        return Location.create(uri, Range.create(
+            Position.create(line, character),
+            Position.create(endLine, endCharacter)
+        ));
+    }
+
+    return null;
+}
+
+// Helper: Find component definition location in text
+function findComponentDefinition(text: string, componentName: string, filePathOrUri: string): Location | null {
+    // Component definition: component TypeName { (without instance name)
+    const regex = new RegExp(`\\bcomponent\\s+(${escapeRegex(componentName)})\\s*\\{`, 'g');
+    let match;
+
+    while ((match = regex.exec(text)) !== null) {
+        // Verify this is a definition (no instance name between type and {)
+        const fullMatch = match[0];
+        const afterComponent = fullMatch.substring(10); // after "component "
+        const parts = afterComponent.trim().split(/\s+/);
+
+        // Definition has: TypeName { -> parts = ["TypeName", "{"]
+        // Instantiation has: TypeName instanceName { -> parts = ["TypeName", "instanceName", "{"]
+        if (parts.length === 2 && parts[1] === '{') {
+            // This is a definition
+            const nameStart = match.index + match[0].indexOf(componentName);
+            const nameEnd = nameStart + componentName.length;
+
+            // Convert to Position
+            const lines = text.substring(0, nameStart).split('\n');
+            const line = lines.length - 1;
+            const character = lines[lines.length - 1].length;
+
+            const endLines = text.substring(0, nameEnd).split('\n');
+            const endLine = endLines.length - 1;
+            const endCharacter = endLines[endLines.length - 1].length;
+
+            const uri = filePathOrUri.startsWith('file://') ? filePathOrUri : URI.file(filePathOrUri).toString();
+
+            return Location.create(uri, Range.create(
+                Position.create(line, character),
+                Position.create(endLine, endCharacter)
+            ));
+        }
+    }
+
+    return null;
+}
+
 // Go to Definition handler
 connection.onDefinition((params: TextDocumentPositionParams): Definition | null => {
     const document = documents.get(params.textDocument.uri);
@@ -547,6 +898,17 @@ connection.onDefinition((params: TextDocumentPositionParams): Definition | null 
     const offset = document.offsetAt(params.position);
     const word = getWordAtPosition(document, params.position);
     if (!word) return null;
+
+    // Check if this is a schema type in a resource declaration: resource SchemaName instanceName {
+    // or a component type in a component instantiation: component TypeName instanceName {
+    try {
+        const typeRefLocation = findTypeDefinition(text, offset, word, params.textDocument.uri);
+        if (typeRefLocation) {
+            return typeRefLocation;
+        }
+    } catch {
+        // Ignore errors in type definition lookup
+    }
 
     // Check if this is a property access (e.g., server.tag.New.a)
     const propertyAccess = getPropertyAccessContext(text, offset, word);
@@ -809,8 +1171,8 @@ connection.onRequest('textDocument/inlayHint', (params: InlayHintParams): InlayH
         const componentType = compMatch[1];
         const braceStart = compMatch.index + compMatch[0].length - 1;
 
-        // Find the component type definition to get input types
-        const inputTypes = extractComponentInputTypes(text, componentType);
+        // Find the component type definition to get input types (with cross-file support)
+        const inputTypes = extractComponentInputTypes(text, componentType, params.textDocument.uri);
         if (Object.keys(inputTypes).length === 0) {
             continue;
         }
@@ -857,8 +1219,8 @@ connection.onRequest('textDocument/inlayHint', (params: InlayHintParams): InlayH
         const schemaName = resMatch[1];
         const braceStart = resMatch.index + resMatch[0].length - 1;
 
-        // Find the schema definition to get property types
-        const schemaTypes = extractSchemaPropertyTypes(text, schemaName);
+        // Find the schema definition to get property types (with cross-file support)
+        const schemaTypes = extractSchemaPropertyTypes(text, schemaName, params.textDocument.uri);
         if (Object.keys(schemaTypes).length === 0) {
             continue;
         }
@@ -1024,8 +1386,8 @@ function parseArguments(text: string, startPos: number): ArgRange[] {
     return args;
 }
 
-// Helper: Extract input types from a component type definition
-function extractComponentInputTypes(text: string, componentTypeName: string): Record<string, string> {
+// Helper: Extract input types from a component type definition (single text)
+function extractComponentInputTypesFromText(text: string, componentTypeName: string): Record<string, string> {
     const inputTypes: Record<string, string> = {};
 
     // Find component type definition: component TypeName { (without instance name)
@@ -1081,8 +1443,31 @@ function extractComponentInputTypes(text: string, componentTypeName: string): Re
     return inputTypes;
 }
 
-// Helper: Extract property types from a schema definition
-function extractSchemaPropertyTypes(text: string, schemaName: string): Record<string, string> {
+// Helper: Extract input types from a component type definition (with cross-file support)
+function extractComponentInputTypes(text: string, componentTypeName: string, currentDocUri?: string): Record<string, string> {
+    // First try current file
+    let inputTypes = extractComponentInputTypesFromText(text, componentTypeName);
+    if (Object.keys(inputTypes).length > 0) {
+        return inputTypes;
+    }
+
+    // Try other files in workspace
+    const kiteFiles = findKiteFilesInWorkspace();
+    for (const filePath of kiteFiles) {
+        const fileContent = getFileContent(filePath, currentDocUri);
+        if (fileContent) {
+            inputTypes = extractComponentInputTypesFromText(fileContent, componentTypeName);
+            if (Object.keys(inputTypes).length > 0) {
+                return inputTypes;
+            }
+        }
+    }
+
+    return {};
+}
+
+// Helper: Extract property types from a schema definition (single text)
+function extractSchemaPropertyTypesFromText(text: string, schemaName: string): Record<string, string> {
     const propertyTypes: Record<string, string> = {};
 
     // Handle dotted schema names like "VM.Instance" - just use the last part for matching
@@ -1132,6 +1517,29 @@ function extractSchemaPropertyTypes(text: string, schemaName: string): Record<st
     }
 
     return propertyTypes;
+}
+
+// Helper: Extract property types from a schema definition (with cross-file support)
+function extractSchemaPropertyTypes(text: string, schemaName: string, currentDocUri?: string): Record<string, string> {
+    // First try current file
+    let propertyTypes = extractSchemaPropertyTypesFromText(text, schemaName);
+    if (Object.keys(propertyTypes).length > 0) {
+        return propertyTypes;
+    }
+
+    // Try other files in workspace
+    const kiteFiles = findKiteFilesInWorkspace();
+    for (const filePath of kiteFiles) {
+        const fileContent = getFileContent(filePath, currentDocUri);
+        if (fileContent) {
+            propertyTypes = extractSchemaPropertyTypesFromText(fileContent, schemaName);
+            if (Object.keys(propertyTypes).length > 0) {
+                return propertyTypes;
+            }
+        }
+    }
+
+    return {};
 }
 
 // Helper: Find function call at cursor position and determine active parameter
