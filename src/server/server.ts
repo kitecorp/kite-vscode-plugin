@@ -63,6 +63,8 @@ interface Declaration {
     nameRange: Range;          // Range of just the name identifier
     uri: string;
     documentation?: string;
+    scopeStart?: number;       // Start offset of the scope this declaration is in (undefined = file scope)
+    scopeEnd?: number;         // End offset of the scope
 }
 
 // Cache of declarations per document
@@ -357,16 +359,34 @@ connection.onCompletion((params: TextDocumentPositionParams): CompletionItem[] =
 
         if (decl) {
             // Add properties based on declaration type
-            if (decl.type === 'resource') {
-                // For resources, suggest properties from their body
-                const bodyProps = extractPropertiesFromBody(text, decl.name);
+            if (decl.type === 'resource' && decl.schemaName) {
+                // For resources, show set properties first (bold indicator), then schema properties
+                const bodyProps = new Set(extractPropertiesFromBody(text, decl.name));
+                const schemaProps = extractSchemaPropertyTypes(text, decl.schemaName, params.textDocument.uri);
+
+                // First add set properties (from resource body) - shown first with indicator
                 bodyProps.forEach(prop => {
+                    const propType = schemaProps[prop] || 'any';
                     completions.push({
                         label: prop,
                         kind: CompletionItemKind.Property,
-                        detail: 'property'
+                        detail: `● ${propType} (set)`,
+                        sortText: '0' + prop,  // Sort first
+                        labelDetails: { description: '●' }
                     });
                 });
+
+                // Then add unset schema properties
+                for (const [propName, propType] of Object.entries(schemaProps)) {
+                    if (!bodyProps.has(propName)) {
+                        completions.push({
+                            label: propName,
+                            kind: CompletionItemKind.Property,
+                            detail: propType,
+                            sortText: '1' + propName  // Sort after set properties
+                        });
+                    }
+                }
             } else if (decl.type === 'component' && decl.componentType) {
                 // For component instances, find the component type and show only outputs
                 const outputs = extractComponentOutputs(text, decl.componentType);
@@ -450,14 +470,17 @@ connection.onCompletion((params: TextDocumentPositionParams): CompletionItem[] =
         }
     }
 
-    // Add keywords
-    KEYWORDS.forEach(kw => {
-        completions.push({
-            label: kw,
-            kind: CompletionItemKind.Keyword,
-            detail: 'keyword'
+    // Add keywords only if NOT in value context
+    if (!isValueContext) {
+        KEYWORDS.forEach(kw => {
+            completions.push({
+                label: kw,
+                kind: CompletionItemKind.Keyword,
+                detail: 'keyword',
+                sortText: '9' + kw // Keywords last
+            });
         });
-    });
+    }
 
     // Add types only if NOT in value context (right side of =)
     if (!isValueContext) {
@@ -465,17 +488,32 @@ connection.onCompletion((params: TextDocumentPositionParams): CompletionItem[] =
             completions.push({
                 label: t,
                 kind: CompletionItemKind.TypeParameter,
-                detail: 'type'
+                detail: 'type',
+                sortText: '8' + t // Types before keywords
             });
             completions.push({
                 label: t + '[]',
                 kind: CompletionItemKind.TypeParameter,
-                detail: 'array type'
+                detail: 'array type',
+                sortText: '8' + t + '[]'
             });
         });
     }
 
-    // Add declarations from current file (filtered based on context)
+    // Priority order for value context: inputs, variables, resources, components, outputs, functions
+    const valuePriority: Record<string, string> = {
+        'input': '0',
+        'variable': '1',
+        'for': '1',      // Loop variables treated like variables
+        'resource': '2',
+        'component': '3',
+        'output': '4',
+        'function': '5',
+        'schema': '6',
+        'type': '7'
+    };
+
+    // Add declarations from current file (filtered based on context and scope)
     const declarations = declarationCache.get(params.textDocument.uri) || [];
     declarations.forEach(decl => {
         // Skip outputs from the same enclosing block
@@ -487,10 +525,22 @@ connection.onCompletion((params: TextDocumentPositionParams): CompletionItem[] =
             }
         }
 
+        // Scope filtering for variables: only show if cursor is within the variable's scope
+        if ((decl.type === 'variable' || decl.type === 'for') && decl.scopeStart !== undefined && decl.scopeEnd !== undefined) {
+            // Variable is scoped - only visible within its scope
+            if (offset < decl.scopeStart || offset > decl.scopeEnd) {
+                return; // Skip - cursor is outside variable's scope
+            }
+        }
+
+        // In value context, use priority sorting; otherwise alphabetical
+        const priority = isValueContext ? (valuePriority[decl.type] || '9') : '';
+
         completions.push({
             label: decl.name,
             kind: getCompletionKind(decl.type),
-            detail: decl.type + (decl.typeName ? `: ${decl.typeName}` : '')
+            detail: decl.type + (decl.typeName ? `: ${decl.typeName}` : ''),
+            sortText: priority + decl.name
         });
     });
 
@@ -1048,6 +1098,121 @@ function findComponentDefinition(text: string, componentName: string, filePathOr
     return null;
 }
 
+// Helper: Find schema property location in text
+function findSchemaPropertyLocation(text: string, schemaName: string, propertyName: string, filePathOrUri: string): Location | null {
+    // Handle dotted schema names like "VM.Instance" - just use the last part for matching
+    const schemaBaseName = schemaName.includes('.') ? schemaName.split('.').pop()! : schemaName;
+
+    // Find schema definition: schema SchemaName {
+    const defRegex = new RegExp(`\\bschema\\s+${escapeRegex(schemaBaseName)}\\s*\\{`, 'g');
+    let match;
+
+    while ((match = defRegex.exec(text)) !== null) {
+        const braceStart = match.index + match[0].length - 1;
+        let braceDepth = 1;
+        let pos = braceStart + 1;
+
+        while (pos < text.length && braceDepth > 0) {
+            if (text[pos] === '{') braceDepth++;
+            else if (text[pos] === '}') braceDepth--;
+            pos++;
+        }
+
+        const bodyStartOffset = braceStart + 1;
+        const bodyText = text.substring(bodyStartOffset, pos - 1);
+
+        // Find the property in the body
+        // Properties: type propertyName [= defaultValue]
+        // Note: ^\s* to handle indentation
+        const propRegex = new RegExp(`^\\s*(\\w+(?:\\[\\])?)\\s+(${escapeRegex(propertyName)})(?:\\s*=.*)?$`, 'gm');
+        let propMatch;
+
+        while ((propMatch = propRegex.exec(bodyText)) !== null) {
+            // Calculate the position of the property name in the original text
+            const propNameOffset = bodyStartOffset + propMatch.index + propMatch[0].indexOf(propertyName);
+            const propNameEndOffset = propNameOffset + propertyName.length;
+
+            // Convert to Position
+            const lines = text.substring(0, propNameOffset).split('\n');
+            const line = lines.length - 1;
+            const character = lines[lines.length - 1].length;
+
+            const endLines = text.substring(0, propNameEndOffset).split('\n');
+            const endLine = endLines.length - 1;
+            const endCharacter = endLines[endLines.length - 1].length;
+
+            const uri = filePathOrUri.startsWith('file://') ? filePathOrUri : URI.file(filePathOrUri).toString();
+
+            return Location.create(uri, Range.create(
+                Position.create(line, character),
+                Position.create(endLine, endCharacter)
+            ));
+        }
+    }
+
+    return null;
+}
+
+// Helper: Find component input location in text
+function findComponentInputLocation(text: string, componentTypeName: string, inputName: string, filePathOrUri: string): Location | null {
+    // Find component type definition: component TypeName { (without instance name)
+    const defRegex = new RegExp(`\\bcomponent\\s+${escapeRegex(componentTypeName)}\\s*\\{`, 'g');
+    let match;
+
+    while ((match = defRegex.exec(text)) !== null) {
+        // Check if this is a definition (not instantiation)
+        const betweenKeywordAndBrace = text.substring(match.index + 10, match.index + match[0].length - 1).trim();
+        const identifiers = betweenKeywordAndBrace.split(/\s+/).filter(s => s && s !== componentTypeName);
+
+        if (identifiers.length > 0) {
+            // Has extra identifier(s), this is an instantiation, skip
+            continue;
+        }
+
+        // This is a component definition - find the input
+        const braceStart = match.index + match[0].length - 1;
+        let braceDepth = 1;
+        let pos = braceStart + 1;
+
+        while (pos < text.length && braceDepth > 0) {
+            if (text[pos] === '{') braceDepth++;
+            else if (text[pos] === '}') braceDepth--;
+            pos++;
+        }
+
+        const bodyStartOffset = braceStart + 1;
+        const bodyText = text.substring(bodyStartOffset, pos - 1);
+
+        // Find input declaration: input type inputName [= defaultValue]
+        const inputRegex = new RegExp(`\\binput\\s+(\\w+(?:\\[\\])?)\\s+(${escapeRegex(inputName)})`, 'g');
+        let inputMatch;
+
+        while ((inputMatch = inputRegex.exec(bodyText)) !== null) {
+            // Calculate the position of the input name in the original text
+            const inputNameOffset = bodyStartOffset + inputMatch.index + inputMatch[0].lastIndexOf(inputName);
+            const inputNameEndOffset = inputNameOffset + inputName.length;
+
+            // Convert to Position
+            const lines = text.substring(0, inputNameOffset).split('\n');
+            const line = lines.length - 1;
+            const character = lines[lines.length - 1].length;
+
+            const endLines = text.substring(0, inputNameEndOffset).split('\n');
+            const endLine = endLines.length - 1;
+            const endCharacter = endLines[endLines.length - 1].length;
+
+            const uri = filePathOrUri.startsWith('file://') ? filePathOrUri : URI.file(filePathOrUri).toString();
+
+            return Location.create(uri, Range.create(
+                Position.create(line, character),
+                Position.create(endLine, endCharacter)
+            ));
+        }
+    }
+
+    return null;
+}
+
 // Go to Definition handler
 connection.onDefinition((params: TextDocumentPositionParams): Definition | null => {
     const document = documents.get(params.textDocument.uri);
@@ -1082,6 +1247,62 @@ connection.onDefinition((params: TextDocumentPositionParams): Definition | null 
             const propertyLocation = findPropertyInChain(document, text, propertyAccess.chain);
             if (propertyLocation) {
                 return propertyLocation;
+            }
+        }
+    }
+
+    // Check if this is a property assignment inside a resource/component body
+    // Pattern: property = value (clicking on 'property' should go to schema/component definition)
+    const enclosingBlock = findEnclosingBlock(text, offset);
+    if (enclosingBlock) {
+        // Check if word is followed by = (property assignment)
+        let wordEnd = offset;
+        while (wordEnd < text.length && /\w/.test(text[wordEnd])) {
+            wordEnd++;
+        }
+        const afterWord = text.substring(wordEnd, Math.min(text.length, wordEnd + 10)).trim();
+
+        if (afterWord.startsWith('=') && !afterWord.startsWith('==')) {
+            // This is a property assignment - find the property in schema/component definition
+            const currentFilePath = URI.parse(params.textDocument.uri).fsPath;
+            const imports = extractImports(text);
+
+            if (enclosingBlock.type === 'resource') {
+                // Find schema property definition - first try current file
+                const schemaLoc = findSchemaPropertyLocation(text, enclosingBlock.typeName, word, params.textDocument.uri);
+                if (schemaLoc) return schemaLoc;
+
+                // Try cross-file only if schema type is imported
+                const kiteFiles = findKiteFilesInWorkspace();
+                for (const filePath of kiteFiles) {
+                    if (filePath === currentFilePath) continue;
+                    const fileContent = getFileContent(filePath, params.textDocument.uri);
+                    if (fileContent) {
+                        // Check if the schema type is imported from this file
+                        if (isSymbolImported(imports, enclosingBlock.typeName, filePath, currentFilePath)) {
+                            const loc = findSchemaPropertyLocation(fileContent, enclosingBlock.typeName, word, filePath);
+                            if (loc) return loc;
+                        }
+                    }
+                }
+            } else if (enclosingBlock.type === 'component') {
+                // Find component input definition - first try current file
+                const inputLoc = findComponentInputLocation(text, enclosingBlock.typeName, word, params.textDocument.uri);
+                if (inputLoc) return inputLoc;
+
+                // Try cross-file only if component type is imported
+                const kiteFiles = findKiteFilesInWorkspace();
+                for (const filePath of kiteFiles) {
+                    if (filePath === currentFilePath) continue;
+                    const fileContent = getFileContent(filePath, params.textDocument.uri);
+                    if (fileContent) {
+                        // Check if the component type is imported from this file
+                        if (isSymbolImported(imports, enclosingBlock.typeName, filePath, currentFilePath)) {
+                            const loc = findComponentInputLocation(fileContent, enclosingBlock.typeName, word, filePath);
+                            if (loc) return loc;
+                        }
+                    }
+                }
             }
         }
     }
@@ -1954,6 +2175,60 @@ function scanDocument(document: TextDocument): Declaration[] {
     const declarations: Declaration[] = [];
     const lines = text.split('\n');
 
+    // Find all scope blocks (functions, component definitions) first
+    interface ScopeBlock {
+        start: number;  // Opening brace offset
+        end: number;    // Closing brace offset
+        type: 'function' | 'component-def';
+    }
+    const scopeBlocks: ScopeBlock[] = [];
+
+    // Find function scopes: fun name(...) {
+    const funcScopeRegex = /\bfun\s+\w+\s*\([^)]*\)\s*\w*\s*\{/g;
+    let funcMatch;
+    while ((funcMatch = funcScopeRegex.exec(text)) !== null) {
+        const braceStart = funcMatch.index + funcMatch[0].length - 1;
+        let braceDepth = 1;
+        let pos = braceStart + 1;
+        while (pos < text.length && braceDepth > 0) {
+            if (text[pos] === '{') braceDepth++;
+            else if (text[pos] === '}') braceDepth--;
+            pos++;
+        }
+        scopeBlocks.push({ start: braceStart, end: pos, type: 'function' });
+    }
+
+    // Find component definition scopes: component TypeName { (without instance name)
+    const compDefRegex = /\bcomponent\s+(\w+)\s*\{/g;
+    let compMatch;
+    while ((compMatch = compDefRegex.exec(text)) !== null) {
+        // Check if it's a definition (no instance name)
+        const betweenKeywordAndBrace = text.substring(compMatch.index + 10, compMatch.index + compMatch[0].length - 1).trim();
+        const parts = betweenKeywordAndBrace.split(/\s+/).filter(s => s);
+        if (parts.length === 1) {
+            // Single identifier = component definition
+            const braceStart = compMatch.index + compMatch[0].length - 1;
+            let braceDepth = 1;
+            let pos = braceStart + 1;
+            while (pos < text.length && braceDepth > 0) {
+                if (text[pos] === '{') braceDepth++;
+                else if (text[pos] === '}') braceDepth--;
+                pos++;
+            }
+            scopeBlocks.push({ start: braceStart, end: pos, type: 'component-def' });
+        }
+    }
+
+    // Helper: Find enclosing scope for an offset
+    function findEnclosingScope(offset: number): ScopeBlock | null {
+        for (const scope of scopeBlocks) {
+            if (offset > scope.start && offset < scope.end) {
+                return scope;
+            }
+        }
+        return null;
+    }
+
     // Patterns for different declaration types
     const patterns: { type: DeclarationType; regex: RegExp; groups: { name: number; typeName?: number; schemaName?: number } }[] = [
         // var [type] name = value
@@ -2001,6 +2276,16 @@ function scanDocument(document: TextDocument): Declaration[] {
                     nameRange: Range.create(nameStart, nameEnd),
                     uri: document.uri,
                 };
+
+                // Add scope information for variables/for loops
+                if (pattern.type === 'variable' || pattern.type === 'for') {
+                    const declOffset = lineOffset + nameIndex;
+                    const scope = findEnclosingScope(declOffset);
+                    if (scope) {
+                        decl.scopeStart = scope.start;
+                        decl.scopeEnd = scope.end;
+                    }
+                }
 
                 if (pattern.groups.typeName && match[pattern.groups.typeName]) {
                     decl.typeName = match[pattern.groups.typeName];
@@ -2055,8 +2340,18 @@ function scanDocument(document: TextDocument): Declaration[] {
                                     // Find exact position of parameter name in the line
                                     const paramNameIndex = line.indexOf(paramName, paramOffset);
                                     if (paramNameIndex >= 0) {
+                                        // Find the function scope for this parameter
+                                        // Parameters are before the {, so find scope that starts on this line
+                                        const braceIndex = line.indexOf('{');
+                                        let paramScope: ScopeBlock | null = null;
+                                        if (braceIndex >= 0) {
+                                            const braceOffset = lineOffset + braceIndex;
+                                            // Find scope that starts at this brace
+                                            paramScope = scopeBlocks.find(s => s.start === braceOffset) || null;
+                                        }
+
                                         // Add parameter as a declaration for Go to Definition
-                                        declarations.push({
+                                        const paramDecl: Declaration = {
                                             name: paramName,
                                             type: 'variable',
                                             typeName: paramType,
@@ -2070,7 +2365,12 @@ function scanDocument(document: TextDocument): Declaration[] {
                                             ),
                                             uri: document.uri,
                                             documentation: `Parameter of function \`${decl.name}\``
-                                        });
+                                        };
+                                        if (paramScope) {
+                                            paramDecl.scopeStart = paramScope.start;
+                                            paramDecl.scopeEnd = paramScope.end;
+                                        }
+                                        declarations.push(paramDecl);
                                         paramOffset = paramNameIndex + paramName.length;
                                     }
                                 }
@@ -2732,6 +3032,9 @@ function validateDocument(document: TextDocument): Diagnostic[] {
         // Skip function definitions: fun funcName(
         const beforeMatch = text.substring(Math.max(0, funcMatch.index - 20), funcMatch.index);
         if (/\bfun\s+$/.test(beforeMatch)) continue;
+
+        // Skip decorators: @decoratorName(
+        if (/@\s*$/.test(beforeMatch)) continue;
 
         // Find the position
         const funcStart = funcMatch.index;

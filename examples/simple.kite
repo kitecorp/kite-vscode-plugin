@@ -25,11 +25,12 @@ schema DatabaseConfig {
   boolean sslu = false
 }
 
-@provisionOn(["aws"])
+@provider("aws")
 @tags({Environment: "production", Team: "platform"})
 resource DatabaseConfig photos {
   host = "my-photos-bucket"
-  port = formattedNames
+  port = instances
+  ssl = common.data
 }
 
 input string inname = "asd"
@@ -39,8 +40,6 @@ resource CommonConfig common {
   name = ""
   data = 123
 }
-
-var p = common.name
 
 fun calculateCost(number instances, string name) number {
   var baseCost = 0.10
