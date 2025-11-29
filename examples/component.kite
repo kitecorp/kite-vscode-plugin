@@ -52,7 +52,7 @@ var string size         = serviceA.endpoint
 var portInlay           = 8080
 var portInlayString     = "str"
 var inlaySingleString   = 'str'
-var inlayBoolean        = false
+var inlayBoolean       = false
 
 
 fun greet(string name) {

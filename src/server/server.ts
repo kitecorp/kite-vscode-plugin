@@ -20,6 +20,9 @@ import {
     ParameterInformation,
     Diagnostic,
     DiagnosticSeverity,
+    InlayHint,
+    InlayHintKind,
+    InlayHintParams,
 } from 'vscode-languageserver/node';
 
 import { TextDocument } from 'vscode-languageserver-textdocument';
@@ -69,6 +72,7 @@ connection.onInitialize((_params: InitializeParams): InitializeResult => {
                 triggerCharacters: ['(', ','],
                 retriggerCharacters: [',']
             },
+            inlayHintProvider: true,
             definitionProvider: true,
             referencesProvider: true,
             hoverProvider: true,
@@ -696,6 +700,233 @@ connection.onSignatureHelp((params: TextDocumentPositionParams): SignatureHelp |
         activeParameter: callInfo.activeParameter
     };
 });
+
+// Inlay Hints handler - shows inline type hints and parameter names
+connection.onRequest('textDocument/inlayHint', (params: InlayHintParams): InlayHint[] => {
+    const document = documents.get(params.textDocument.uri);
+    if (!document) return [];
+
+    const hints: InlayHint[] = [];
+    const text = document.getText();
+    const declarations = declarationCache.get(params.textDocument.uri) || [];
+
+    // 1. Type hints for var declarations without explicit type
+    // Pattern: var name = value (no type between var and name)
+    const varRegex = /\bvar\s+(\w+)\s*=/g;
+    let varMatch;
+    while ((varMatch = varRegex.exec(text)) !== null) {
+        const varName = varMatch[1];
+        const matchStart = varMatch.index;
+        const nameStart = text.indexOf(varName, matchStart + 4); // after 'var '
+
+        // Check if this var has an explicit type by looking for 'var type name ='
+        const beforeName = text.substring(matchStart + 4, nameStart).trim();
+        if (beforeName && /^\w+(\[\])?$/.test(beforeName)) {
+            // Has explicit type, skip
+            continue;
+        }
+
+        // Infer type from the value
+        const equalsPos = text.indexOf('=', nameStart);
+        if (equalsPos === -1) continue;
+
+        const valueStart = equalsPos + 1;
+        const inferredType = inferTypeFromValue(text, valueStart);
+
+        if (inferredType) {
+            const pos = document.positionAt(nameStart + varName.length);
+            hints.push({
+                position: pos,
+                label: `: ${inferredType}`,
+                kind: InlayHintKind.Type,
+                paddingLeft: false,
+                paddingRight: true
+            });
+        }
+    }
+
+    // 2. Parameter hints at function call sites
+    // Pattern: functionName(arg1, arg2, ...)
+    const funcCallRegex = /\b(\w+)\s*\(/g;
+    let callMatch;
+    while ((callMatch = funcCallRegex.exec(text)) !== null) {
+        const funcName = callMatch[1];
+        const parenPos = callMatch.index + callMatch[0].length - 1;
+
+        // Skip keywords that look like function calls
+        if (['if', 'while', 'for', 'fun', 'switch', 'catch'].includes(funcName)) {
+            continue;
+        }
+
+        // Check if this is a function declaration (preceded by 'fun')
+        const beforeCall = text.substring(Math.max(0, callMatch.index - 10), callMatch.index);
+        if (/\bfun\s*$/.test(beforeCall)) {
+            continue; // This is a declaration, not a call
+        }
+
+        // Find the function declaration to get parameter names
+        const funcDecl = declarations.find(d => d.type === 'function' && d.name === funcName);
+        if (!funcDecl || !funcDecl.parameters || funcDecl.parameters.length === 0) {
+            continue;
+        }
+
+        // Parse arguments
+        const args = parseArguments(text, parenPos + 1);
+
+        // Add parameter hints for each argument
+        for (let i = 0; i < Math.min(args.length, funcDecl.parameters.length); i++) {
+            const arg = args[i];
+            const param = funcDecl.parameters[i];
+
+            // Skip if argument is already a named argument (name: value)
+            const argText = text.substring(arg.start, arg.end).trim();
+            if (/^\w+\s*:/.test(argText)) {
+                continue;
+            }
+
+            // Skip simple cases where hint would be redundant
+            // (e.g., passing variable with same name as parameter)
+            if (argText === param.name) {
+                continue;
+            }
+
+            const pos = document.positionAt(arg.start);
+            hints.push({
+                position: pos,
+                label: `${param.name}:`,
+                kind: InlayHintKind.Parameter,
+                paddingLeft: false,
+                paddingRight: true
+            });
+        }
+    }
+
+    return hints;
+});
+
+// Helper: Infer type from value expression
+function inferTypeFromValue(text: string, startPos: number): string | null {
+    // Skip whitespace
+    let pos = startPos;
+    while (pos < text.length && /\s/.test(text[pos])) {
+        pos++;
+    }
+
+    if (pos >= text.length) return null;
+
+    const char = text[pos];
+
+    // String literal
+    if (char === '"' || char === "'") {
+        return 'string';
+    }
+
+    // Number literal
+    if (/\d/.test(char) || (char === '-' && /\d/.test(text[pos + 1] || ''))) {
+        return 'number';
+    }
+
+    // Boolean literals
+    if (text.substring(pos, pos + 4) === 'true' && !/\w/.test(text[pos + 4] || '')) {
+        return 'boolean';
+    }
+    if (text.substring(pos, pos + 5) === 'false' && !/\w/.test(text[pos + 5] || '')) {
+        return 'boolean';
+    }
+
+    // Null literal
+    if (text.substring(pos, pos + 4) === 'null' && !/\w/.test(text[pos + 4] || '')) {
+        return 'null';
+    }
+
+    // Array literal
+    if (char === '[') {
+        return 'array';
+    }
+
+    // Object literal
+    if (char === '{') {
+        return 'object';
+    }
+
+    return null;
+}
+
+// Helper: Parse function call arguments
+interface ArgRange {
+    start: number;
+    end: number;
+}
+
+function parseArguments(text: string, startPos: number): ArgRange[] {
+    const args: ArgRange[] = [];
+    let pos = startPos;
+    let depth = 1;
+    let argStart = startPos;
+    let inString = false;
+    let stringChar = '';
+
+    // Skip leading whitespace
+    while (pos < text.length && /\s/.test(text[pos])) {
+        pos++;
+        argStart = pos;
+    }
+
+    // Check for empty args
+    if (text[pos] === ')') {
+        return args;
+    }
+
+    while (pos < text.length && depth > 0) {
+        const char = text[pos];
+
+        // Handle strings
+        if ((char === '"' || char === "'") && (pos === 0 || text[pos - 1] !== '\\')) {
+            if (!inString) {
+                inString = true;
+                stringChar = char;
+            } else if (char === stringChar) {
+                inString = false;
+            }
+        }
+
+        if (!inString) {
+            if (char === '(' || char === '[' || char === '{') {
+                depth++;
+            } else if (char === ')' || char === ']' || char === '}') {
+                depth--;
+                if (depth === 0) {
+                    // End of arguments
+                    const argText = text.substring(argStart, pos).trim();
+                    if (argText) {
+                        args.push({ start: argStart, end: pos });
+                    }
+                    break;
+                }
+            } else if (char === ',' && depth === 1) {
+                // Argument separator
+                const argText = text.substring(argStart, pos).trim();
+                if (argText) {
+                    // Find actual start (skip whitespace)
+                    let actualStart = argStart;
+                    while (actualStart < pos && /\s/.test(text[actualStart])) {
+                        actualStart++;
+                    }
+                    args.push({ start: actualStart, end: pos });
+                }
+                argStart = pos + 1;
+                // Skip whitespace after comma
+                while (argStart < text.length && /\s/.test(text[argStart])) {
+                    argStart++;
+                }
+            }
+        }
+
+        pos++;
+    }
+
+    return args;
+}
 
 // Helper: Find function call at cursor position and determine active parameter
 interface FunctionCallInfo {
