@@ -891,6 +891,78 @@ connection.onCompletion((params: TextDocumentPositionParams): CompletionItem[] =
         return completions;
     }
 
+    // Check if we're inside a component definition body - similar handling for input/output defaults
+    if (isInsideComponentDefinition(text, offset)) {
+        const isValueContext = isAfterEquals(text, offset);
+
+        if (isValueContext) {
+            // After '=' in component definition - show default values based on type
+            const lineStart = text.lastIndexOf('\n', offset - 1) + 1;
+            const lineText = text.substring(lineStart, offset);
+
+            // Pattern for input/output: input/output type name = (cursor here)
+            const ioMatch = lineText.match(/^\s*(?:input|output)\s+(\w+(?:\[\])?)\s+(\w+)\s*=\s*$/);
+            const propType = ioMatch ? ioMatch[1] : null;
+            const propName = ioMatch ? ioMatch[2].toLowerCase() : '';
+
+            if (propType === 'boolean') {
+                completions.push({ label: 'true', kind: CompletionItemKind.Value, detail: 'boolean' });
+                completions.push({ label: 'false', kind: CompletionItemKind.Value, detail: 'boolean' });
+            } else if (propType === 'number') {
+                const numberSuggestions: Record<string, { value: string; desc: string }[]> = {
+                    'port': [
+                        { value: '80', desc: 'HTTP' }, { value: '443', desc: 'HTTPS' }, { value: '22', desc: 'SSH' },
+                        { value: '3000', desc: 'Dev server' }, { value: '3306', desc: 'MySQL' }, { value: '5432', desc: 'PostgreSQL' },
+                        { value: '6379', desc: 'Redis' }, { value: '8080', desc: 'HTTP alt' }, { value: '27017', desc: 'MongoDB' },
+                    ],
+                    'timeout': [{ value: '30', desc: '30s' }, { value: '60', desc: '1min' }, { value: '300', desc: '5min' }, { value: '3600', desc: '1hr' }],
+                    'memory': [{ value: '128', desc: '128 MB' }, { value: '256', desc: '256 MB' }, { value: '512', desc: '512 MB' }, { value: '1024', desc: '1 GB' }],
+                    'replicas': [{ value: '1', desc: 'Single' }, { value: '2', desc: 'HA min' }, { value: '3', desc: 'Production' }],
+                    'ttl': [{ value: '60', desc: '1 min' }, { value: '300', desc: '5 min' }, { value: '3600', desc: '1 hr' }],
+                };
+                const numSuggestions = numberSuggestions[propName];
+                if (numSuggestions) {
+                    numSuggestions.forEach(s => completions.push({ label: s.value, kind: CompletionItemKind.Value, detail: s.desc }));
+                } else {
+                    // Default number suggestions
+                    [{ value: '0', desc: 'zero' }, { value: '1', desc: 'one' }, { value: '10', desc: 'ten' }, { value: '100', desc: 'hundred' }]
+                        .forEach(s => completions.push({ label: s.value, kind: CompletionItemKind.Value, detail: s.desc }));
+                }
+            } else if (propType === 'string') {
+                const stringSuggestions: Record<string, { value: string; desc: string }[]> = {
+                    'environment': [{ value: '"dev"', desc: 'Development' }, { value: '"staging"', desc: 'Staging' }, { value: '"prod"', desc: 'Production' }],
+                    'env': [{ value: '"dev"', desc: 'Development' }, { value: '"staging"', desc: 'Staging' }, { value: '"prod"', desc: 'Production' }],
+                    'region': [{ value: '"us-east-1"', desc: 'AWS US East' }, { value: '"us-west-2"', desc: 'AWS US West' }, { value: '"eu-west-1"', desc: 'AWS EU' }],
+                    'protocol': [{ value: '"http"', desc: 'HTTP' }, { value: '"https"', desc: 'HTTPS' }, { value: '"tcp"', desc: 'TCP' }],
+                    'host': [{ value: '"localhost"', desc: 'Local' }, { value: '"0.0.0.0"', desc: 'All interfaces' }, { value: '"127.0.0.1"', desc: 'Loopback' }],
+                    'hostname': [{ value: '"localhost"', desc: 'Local' }, { value: '"0.0.0.0"', desc: 'All interfaces' }],
+                    'provider': [{ value: '"aws"', desc: 'AWS' }, { value: '"gcp"', desc: 'GCP' }, { value: '"azure"', desc: 'Azure' }],
+                    'cidr': [{ value: '"10.0.0.0/16"', desc: 'VPC default' }, { value: '"10.0.1.0/24"', desc: 'Subnet' }],
+                    'instancetype': [{ value: '"t2.micro"', desc: 'Free tier' }, { value: '"t3.small"', desc: '2 vCPU' }],
+                    'runtime': [{ value: '"nodejs18.x"', desc: 'Node 18' }, { value: '"python3.11"', desc: 'Python 3.11' }],
+                    'loglevel': [{ value: '"debug"', desc: 'Debug' }, { value: '"info"', desc: 'Info' }, { value: '"warn"', desc: 'Warn' }, { value: '"error"', desc: 'Error' }],
+                    'name': [{ value: '""', desc: 'empty string' }],
+                };
+                const strSuggestions = stringSuggestions[propName];
+                if (strSuggestions) {
+                    strSuggestions.forEach(s => completions.push({ label: s.value, kind: CompletionItemKind.Value, detail: s.desc, insertText: s.value }));
+                } else {
+                    completions.push({ label: '""', kind: CompletionItemKind.Value, detail: 'empty string', insertText: '""' });
+                }
+            }
+        } else {
+            // Before '=' in component definition - show keywords for input/output declarations
+            ['input', 'output', 'var', 'resource', 'component'].forEach(kw => {
+                completions.push({ label: kw, kind: CompletionItemKind.Keyword, detail: 'keyword' });
+            });
+            TYPES.forEach(t => {
+                completions.push({ label: t, kind: CompletionItemKind.TypeParameter, detail: 'type' });
+            });
+        }
+
+        return completions;
+    }
+
     // Find enclosing block context (resource or component we're inside)
     const enclosingBlock = findEnclosingBlock(text, offset);
 
@@ -1255,6 +1327,35 @@ function isInsideSchemaBody(text: string, offset: number): boolean {
         const closePos = findMatchingBraceForCompletion(text, openBracePos);
 
         // Check if offset is inside this schema block
+        if (offset > openBracePos && offset < closePos) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+// Helper: Check if cursor is inside a component definition body (not instance)
+function isInsideComponentDefinition(text: string, offset: number): boolean {
+    // Find all component declarations: component TypeName {
+    const compRegex = /\bcomponent\s+(\w+)\s*\{/g;
+    let match;
+
+    while ((match = compRegex.exec(text)) !== null) {
+        // Check if this is a definition (not instantiation)
+        // Definition: component TypeName { -> only one identifier before {
+        // Instance: component TypeName instanceName { -> two identifiers before {
+        const betweenKeywordAndBrace = text.substring(match.index + 10, match.index + match[0].length - 1).trim();
+        const parts = betweenKeywordAndBrace.split(/\s+/).filter(s => s);
+
+        if (parts.length !== 1) {
+            continue; // This is an instantiation, skip
+        }
+
+        const openBracePos = match.index + match[0].length - 1;
+        const closePos = findMatchingBraceForCompletion(text, openBracePos);
+
+        // Check if offset is inside this component definition block
         if (offset > openBracePos && offset < closePos) {
             return true;
         }
