@@ -1,6 +1,7 @@
+import formatName, CommonConfig from "common.kite"
 // Simple Kite example
 // Test cross-file navigation: Cmd+Click on imported symbols
-import * from "common.kite"
+
 
 // Using imported type from common.kite
 // Cmd+Click on "Region" should navigate to common.kite
@@ -30,8 +31,10 @@ resource DatabaseConfig photos {
   host = "my-photos-bucket"
   port = formattedNames
 }
+
 input string inname = "asd"
 output string outname = "asda"
+
 resource CommonConfig common {
   name = ""
   data = 123

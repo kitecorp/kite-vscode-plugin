@@ -1,6 +1,6 @@
 // Decorator examples
 @existing("")
-@sensitive
+@dependsOn()
 resource Database prod {
   name = "production-db"
 }

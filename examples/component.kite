@@ -1,3 +1,4 @@
+import DatabaseConfig from "simple.kite"
 schema Instance {
   string size
   object tag

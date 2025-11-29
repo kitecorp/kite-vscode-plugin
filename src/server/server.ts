@@ -915,6 +915,37 @@ function findTypeDefinition(text: string, offset: number, word: string, currentD
         }
     }
 
+    // Check if this is a function call: functionName(
+    const afterWord = text.substring(wordEnd, Math.min(text.length, wordEnd + 10));
+    const isFunctionCall = /^\s*\(/.test(afterWord);
+
+    if (isFunctionCall) {
+        // Find function definition in current file
+        const location = findFunctionDefinition(text, word, currentDocUri);
+        if (location) return location;
+
+        // Try other files in workspace (only if imported)
+        try {
+            const kiteFiles = findKiteFilesInWorkspace();
+            for (const filePath of kiteFiles) {
+                const fileContent = getFileContent(filePath, currentDocUri);
+                if (fileContent) {
+                    const loc = findFunctionDefinition(fileContent, word, filePath);
+                    if (loc) {
+                        // Check if this symbol is imported
+                        if (isSymbolImported(imports, word, filePath, currentFilePath)) {
+                            return loc;
+                        }
+                        // Symbol not imported - diagnostic will show error with quick fix
+                        return null;
+                    }
+                }
+            }
+        } catch {
+            // Ignore cross-file lookup errors
+        }
+    }
+
     return null;
 }
 
@@ -926,6 +957,36 @@ function findSchemaDefinition(text: string, schemaName: string, filePathOrUri: s
     if (match) {
         const nameStart = match.index + match[0].indexOf(schemaName);
         const nameEnd = nameStart + schemaName.length;
+
+        // Convert to Position
+        const lines = text.substring(0, nameStart).split('\n');
+        const line = lines.length - 1;
+        const character = lines[lines.length - 1].length;
+
+        const endLines = text.substring(0, nameEnd).split('\n');
+        const endLine = endLines.length - 1;
+        const endCharacter = endLines[endLines.length - 1].length;
+
+        const uri = filePathOrUri.startsWith('file://') ? filePathOrUri : URI.file(filePathOrUri).toString();
+
+        return Location.create(uri, Range.create(
+            Position.create(line, character),
+            Position.create(endLine, endCharacter)
+        ));
+    }
+
+    return null;
+}
+
+// Helper: Find function definition location in text
+function findFunctionDefinition(text: string, functionName: string, filePathOrUri: string): Location | null {
+    // Function definition: fun functionName(...)
+    const regex = new RegExp(`\\bfun\\s+(${escapeRegex(functionName)})\\s*\\(`, 'g');
+    const match = regex.exec(text);
+
+    if (match) {
+        const nameStart = match.index + match[0].indexOf(functionName);
+        const nameEnd = nameStart + functionName.length;
 
         // Convert to Position
         const lines = text.substring(0, nameStart).split('\n');
@@ -2477,13 +2538,40 @@ function validateDocument(document: TextDocument): Diagnostic[] {
     diagnosticData.set(document.uri, new Map());
     const docDiagnosticData = diagnosticData.get(document.uri)!;
 
+    // Helper to check if position is inside a comment
+    function isInsideComment(pos: number): boolean {
+        // Check for single-line comment
+        const lineStart = text.lastIndexOf('\n', pos - 1) + 1;
+        const lineBeforePos = text.substring(lineStart, pos);
+        if (lineBeforePos.includes('//')) {
+            return true;
+        }
+
+        // Check for multi-line comment
+        const textBefore = text.substring(0, pos);
+        const lastBlockCommentStart = textBefore.lastIndexOf('/*');
+        if (lastBlockCommentStart !== -1) {
+            const lastBlockCommentEnd = textBefore.lastIndexOf('*/');
+            if (lastBlockCommentEnd < lastBlockCommentStart) {
+                return true; // Inside block comment
+            }
+        }
+        return false;
+    }
+
     // Check resource declarations: resource SchemaName instanceName {
     const resourceRegex = /\bresource\s+([\w.]+)\s+(\w+)\s*\{/g;
     let resourceMatch;
     while ((resourceMatch = resourceRegex.exec(text)) !== null) {
+        // Skip if inside a comment
+        if (isInsideComment(resourceMatch.index)) continue;
+
         const schemaName = resourceMatch[1];
         const instanceName = resourceMatch[2];
-        const schemaStart = resourceMatch.index + 9; // after "resource "
+        // Find the actual position of the schema name in the match
+        const matchText = resourceMatch[0];
+        const schemaOffsetInMatch = matchText.indexOf(schemaName);
+        const schemaStart = resourceMatch.index + schemaOffsetInMatch;
         const schemaEnd = schemaStart + schemaName.length;
 
         // Check if schema exists in current file
@@ -2543,12 +2631,19 @@ function validateDocument(document: TextDocument): Diagnostic[] {
     }
 
     // Check component instantiations: component TypeName instanceName {
+    // Must have TWO identifiers (type and instance name) - definitions only have one
     const componentInstRegex = /\bcomponent\s+(\w+)\s+(\w+)\s*\{/g;
     let componentMatch;
     while ((componentMatch = componentInstRegex.exec(text)) !== null) {
+        // Skip if inside a comment
+        if (isInsideComment(componentMatch.index)) continue;
+
         const componentType = componentMatch[1];
         const instanceName = componentMatch[2];
-        const typeStart = componentMatch.index + 10; // after "component "
+        // Find the actual position of the type name in the match
+        const matchText = componentMatch[0];
+        const typeOffsetInMatch = matchText.indexOf(componentType);
+        const typeStart = componentMatch.index + typeOffsetInMatch;
         const typeEnd = typeStart + componentType.length;
 
         // Check if component exists in current file
@@ -2602,6 +2697,98 @@ function validateDocument(document: TextDocument): Diagnostic[] {
                 severity: DiagnosticSeverity.Error,
                 range,
                 message: `Cannot resolve component '${componentType}'`,
+                source: 'kite'
+            });
+        }
+    }
+
+    // Check function calls: functionName(
+    // We need to find function calls that are NOT definitions and NOT in declarations cache
+    const functionCallRegex = /\b([a-z]\w*)\s*\(/g;
+    let funcMatch;
+    const localDeclarations = declarationCache.get(document.uri) || [];
+    const localFunctionNames = new Set(localDeclarations.filter(d => d.type === 'function').map(d => d.name));
+    // Also get all other local names to exclude (inputs, outputs, variables, etc.)
+    const localNames = new Set(localDeclarations.map(d => d.name));
+
+    // Built-in functions to ignore
+    const builtinFunctions = new Set(['println', 'print', 'len', 'toString', 'toNumber', 'typeof']);
+
+    while ((funcMatch = functionCallRegex.exec(text)) !== null) {
+        // Skip if inside a comment
+        if (isInsideComment(funcMatch.index)) continue;
+
+        const funcName = funcMatch[1];
+
+        // Skip if it's a builtin function
+        if (builtinFunctions.has(funcName)) continue;
+
+        // Skip if it's a local declaration (function, variable, input, output, etc.)
+        if (localNames.has(funcName)) continue;
+
+        // Skip if it's a keyword that might be followed by (
+        if (['if', 'while', 'for', 'fun', 'return'].includes(funcName)) continue;
+
+        // Skip function definitions: fun funcName(
+        const beforeMatch = text.substring(Math.max(0, funcMatch.index - 20), funcMatch.index);
+        if (/\bfun\s+$/.test(beforeMatch)) continue;
+
+        // Find the position
+        const funcStart = funcMatch.index;
+        const funcEnd = funcStart + funcName.length;
+
+        // Check if function exists in current file
+        const funcInCurrentFile = findFunctionDefinition(text, funcName, document.uri);
+        if (funcInCurrentFile) continue;
+
+        // Check if function is in other files
+        let foundInFile: string | null = null;
+        const kiteFiles = findKiteFilesInWorkspace();
+        for (const filePath of kiteFiles) {
+            if (filePath === currentFilePath) continue;
+            const fileContent = getFileContent(filePath, document.uri);
+            if (fileContent) {
+                const loc = findFunctionDefinition(fileContent, funcName, filePath);
+                if (loc) {
+                    foundInFile = filePath;
+                    break;
+                }
+            }
+        }
+
+        const startPos = document.positionAt(funcStart);
+        const endPos = document.positionAt(funcEnd);
+        const range = Range.create(startPos, endPos);
+
+        if (foundInFile) {
+            // Function exists but might not be imported
+            if (!isSymbolImported(imports, funcName, foundInFile, currentFilePath)) {
+                // Calculate import path
+                let importPath = path.relative(currentDir, foundInFile);
+                importPath = importPath.replace(/\\/g, '/');
+
+                const diagnosticKey = `${startPos.line}:${startPos.character}:${funcName}`;
+                docDiagnosticData.set(diagnosticKey, {
+                    symbolName: funcName,
+                    filePath: foundInFile,
+                    importPath
+                });
+
+                diagnostics.push({
+                    severity: DiagnosticSeverity.Error,
+                    range,
+                    message: `Function '${funcName}' is not imported. Found in '${path.basename(foundInFile)}'.`,
+                    source: 'kite',
+                    data: diagnosticKey
+                });
+            }
+        } else {
+            // Function not found anywhere - could be undefined or a method call
+            // Only show error if it looks like a standalone function call
+            diagnostics.push({
+                severity: DiagnosticSeverity.Error,
+                range,
+                message: `Cannot resolve function '${funcName}'`,
                 source: 'kite'
             });
         }
