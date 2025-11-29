@@ -4,11 +4,11 @@
   "scopeName": "source.kite",
   "patterns": [
     { "include": "#comments" },
+    { "include": "#decorators" },
     { "include": "#strings" },
     { "include": "#numbers" },
     { "include": "#keywords" },
     { "include": "#types" },
-    { "include": "#decorators" },
     { "include": "#operators" },
     { "include": "#identifiers" }
   ],
