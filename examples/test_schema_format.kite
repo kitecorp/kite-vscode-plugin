@@ -1,0 +1,21 @@
+schema DatabaseConfig {
+    string host
+    number port = 5432
+    boolean ssl = true
+    boolean sslu = false
+}
+
+schema ServerConfig {
+    string address
+    number timeout = 30
+    boolean secure = true
+}
+
+resource SecurityGroup firewall {
+    ingress = [
+        {
+            port: port,
+            protocol: "tcp"
+        }
+    ]
+}

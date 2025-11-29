@@ -1,0 +1,7 @@
+@tags({
+Name: "test",
+Environment: "production"
+})
+resource Test main {
+name = "test"
+}

@@ -1,0 +1,25 @@
+// Array comprehensions and loops
+var environments = ["dev", "staging", "prod"]
+
+// Form 1: Compact comprehension
+var numbers = [for i in 0..10: i * 2]
+var filtered = [for x in numbers: if x > 10 { x }]
+
+// Form 2: Resource generation
+[for env in environments]
+resource S3.Bucket data {
+  name       = "data-${env}"
+  versioning = true
+}
+
+// Form 3: Standalone for loop
+for env in environments {
+  console.log("Processing environment: ${env}")
+}
+
+// While loop
+var counter = 0
+while (counter < 5) {
+  console.log(counter)
+  counter++
+}

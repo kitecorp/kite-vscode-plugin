@@ -1,0 +1,9 @@
+schema DatabaseConfig {
+string host
+number port = 5432
+boolean ssl = true
+boolean sslu = false
+}
+
+var number port = 8080
+var string siz = "t2.micro"

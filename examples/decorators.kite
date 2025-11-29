@@ -1,0 +1,49 @@
+// Decorator examples
+@existing
+@sensitive
+resource Database prod {
+  name = "production-db"
+}
+
+@minValue(1)
+@maxValue(100)
+@description("Number of instances to create")
+input number instanceCount = 10
+
+/*
+@validate(regex: "^[a-z0-9-]+$")
+@minLength(3)
+@maxLength(63)
+input string bucketName
+*/
+@validate(regex: "^[a-z0-9-]+$",
+          flag: 'i')
+@minLength(3)
+@maxLength(63)
+input string bucketName
+
+@validate(
+  flag   : 'i'
+  regex: "^[a-z0-9-]+$",
+)
+@minLength(3)
+@maxLength(63)
+input string bucketNames
+
+@provisionOn(["aws", "azure"])
+@tags({
+  Environment: "production",
+  ManagedBy  : "kite",
+  CostCenter : "engineering"
+})
+resource Storage backup {
+  name            = bucketName
+  replication = true
+}
+
+@allowed(["small", "medium", "large"])
+input string size   = "medium"
+
+@unique
+@nonEmpty
+var regions= ["us-east-1", "eu-west-1", "ap-southeast-1"]

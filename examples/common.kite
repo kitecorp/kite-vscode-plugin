@@ -1,0 +1,29 @@
+// Common shared declarations for Kite projects
+// This file is imported by simple.kite using: import * from "common.kite"
+
+// Shared type definition
+type Region = "us-east-1" | "us-west-2" | "eu-west-1"
+
+// Shared schema for configuration
+schema CommonConfig {
+  string   name   = "hi"
+  string[] names  = ["k"]
+  Region   region = "us-east-1"
+  any      data
+}
+
+// Shared variable
+var string defaultRegion = "us-east-1"
+var string appName       = "MyApplication"
+output string names = "my-output"
+
+// Shared function
+fun formatName(string prefix, string name) string {
+  return prefix + "-" + name
+}
+
+// Shared component
+component SharedLogger {
+  input string logLevel = "INFO"
+  output string endpoint = "https://logs.example.com"
+}

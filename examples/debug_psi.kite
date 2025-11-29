@@ -1,0 +1,4 @@
+schema DatabaseConfig {
+    string host
+    number port = 5432
+}

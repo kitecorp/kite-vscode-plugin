@@ -1,0 +1,61 @@
+// asd
+@count
+component WebServer {
+  @unique
+  @allowed(["dev", "prod"])
+  input string env          = "dev"
+  input string instanceType = "t2.micro"
+
+  var client = "myClient"
+
+  @count
+  resource VM.Instance server {
+    size        = instanceType
+    tag         = {
+      Environment: "$env",
+      Name       : "web-server",
+      New        : {
+        a: "b"
+      }
+    }
+    private_ips = ["172.16.10.100"]
+  }
+
+  output string endpoint = server.size
+  output string tag      = server.tag.Name
+  output string tagNameA = server.tag.New.a
+}
+
+/*
+lalal
+
+*/
+component WebServer serviceA {
+  instanceType = "t4g.normal"
+}
+// asd
+component WebServer serviceB {
+  instanceType = instanceTypes
+}
+
+input number port          = 8080
+input string instanceTypes = "t2.micro"
+
+output number port         = 8080
+output string instanceType = "t2.micro"
+
+var number portVar         = 8080
+var string instanceType = "t2.micro"
+var string size         = serviceA.endpoint
+
+var portInlay           = 8080
+var portInlayString     = "str"
+var inlaySingleString   = 'str'
+var inlayBoolean        = false
+
+
+fun greet(string name) {
+  println(name)
+}
+
+greet("alice")

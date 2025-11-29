@@ -1,0 +1,18 @@
+component WebServer {
+  input string instanceType = "t2.micro"
+  input string fromOutput   = "t2.micro"
+
+  resource VM.Instance server {
+    size = instanceType
+  }
+  output string fromOutputs = "t2.micro"
+}
+
+component WebServer serviceA {
+  instanceType = "t4g.normal"
+}
+
+component WebServer serviceB {
+  instanceType = "asd"
+  fromOutput   = serviceA.fromOutputs
+}

@@ -1,0 +1,4 @@
+schema Test {
+string    x
+    number xyz = 1
+}

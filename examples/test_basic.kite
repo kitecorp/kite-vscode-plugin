@@ -1,0 +1,4 @@
+resource Storage backup {
+name = bucketName
+replication = true
+}

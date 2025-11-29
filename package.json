@@ -1,0 +1,61 @@
+{
+  "name": "kite-language",
+  "displayName": "Kite Language",
+  "description": "Language support for Kite - Infrastructure as Code language",
+  "version": "0.1.0",
+  "publisher": "kitelang",
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "Programming Languages"
+  ],
+  "activationEvents": [
+    "onLanguage:kite"
+  ],
+  "main": "./out/extension.js",
+  "contributes": {
+    "languages": [
+      {
+        "id": "kite",
+        "aliases": ["Kite", "kite"],
+        "extensions": [".kite"],
+        "configuration": "./language-configuration.json",
+        "icon": {
+          "light": "./icons/kite-light.png",
+          "dark": "./icons/kite-dark.png"
+        }
+      }
+    ],
+    "grammars": [
+      {
+        "language": "kite",
+        "scopeName": "source.kite",
+        "path": "./syntaxes/kite.tmLanguage.json"
+      }
+    ]
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run compile",
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "pretest": "npm run compile",
+    "test": "node ./out/test/runTest.js",
+    "lint": "eslint src --ext ts",
+    "package": "vsce package"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "@types/vscode": "^1.85.0",
+    "@typescript-eslint/eslint-plugin": "^6.0.0",
+    "@typescript-eslint/parser": "^6.0.0",
+    "eslint": "^8.0.0",
+    "typescript": "^5.3.0",
+    "@vscode/vsce": "^2.22.0"
+  },
+  "dependencies": {
+    "vscode-languageclient": "^9.0.1",
+    "vscode-languageserver": "^9.0.1",
+    "vscode-languageserver-textdocument": "^1.0.11"
+  }
+}

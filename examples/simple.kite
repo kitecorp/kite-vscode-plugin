@@ -1,0 +1,57 @@
+// Simple Kite example
+// Test cross-file navigation: Cmd+Click on imported symbols
+import * from "common.kite"
+
+// Using imported type from common.kite
+// Cmd+Click on "Region" should navigate to common.kite
+type Environment = "dev" | "staging" | "prod"
+var Environment env = "$myRegion"
+
+// Using imported variable from common.kite
+// Cmd+Click on "defaultRegion" should navigate to common.kite
+var myRegion  = defaultRegion
+var myRegions = myRegion
+
+// Using imported function from common.kite
+// Cmd+Click on "formatName" should navigate to common.kite
+var formattedName  = formatName("app", appName)
+var formattedNames = formatName("apps", appName)
+
+schema DatabaseConfig {
+  string host
+  number port  = 5432
+  boolean ssl  = true
+  boolean sslu = false
+}
+
+@provisionOn(["aws"])
+@tags({Environment: "production", Team: "platform"})
+resource DatabaseConfig photos {
+  host = "my-photos-bucket"
+  port = formattedNames
+}
+input string inname = "asd"
+output string outname = "asda"
+resource CommonConfig common {
+  name = ""
+  data = 123
+}
+
+var p = common.name
+
+fun calculateCost(number instances, string name) number {
+  var baseCost = 0.10
+  print(instances)
+  return instances * baseCost
+}
+
+fun calculateCostAny(any instances, any name) any {
+  var baseCost = 0.10
+  print(instances)
+  return instances * baseCost
+}
+calculateCostAny(5, "asd")
+
+// Test: Cmd+Click on "calculateCost" above should show these usages:
+var cost1 = calculateCost(5, "test")
+var cost2 = calculateCost(10, "production")
