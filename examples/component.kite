@@ -27,7 +27,7 @@ component WebServer {
     private_ips = ["172.16.10.100"]
   }
 
-  resource DatabaseConfig server {
+  resource DatabaseConfig config {
     size        = instanceType
     tag         = {
       Environment: "$env",

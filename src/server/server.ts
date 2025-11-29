@@ -402,6 +402,495 @@ connection.onCompletion((params: TextDocumentPositionParams): CompletionItem[] =
         return completions;
     }
 
+    // Check if we're inside a schema body - only show types, not variables/functions/etc
+    if (isInsideSchemaBody(text, offset)) {
+        const isValueContext = isAfterEquals(text, offset);
+
+        if (isValueContext) {
+            // After '=' in schema - show default values based on property type
+            // Find the property type on this line
+            const lineStart = text.lastIndexOf('\n', offset - 1) + 1;
+            const lineText = text.substring(lineStart, offset);
+
+            // Pattern: type propertyName = (cursor here)
+            const propMatch = lineText.match(/^\s*(\w+(?:\[\])?)\s+\w+\s*=\s*$/);
+            const propType = propMatch ? propMatch[1] : null;
+
+            // Also extract property name for context-aware suggestions
+            const propNameMatch = lineText.match(/^\s*\w+(?:\[\])?\s+(\w+)\s*=\s*$/);
+            const propName = propNameMatch ? propNameMatch[1].toLowerCase() : '';
+
+            if (propType === 'boolean') {
+                completions.push({ label: 'true', kind: CompletionItemKind.Value, detail: 'boolean' });
+                completions.push({ label: 'false', kind: CompletionItemKind.Value, detail: 'boolean' });
+            } else if (propType === 'number') {
+                // Also extract property name for context-aware number suggestions
+                const numPropNameMatch = lineText.match(/^\s*number\s+(\w+)\s*=\s*$/);
+                const numPropName = numPropNameMatch ? numPropNameMatch[1].toLowerCase() : '';
+
+                const numberSuggestions: Record<string, { value: string; desc: string }[]> = {
+                    'port': [
+                        { value: '80', desc: 'HTTP' },
+                        { value: '443', desc: 'HTTPS' },
+                        { value: '22', desc: 'SSH' },
+                        { value: '3000', desc: 'Dev server' },
+                        { value: '3306', desc: 'MySQL' },
+                        { value: '5432', desc: 'PostgreSQL' },
+                        { value: '6379', desc: 'Redis' },
+                        { value: '8080', desc: 'HTTP alt' },
+                        { value: '27017', desc: 'MongoDB' },
+                    ],
+                    'timeout': [
+                        { value: '30', desc: '30 seconds' },
+                        { value: '60', desc: '1 minute' },
+                        { value: '300', desc: '5 minutes' },
+                        { value: '900', desc: '15 minutes' },
+                        { value: '3600', desc: '1 hour' },
+                    ],
+                    'memory': [
+                        { value: '128', desc: '128 MB (Lambda min)' },
+                        { value: '256', desc: '256 MB' },
+                        { value: '512', desc: '512 MB' },
+                        { value: '1024', desc: '1 GB' },
+                        { value: '2048', desc: '2 GB' },
+                        { value: '4096', desc: '4 GB' },
+                    ],
+                    'memorysize': [
+                        { value: '128', desc: '128 MB (Lambda min)' },
+                        { value: '256', desc: '256 MB' },
+                        { value: '512', desc: '512 MB' },
+                        { value: '1024', desc: '1 GB' },
+                        { value: '2048', desc: '2 GB' },
+                    ],
+                    'cpu': [
+                        { value: '256', desc: '0.25 vCPU (ECS)' },
+                        { value: '512', desc: '0.5 vCPU (ECS)' },
+                        { value: '1024', desc: '1 vCPU (ECS)' },
+                        { value: '2048', desc: '2 vCPU (ECS)' },
+                        { value: '4096', desc: '4 vCPU (ECS)' },
+                    ],
+                    'replicas': [
+                        { value: '1', desc: 'Single replica' },
+                        { value: '2', desc: 'HA minimum' },
+                        { value: '3', desc: 'Production HA' },
+                        { value: '5', desc: 'High availability' },
+                    ],
+                    'desiredcount': [
+                        { value: '1', desc: 'Single instance' },
+                        { value: '2', desc: 'HA minimum' },
+                        { value: '3', desc: 'Production HA' },
+                    ],
+                    'minsize': [
+                        { value: '0', desc: 'Scale to zero' },
+                        { value: '1', desc: 'Minimum 1' },
+                        { value: '2', desc: 'HA minimum' },
+                    ],
+                    'maxsize': [
+                        { value: '1', desc: 'No scaling' },
+                        { value: '3', desc: 'Small scale' },
+                        { value: '5', desc: 'Medium scale' },
+                        { value: '10', desc: 'Large scale' },
+                    ],
+                    'ttl': [
+                        { value: '60', desc: '1 minute' },
+                        { value: '300', desc: '5 minutes' },
+                        { value: '3600', desc: '1 hour' },
+                        { value: '86400', desc: '1 day' },
+                        { value: '604800', desc: '1 week' },
+                    ],
+                    'interval': [
+                        { value: '5', desc: '5 seconds' },
+                        { value: '10', desc: '10 seconds' },
+                        { value: '30', desc: '30 seconds' },
+                        { value: '60', desc: '1 minute' },
+                    ],
+                    'retries': [
+                        { value: '0', desc: 'No retries' },
+                        { value: '1', desc: 'Single retry' },
+                        { value: '3', desc: 'Standard retries' },
+                        { value: '5', desc: 'Extended retries' },
+                    ],
+                    'maxretries': [
+                        { value: '1', desc: 'Single retry' },
+                        { value: '3', desc: 'Standard retries' },
+                        { value: '5', desc: 'Extended retries' },
+                    ],
+                    'capacity': [
+                        { value: '5', desc: '5 GB' },
+                        { value: '10', desc: '10 GB' },
+                        { value: '20', desc: '20 GB' },
+                        { value: '50', desc: '50 GB' },
+                        { value: '100', desc: '100 GB' },
+                    ],
+                    'storagesize': [
+                        { value: '20', desc: '20 GB (RDS min)' },
+                        { value: '50', desc: '50 GB' },
+                        { value: '100', desc: '100 GB' },
+                        { value: '500', desc: '500 GB' },
+                    ],
+                    'threshold': [
+                        { value: '50', desc: '50%' },
+                        { value: '70', desc: '70%' },
+                        { value: '80', desc: '80%' },
+                        { value: '90', desc: '90%' },
+                    ],
+                };
+
+                const numSuggestions = numberSuggestions[numPropName];
+                if (numSuggestions) {
+                    numSuggestions.forEach(s => {
+                        completions.push({
+                            label: s.value,
+                            kind: CompletionItemKind.Value,
+                            detail: s.desc
+                        });
+                    });
+                } else {
+                    // Fallback to common ports for unknown property names
+                    const commonPorts = [
+                        { value: '80', desc: 'HTTP' },
+                        { value: '443', desc: 'HTTPS' },
+                        { value: '22', desc: 'SSH' },
+                        { value: '3000', desc: 'Dev server' },
+                        { value: '3306', desc: 'MySQL' },
+                        { value: '5432', desc: 'PostgreSQL' },
+                        { value: '6379', desc: 'Redis' },
+                        { value: '8080', desc: 'HTTP alt' },
+                        { value: '8443', desc: 'HTTPS alt' },
+                        { value: '27017', desc: 'MongoDB' },
+                    ];
+                    commonPorts.forEach(port => {
+                        completions.push({
+                            label: port.value,
+                            kind: CompletionItemKind.Value,
+                            detail: port.desc
+                        });
+                    });
+                }
+            } else if (propType === 'string') {
+                // Context-aware string suggestions based on property name
+                const stringSuggestions: Record<string, { value: string; desc: string }[]> = {
+                    'environment': [
+                        { value: '"dev"', desc: 'Development' },
+                        { value: '"staging"', desc: 'Staging' },
+                        { value: '"prod"', desc: 'Production' },
+                        { value: '"production"', desc: 'Production' },
+                        { value: '"test"', desc: 'Testing' },
+                    ],
+                    'env': [
+                        { value: '"dev"', desc: 'Development' },
+                        { value: '"staging"', desc: 'Staging' },
+                        { value: '"prod"', desc: 'Production' },
+                    ],
+                    'region': [
+                        { value: '"us-east-1"', desc: 'AWS US East' },
+                        { value: '"us-west-2"', desc: 'AWS US West' },
+                        { value: '"eu-west-1"', desc: 'AWS EU West' },
+                        { value: '"ap-southeast-1"', desc: 'AWS Asia Pacific' },
+                        { value: '"eu-central-1"', desc: 'AWS EU Central' },
+                    ],
+                    'protocol': [
+                        { value: '"http"', desc: 'HTTP' },
+                        { value: '"https"', desc: 'HTTPS' },
+                        { value: '"tcp"', desc: 'TCP' },
+                        { value: '"udp"', desc: 'UDP' },
+                        { value: '"grpc"', desc: 'gRPC' },
+                    ],
+                    'loglevel': [
+                        { value: '"debug"', desc: 'Debug level' },
+                        { value: '"info"', desc: 'Info level' },
+                        { value: '"warn"', desc: 'Warning level' },
+                        { value: '"error"', desc: 'Error level' },
+                    ],
+                    'log_level': [
+                        { value: '"debug"', desc: 'Debug level' },
+                        { value: '"info"', desc: 'Info level' },
+                        { value: '"warn"', desc: 'Warning level' },
+                        { value: '"error"', desc: 'Error level' },
+                    ],
+                    'tier': [
+                        { value: '"free"', desc: 'Free tier' },
+                        { value: '"basic"', desc: 'Basic tier' },
+                        { value: '"standard"', desc: 'Standard tier' },
+                        { value: '"premium"', desc: 'Premium tier' },
+                    ],
+                    'sku': [
+                        { value: '"free"', desc: 'Free SKU' },
+                        { value: '"basic"', desc: 'Basic SKU' },
+                        { value: '"standard"', desc: 'Standard SKU' },
+                        { value: '"premium"', desc: 'Premium SKU' },
+                    ],
+                    'size': [
+                        { value: '"small"', desc: 'Small instance' },
+                        { value: '"medium"', desc: 'Medium instance' },
+                        { value: '"large"', desc: 'Large instance' },
+                        { value: '"xlarge"', desc: 'Extra large instance' },
+                    ],
+                    'host': [
+                        { value: '"localhost"', desc: 'Local host' },
+                        { value: '"0.0.0.0"', desc: 'All interfaces' },
+                        { value: '"127.0.0.1"', desc: 'Loopback' },
+                    ],
+                    'hostname': [
+                        { value: '"localhost"', desc: 'Local host' },
+                        { value: '"0.0.0.0"', desc: 'All interfaces' },
+                    ],
+                    'provider': [
+                        { value: '"aws"', desc: 'Amazon Web Services' },
+                        { value: '"gcp"', desc: 'Google Cloud Platform' },
+                        { value: '"azure"', desc: 'Microsoft Azure' },
+                        { value: '"kubernetes"', desc: 'Kubernetes' },
+                        { value: '"docker"', desc: 'Docker' },
+                    ],
+                    'cloud': [
+                        { value: '"aws"', desc: 'Amazon Web Services' },
+                        { value: '"gcp"', desc: 'Google Cloud Platform' },
+                        { value: '"azure"', desc: 'Microsoft Azure' },
+                    ],
+                    'storage': [
+                        { value: '"standard"', desc: 'Standard storage' },
+                        { value: '"ssd"', desc: 'SSD storage' },
+                        { value: '"premium"', desc: 'Premium storage' },
+                    ],
+                    'storageclass': [
+                        { value: '"standard"', desc: 'Standard class' },
+                        { value: '"ssd"', desc: 'SSD class' },
+                        { value: '"premium"', desc: 'Premium class' },
+                    ],
+                    'restart': [
+                        { value: '"always"', desc: 'Always restart' },
+                        { value: '"on-failure"', desc: 'Restart on failure' },
+                        { value: '"never"', desc: 'Never restart' },
+                    ],
+                    'restartpolicy': [
+                        { value: '"Always"', desc: 'Always restart' },
+                        { value: '"OnFailure"', desc: 'Restart on failure' },
+                        { value: '"Never"', desc: 'Never restart' },
+                    ],
+                    'imagepullpolicy': [
+                        { value: '"Always"', desc: 'Always pull' },
+                        { value: '"IfNotPresent"', desc: 'Pull if not present' },
+                        { value: '"Never"', desc: 'Never pull' },
+                    ],
+                    'type': [
+                        { value: '"ClusterIP"', desc: 'Cluster internal' },
+                        { value: '"NodePort"', desc: 'Node port' },
+                        { value: '"LoadBalancer"', desc: 'Load balancer' },
+                    ],
+                    'cidr': [
+                        { value: '"10.0.0.0/16"', desc: 'AWS VPC default (65,536 IPs)' },
+                        { value: '"10.0.0.0/24"', desc: 'Small subnet (256 IPs)' },
+                        { value: '"10.0.1.0/24"', desc: 'Subnet 1 (256 IPs)' },
+                        { value: '"10.0.2.0/24"', desc: 'Subnet 2 (256 IPs)' },
+                        { value: '"172.16.0.0/16"', desc: 'Private range B (65,536 IPs)' },
+                        { value: '"192.168.0.0/16"', desc: 'Private range C (65,536 IPs)' },
+                    ],
+                    'cidrblock': [
+                        { value: '"10.0.0.0/16"', desc: 'AWS VPC default (65,536 IPs)' },
+                        { value: '"10.0.0.0/24"', desc: 'Small subnet (256 IPs)' },
+                        { value: '"172.16.0.0/16"', desc: 'Private range B (65,536 IPs)' },
+                        { value: '"192.168.0.0/16"', desc: 'Private range C (65,536 IPs)' },
+                    ],
+                    'vpccidr': [
+                        { value: '"10.0.0.0/16"', desc: 'AWS VPC default (65,536 IPs)' },
+                        { value: '"172.16.0.0/16"', desc: 'Private range B (65,536 IPs)' },
+                        { value: '"192.168.0.0/16"', desc: 'Private range C (65,536 IPs)' },
+                    ],
+                    'subnetcidr': [
+                        { value: '"10.0.1.0/24"', desc: 'Public subnet (256 IPs)' },
+                        { value: '"10.0.2.0/24"', desc: 'Private subnet (256 IPs)' },
+                        { value: '"10.0.3.0/24"', desc: 'Database subnet (256 IPs)' },
+                        { value: '"10.0.128.0/20"', desc: 'Large subnet (4,096 IPs)' },
+                    ],
+                    'instancetype': [
+                        { value: '"t2.micro"', desc: 'Free tier (1 vCPU, 1 GB)' },
+                        { value: '"t2.small"', desc: '1 vCPU, 2 GB' },
+                        { value: '"t3.micro"', desc: '2 vCPU, 1 GB' },
+                        { value: '"t3.small"', desc: '2 vCPU, 2 GB' },
+                        { value: '"t3.medium"', desc: '2 vCPU, 4 GB' },
+                        { value: '"m5.large"', desc: '2 vCPU, 8 GB' },
+                        { value: '"m5.xlarge"', desc: '4 vCPU, 16 GB' },
+                    ],
+                    'machinetype': [
+                        { value: '"e2-micro"', desc: 'GCP shared-core' },
+                        { value: '"e2-small"', desc: 'GCP 0.5-2 vCPU, 2 GB' },
+                        { value: '"e2-medium"', desc: 'GCP 1-2 vCPU, 4 GB' },
+                        { value: '"n1-standard-1"', desc: 'GCP 1 vCPU, 3.75 GB' },
+                    ],
+                    'availabilityzone': [
+                        { value: '"us-east-1a"', desc: 'US East zone A' },
+                        { value: '"us-east-1b"', desc: 'US East zone B' },
+                        { value: '"us-west-2a"', desc: 'US West zone A' },
+                        { value: '"eu-west-1a"', desc: 'EU West zone A' },
+                    ],
+                    'az': [
+                        { value: '"us-east-1a"', desc: 'US East zone A' },
+                        { value: '"us-east-1b"', desc: 'US East zone B' },
+                        { value: '"us-west-2a"', desc: 'US West zone A' },
+                    ],
+                    'engine': [
+                        { value: '"mysql"', desc: 'MySQL database' },
+                        { value: '"postgres"', desc: 'PostgreSQL database' },
+                        { value: '"mariadb"', desc: 'MariaDB database' },
+                        { value: '"redis"', desc: 'Redis cache' },
+                        { value: '"memcached"', desc: 'Memcached' },
+                    ],
+                    'engineversion': [
+                        { value: '"8.0"', desc: 'MySQL 8.0' },
+                        { value: '"14"', desc: 'PostgreSQL 14' },
+                        { value: '"15"', desc: 'PostgreSQL 15' },
+                        { value: '"7.0"', desc: 'Redis 7.0' },
+                    ],
+                    'schedule': [
+                        { value: '"rate(1 hour)"', desc: 'Every hour' },
+                        { value: '"rate(1 day)"', desc: 'Every day' },
+                        { value: '"cron(0 12 * * ? *)"', desc: 'Daily at noon UTC' },
+                        { value: '"cron(0 0 * * ? *)"', desc: 'Daily at midnight UTC' },
+                    ],
+                    'cron': [
+                        { value: '"0 * * * *"', desc: 'Every hour' },
+                        { value: '"0 0 * * *"', desc: 'Daily at midnight' },
+                        { value: '"0 0 * * 0"', desc: 'Weekly on Sunday' },
+                        { value: '"0 0 1 * *"', desc: 'Monthly on 1st' },
+                    ],
+                    'effect': [
+                        { value: '"Allow"', desc: 'IAM Allow' },
+                        { value: '"Deny"', desc: 'IAM Deny' },
+                    ],
+                    'action': [
+                        { value: '"allow"', desc: 'Allow action' },
+                        { value: '"deny"', desc: 'Deny action' },
+                    ],
+                    'scheme': [
+                        { value: '"internet-facing"', desc: 'Public load balancer' },
+                        { value: '"internal"', desc: 'Internal load balancer' },
+                    ],
+                    'healthcheckpath': [
+                        { value: '"/health"', desc: 'Health endpoint' },
+                        { value: '"/healthz"', desc: 'Kubernetes style' },
+                        { value: '"/ping"', desc: 'Ping endpoint' },
+                        { value: '"/"', desc: 'Root path' },
+                    ],
+                    'method': [
+                        { value: '"GET"', desc: 'GET request' },
+                        { value: '"POST"', desc: 'POST request' },
+                        { value: '"PUT"', desc: 'PUT request' },
+                        { value: '"DELETE"', desc: 'DELETE request' },
+                        { value: '"PATCH"', desc: 'PATCH request' },
+                    ],
+                    'httpmethod': [
+                        { value: '"GET"', desc: 'GET request' },
+                        { value: '"POST"', desc: 'POST request' },
+                        { value: '"PUT"', desc: 'PUT request' },
+                        { value: '"DELETE"', desc: 'DELETE request' },
+                    ],
+                    'contenttype': [
+                        { value: '"application/json"', desc: 'JSON content' },
+                        { value: '"text/html"', desc: 'HTML content' },
+                        { value: '"text/plain"', desc: 'Plain text' },
+                        { value: '"application/xml"', desc: 'XML content' },
+                    ],
+                    'encryption': [
+                        { value: '"AES256"', desc: 'S3 AES-256' },
+                        { value: '"aws:kms"', desc: 'AWS KMS' },
+                        { value: '"none"', desc: 'No encryption' },
+                    ],
+                    'acl': [
+                        { value: '"private"', desc: 'Private access' },
+                        { value: '"public-read"', desc: 'Public read access' },
+                        { value: '"authenticated-read"', desc: 'Authenticated read' },
+                        { value: '"bucket-owner-full-control"', desc: 'Bucket owner control' },
+                    ],
+                    'visibility': [
+                        { value: '"public"', desc: 'Public visibility' },
+                        { value: '"private"', desc: 'Private visibility' },
+                    ],
+                    'access': [
+                        { value: '"public"', desc: 'Public access' },
+                        { value: '"private"', desc: 'Private access' },
+                    ],
+                    'state': [
+                        { value: '"enabled"', desc: 'Enabled state' },
+                        { value: '"disabled"', desc: 'Disabled state' },
+                    ],
+                    'status': [
+                        { value: '"active"', desc: 'Active status' },
+                        { value: '"inactive"', desc: 'Inactive status' },
+                        { value: '"enabled"', desc: 'Enabled' },
+                        { value: '"disabled"', desc: 'Disabled' },
+                    ],
+                    'direction': [
+                        { value: '"ingress"', desc: 'Inbound traffic' },
+                        { value: '"egress"', desc: 'Outbound traffic' },
+                    ],
+                    'runtime': [
+                        { value: '"nodejs18.x"', desc: 'Node.js 18' },
+                        { value: '"nodejs20.x"', desc: 'Node.js 20' },
+                        { value: '"python3.11"', desc: 'Python 3.11' },
+                        { value: '"python3.12"', desc: 'Python 3.12' },
+                        { value: '"java17"', desc: 'Java 17' },
+                        { value: '"java21"', desc: 'Java 21' },
+                        { value: '"go1.x"', desc: 'Go 1.x' },
+                    ],
+                    'architecture': [
+                        { value: '"x86_64"', desc: 'Intel/AMD 64-bit' },
+                        { value: '"arm64"', desc: 'ARM 64-bit (Graviton)' },
+                    ],
+                    'platform': [
+                        { value: '"linux"', desc: 'Linux' },
+                        { value: '"windows"', desc: 'Windows' },
+                        { value: '"linux/amd64"', desc: 'Linux AMD64' },
+                        { value: '"linux/arm64"', desc: 'Linux ARM64' },
+                    ],
+                };
+
+                const suggestions = stringSuggestions[propName];
+                if (suggestions) {
+                    suggestions.forEach(s => {
+                        completions.push({
+                            label: s.value,
+                            kind: CompletionItemKind.Value,
+                            detail: s.desc,
+                            insertText: s.value
+                        });
+                    });
+                } else {
+                    // Fallback for unknown property names
+                    completions.push({ label: '""', kind: CompletionItemKind.Value, detail: 'empty string', insertText: '""' });
+                }
+            }
+            // For other types, no suggestions
+        } else {
+            // Before '=' - show types for property declarations
+            TYPES.forEach(t => {
+                completions.push({
+                    label: t,
+                    kind: CompletionItemKind.TypeParameter,
+                    detail: 'type'
+                });
+                completions.push({
+                    label: t + '[]',
+                    kind: CompletionItemKind.TypeParameter,
+                    detail: 'array type'
+                });
+            });
+
+            // Also show other schema names as potential types
+            const declarations = declarationCache.get(params.textDocument.uri) || [];
+            declarations.forEach(decl => {
+                if (decl.type === 'schema' || decl.type === 'type') {
+                    completions.push({
+                        label: decl.name,
+                        kind: decl.type === 'schema' ? CompletionItemKind.Struct : CompletionItemKind.TypeParameter,
+                        detail: decl.type
+                    });
+                }
+            });
+        }
+
+        return completions;
+    }
+
     // Find enclosing block context (resource or component we're inside)
     const enclosingBlock = findEnclosingBlock(text, offset);
 
@@ -544,6 +1033,91 @@ connection.onCompletion((params: TextDocumentPositionParams): CompletionItem[] =
         });
     });
 
+    // Add context-aware suggestions at the end for resource/component value context
+    if (isValueContext && enclosingBlock) {
+        const lineStart = text.lastIndexOf('\n', offset - 1) + 1;
+        const lineText = text.substring(lineStart, offset);
+
+        // Extract property name from line: propName = |
+        const propNameMatch = lineText.match(/^\s*(\w+)\s*=\s*$/);
+        const propName = propNameMatch ? propNameMatch[1].toLowerCase() : '';
+
+        if (propName) {
+            // Look up property type from schema/component definition
+            let propType: string | null = null;
+            if (enclosingBlock.type === 'resource') {
+                const schemaProps = extractSchemaPropertyTypes(text, enclosingBlock.typeName, params.textDocument.uri);
+                propType = schemaProps[propNameMatch![1]] || null;
+            } else if (enclosingBlock.type === 'component') {
+                const inputTypes = extractComponentInputTypes(text, enclosingBlock.typeName, params.textDocument.uri);
+                propType = inputTypes[propNameMatch![1]] || null;
+            }
+
+            // Add contextual suggestions based on property type and name
+            const contextSuggestions: { value: string; desc: string }[] = [];
+
+            if (propType === 'boolean') {
+                contextSuggestions.push({ value: 'true', desc: 'boolean' });
+                contextSuggestions.push({ value: 'false', desc: 'boolean' });
+            } else if (propType === 'number') {
+                const numberSuggestions: Record<string, { value: string; desc: string }[]> = {
+                    'port': [
+                        { value: '80', desc: 'HTTP' }, { value: '443', desc: 'HTTPS' }, { value: '22', desc: 'SSH' },
+                        { value: '3000', desc: 'Dev server' }, { value: '3306', desc: 'MySQL' }, { value: '5432', desc: 'PostgreSQL' },
+                        { value: '6379', desc: 'Redis' }, { value: '8080', desc: 'HTTP alt' }, { value: '27017', desc: 'MongoDB' },
+                    ],
+                    'timeout': [
+                        { value: '30', desc: '30 seconds' }, { value: '60', desc: '1 minute' }, { value: '300', desc: '5 minutes' },
+                        { value: '900', desc: '15 minutes' }, { value: '3600', desc: '1 hour' },
+                    ],
+                    'memory': [
+                        { value: '128', desc: '128 MB' }, { value: '256', desc: '256 MB' }, { value: '512', desc: '512 MB' },
+                        { value: '1024', desc: '1 GB' }, { value: '2048', desc: '2 GB' },
+                    ],
+                    'replicas': [
+                        { value: '1', desc: 'Single' }, { value: '2', desc: 'HA min' }, { value: '3', desc: 'Production' },
+                    ],
+                    'ttl': [
+                        { value: '60', desc: '1 minute' }, { value: '300', desc: '5 minutes' }, { value: '3600', desc: '1 hour' },
+                        { value: '86400', desc: '1 day' },
+                    ],
+                };
+                const numSuggestions = numberSuggestions[propName];
+                if (numSuggestions) {
+                    contextSuggestions.push(...numSuggestions);
+                }
+            } else if (propType === 'string') {
+                const stringSuggestions: Record<string, { value: string; desc: string }[]> = {
+                    'environment': [{ value: '"dev"', desc: 'Development' }, { value: '"staging"', desc: 'Staging' }, { value: '"prod"', desc: 'Production' }],
+                    'env': [{ value: '"dev"', desc: 'Development' }, { value: '"staging"', desc: 'Staging' }, { value: '"prod"', desc: 'Production' }],
+                    'region': [{ value: '"us-east-1"', desc: 'AWS US East' }, { value: '"us-west-2"', desc: 'AWS US West' }, { value: '"eu-west-1"', desc: 'AWS EU' }],
+                    'protocol': [{ value: '"http"', desc: 'HTTP' }, { value: '"https"', desc: 'HTTPS' }, { value: '"tcp"', desc: 'TCP' }],
+                    'host': [{ value: '"localhost"', desc: 'Local' }, { value: '"0.0.0.0"', desc: 'All interfaces' }],
+                    'provider': [{ value: '"aws"', desc: 'AWS' }, { value: '"gcp"', desc: 'GCP' }, { value: '"azure"', desc: 'Azure' }],
+                    'cidr': [{ value: '"10.0.0.0/16"', desc: 'VPC default' }, { value: '"10.0.1.0/24"', desc: 'Subnet' }],
+                    'instancetype': [{ value: '"t2.micro"', desc: 'Free tier' }, { value: '"t3.small"', desc: '2 vCPU' }, { value: '"m5.large"', desc: '2 vCPU 8GB' }],
+                    'runtime': [{ value: '"nodejs18.x"', desc: 'Node 18' }, { value: '"python3.11"', desc: 'Python 3.11' }],
+                    'loglevel': [{ value: '"debug"', desc: 'Debug' }, { value: '"info"', desc: 'Info' }, { value: '"warn"', desc: 'Warn' }, { value: '"error"', desc: 'Error' }],
+                };
+                const strSuggestions = stringSuggestions[propName];
+                if (strSuggestions) {
+                    contextSuggestions.push(...strSuggestions);
+                }
+            }
+
+            // Add suggestions with lowest priority (shown at end)
+            contextSuggestions.forEach((s, index) => {
+                completions.push({
+                    label: s.value,
+                    kind: CompletionItemKind.Value,
+                    detail: `💡 ${s.desc}`,
+                    sortText: '8' + String(index).padStart(2, '0'),
+                    insertText: s.value
+                });
+            });
+        }
+    }
+
     return completions;
 });
 
@@ -668,6 +1242,25 @@ function findEnclosingBlock(text: string, offset: number): BlockContext | null {
     }
 
     return enclosing;
+}
+
+// Helper: Check if cursor is inside a schema body
+function isInsideSchemaBody(text: string, offset: number): boolean {
+    // Find all schema declarations: schema Name {
+    const schemaRegex = /\bschema\s+\w+\s*\{/g;
+    let match;
+
+    while ((match = schemaRegex.exec(text)) !== null) {
+        const openBracePos = match.index + match[0].length - 1;
+        const closePos = findMatchingBraceForCompletion(text, openBracePos);
+
+        // Check if offset is inside this schema block
+        if (offset > openBracePos && offset < closePos) {
+            return true;
+        }
+    }
+
+    return false;
 }
 
 // Helper: Find properties already set in a block
@@ -3094,6 +3687,107 @@ function validateDocument(document: TextDocument): Diagnostic[] {
                 message: `Cannot resolve function '${funcName}'`,
                 source: 'kite'
             });
+        }
+    }
+
+    // Validate unique names within component definitions
+    // Find all component definitions: component TypeName { (without instance name)
+    const compDefRegex = /\bcomponent\s+(\w+)\s*\{/g;
+    let compDefMatch;
+    while ((compDefMatch = compDefRegex.exec(text)) !== null) {
+        // Check if this is a definition (not instantiation) by looking for instance name
+        const fullMatch = compDefMatch[0];
+        const afterComponent = fullMatch.substring(10).trim(); // after "component "
+        const parts = afterComponent.split(/\s+/);
+
+        // Definition has: TypeName { -> parts = ["TypeName", "{"]
+        // Instantiation has: TypeName instanceName { -> parts = ["TypeName", "instanceName", "{"]
+        if (parts.length !== 2 || parts[1] !== '{') {
+            continue; // This is an instantiation, skip
+        }
+
+        const componentName = compDefMatch[1];
+        const braceStart = compDefMatch.index + compDefMatch[0].length - 1;
+
+        // Find matching closing brace
+        let braceDepth = 1;
+        let pos = braceStart + 1;
+        while (pos < text.length && braceDepth > 0) {
+            if (text[pos] === '{') braceDepth++;
+            else if (text[pos] === '}') braceDepth--;
+            pos++;
+        }
+        const braceEnd = pos;
+        const bodyText = text.substring(braceStart + 1, braceEnd - 1);
+        const bodyOffset = braceStart + 1;
+
+        // Track all names within this component with their positions
+        interface NameDecl {
+            name: string;
+            type: string;
+            offset: number;
+        }
+        const nameDeclarations: NameDecl[] = [];
+
+        // Find inputs: input type name
+        const inputRegex = /\binput\s+\w+(?:\[\])?\s+(\w+)/g;
+        let inputMatch;
+        while ((inputMatch = inputRegex.exec(bodyText)) !== null) {
+            const nameOffset = bodyOffset + inputMatch.index + inputMatch[0].lastIndexOf(inputMatch[1]);
+            nameDeclarations.push({ name: inputMatch[1], type: 'input', offset: nameOffset });
+        }
+
+        // Find outputs: output type name
+        const outputRegex = /\boutput\s+\w+(?:\[\])?\s+(\w+)/g;
+        let outputMatch;
+        while ((outputMatch = outputRegex.exec(bodyText)) !== null) {
+            const nameOffset = bodyOffset + outputMatch.index + outputMatch[0].lastIndexOf(outputMatch[1]);
+            nameDeclarations.push({ name: outputMatch[1], type: 'output', offset: nameOffset });
+        }
+
+        // Find variables: var [type] name =
+        const varRegex = /\bvar\s+(?:\w+\s+)?(\w+)\s*=/g;
+        let varMatch;
+        while ((varMatch = varRegex.exec(bodyText)) !== null) {
+            const nameOffset = bodyOffset + varMatch.index + varMatch[0].indexOf(varMatch[1]);
+            nameDeclarations.push({ name: varMatch[1], type: 'variable', offset: nameOffset });
+        }
+
+        // Find resources: resource Schema name {
+        const resRegex = /\bresource\s+[\w.]+\s+(\w+)\s*\{/g;
+        let resMatch;
+        while ((resMatch = resRegex.exec(bodyText)) !== null) {
+            const nameOffset = bodyOffset + resMatch.index + resMatch[0].lastIndexOf(resMatch[1]);
+            nameDeclarations.push({ name: resMatch[1], type: 'resource', offset: nameOffset });
+        }
+
+        // Find nested component instances: component Type name {
+        const nestedCompRegex = /\bcomponent\s+\w+\s+(\w+)\s*\{/g;
+        let nestedCompMatch;
+        while ((nestedCompMatch = nestedCompRegex.exec(bodyText)) !== null) {
+            const nameOffset = bodyOffset + nestedCompMatch.index + nestedCompMatch[0].lastIndexOf(nestedCompMatch[1]);
+            nameDeclarations.push({ name: nestedCompMatch[1], type: 'component', offset: nameOffset });
+        }
+
+        // Check for duplicates
+        const seenNames = new Map<string, NameDecl>();
+        for (const decl of nameDeclarations) {
+            const existing = seenNames.get(decl.name);
+            if (existing) {
+                // Duplicate found - report error on the second occurrence
+                const startPos = document.positionAt(decl.offset);
+                const endPos = document.positionAt(decl.offset + decl.name.length);
+                const range = Range.create(startPos, endPos);
+
+                diagnostics.push({
+                    severity: DiagnosticSeverity.Error,
+                    range,
+                    message: `Duplicate name '${decl.name}' in component '${componentName}'. Already declared as ${existing.type}.`,
+                    source: 'kite'
+                });
+            } else {
+                seenNames.set(decl.name, decl);
+            }
         }
     }
 
