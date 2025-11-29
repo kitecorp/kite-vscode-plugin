@@ -123,16 +123,12 @@ connection.onCompletion((params: TextDocumentPositionParams): CompletionItem[] =
         // Only show decorator names with description visible immediately
         DECORATORS.forEach(dec => {
             completions.push({
-                label: `@${dec.name}`,
-                insertText: dec.name,
-                filterText: dec.name,
-                kind: CompletionItemKind.Text,
-                labelDetails: {
-                    detail: `  ${dec.description}`
-                },
+                label: dec.name,
+                kind: CompletionItemKind.Event,
+                detail: dec.description,
                 documentation: {
                     kind: MarkupKind.Markdown,
-                    value: `*${dec.category}*\n\n${dec.description}\n\n\`\`\`kite\n${dec.example}\n\`\`\``
+                    value: `*${dec.category}*\n\n\`\`\`kite\n${dec.example}\n\`\`\``
                 }
             });
         });

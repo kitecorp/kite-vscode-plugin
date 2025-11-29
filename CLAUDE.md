@@ -11,6 +11,16 @@ The IntelliJ plugin at `../kite-intellij-plugin` is the reference implementation
 - Feature behavior expectations
 - Test files in `../kite-intellij-plugin/examples/`
 
+## Development Principles
+
+1. **Apply existing patterns first** - Look for similar working code before creating new solutions
+2. **Ask questions when unsure** - Clarify requirements before coding
+3. **Listen to user hints** - Try user suggestions first
+4. **Debug actual problems** - Focus on what's actually broken
+5. **Prefer simple solutions** - Complexity should match the problem
+6. **When stuck, step back** - Look at similar working code
+
+
 ## Kite Language Quick Reference
 
 ```kite
