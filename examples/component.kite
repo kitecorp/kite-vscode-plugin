@@ -20,7 +20,7 @@ component WebServer {
     }
     private_ips = ["172.16.10.100"]
   }
-
+  // some output
   output string endpoint = server.size
   output string tag      = server.tag.Name
   output string tagNameA = server.tag.New.a
@@ -47,6 +47,7 @@ output string instanceType = "t2.micro"
 var number portVar         = 8080
 var string instanceType = "t2.micro"
 var string size         = serviceA.endpoint
+
 
 var portInlay           = 8080
 var portInlayString     = "str"

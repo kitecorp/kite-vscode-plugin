@@ -322,14 +322,24 @@ connection.onCompletion((params: TextDocumentPositionParams): CompletionItem[] =
 
         if (decl) {
             // Add properties based on declaration type
-            if (decl.type === 'resource' || decl.type === 'component') {
-                // For resources/components, suggest properties from their body
+            if (decl.type === 'resource') {
+                // For resources, suggest properties from their body
                 const bodyProps = extractPropertiesFromBody(text, decl.name);
                 bodyProps.forEach(prop => {
                     completions.push({
                         label: prop,
                         kind: CompletionItemKind.Property,
                         detail: 'property'
+                    });
+                });
+            } else if (decl.type === 'component' && decl.componentType) {
+                // For component instances, find the component type and show only outputs
+                const outputs = extractComponentOutputs(text, decl.componentType);
+                outputs.forEach(output => {
+                    completions.push({
+                        label: output.name,
+                        kind: CompletionItemKind.Property,
+                        detail: `output: ${output.type}`
                     });
                 });
             }
@@ -1098,6 +1108,61 @@ function scanDocument(document: TextDocument): Declaration[] {
     }
 
     return declarations;
+}
+
+// Helper: Extract outputs from a component type definition
+interface OutputInfo {
+    name: string;
+    type: string;
+}
+
+function extractComponentOutputs(text: string, componentTypeName: string): OutputInfo[] {
+    const outputs: OutputInfo[] = [];
+
+    // Find the component type definition: component TypeName {
+    // (not an instance which would be: component TypeName instanceName {)
+    const regex = new RegExp(`\\bcomponent\\s+${escapeRegex(componentTypeName)}\\s*\\{`, 'g');
+    let match;
+
+    while ((match = regex.exec(text)) !== null) {
+        // Check if this is a type definition (no instance name before {)
+        const beforeBrace = text.substring(match.index, match.index + match[0].length);
+        // Type definition has exactly: component TypeName {
+        // Instance has: component TypeName instanceName {
+        const parts = beforeBrace.trim().split(/\s+/);
+        if (parts.length !== 2 && parts[parts.length - 1] !== '{') {
+            // Skip - this is likely an instance, not a type definition
+            // Actually let's check: parts should be ['component', 'TypeName', '{']
+        }
+
+        const startIndex = match.index + match[0].length;
+        let braceDepth = 1;
+        let i = startIndex;
+
+        while (i < text.length && braceDepth > 0) {
+            if (text[i] === '{') braceDepth++;
+            else if (text[i] === '}') braceDepth--;
+            i++;
+        }
+
+        const bodyText = text.substring(startIndex, i - 1);
+
+        // Find output declarations: output type name [= value]
+        const outputRegex = /^\s*output\s+(\w+(?:\[\])?)\s+(\w+)/gm;
+        let outputMatch;
+        while ((outputMatch = outputRegex.exec(bodyText)) !== null) {
+            const outputType = outputMatch[1];
+            const outputName = outputMatch[2];
+            if (!outputs.find(o => o.name === outputName)) {
+                outputs.push({ name: outputName, type: outputType });
+            }
+        }
+
+        // Found the component definition, no need to continue
+        if (outputs.length > 0) break;
+    }
+
+    return outputs;
 }
 
 // Helper: Extract properties from a declaration body
