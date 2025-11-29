@@ -81,30 +81,31 @@ const TYPES = ['string', 'number', 'boolean', 'any', 'object', 'void'];
 // Built-in decorators with descriptions (from DECORATORS.md)
 interface DecoratorInfo {
     name: string;
+    category: string;
     description: string;
     example: string;
 }
 
 const DECORATORS: DecoratorInfo[] = [
     // Validation decorators
-    { name: 'minValue', description: 'Minimum value for numbers/arrays', example: '@minValue(1)' },
-    { name: 'maxValue', description: 'Maximum value for numbers/arrays', example: '@maxValue(100)' },
-    { name: 'minLength', description: 'Minimum length for strings/arrays', example: '@minLength(3)' },
-    { name: 'maxLength', description: 'Maximum length for strings/arrays', example: '@maxLength(255)' },
-    { name: 'nonEmpty', description: 'Ensures strings/arrays are not empty', example: '@nonEmpty' },
-    { name: 'validate', description: 'Custom validation with regex', example: '@validate(regex: "^[a-z]+$")' },
-    { name: 'allowed', description: 'Whitelist of allowed values', example: '@allowed(["dev", "prod"])' },
-    { name: 'unique', description: 'Ensures array elements are unique', example: '@unique' },
+    { name: 'minValue', category: 'validation', description: 'Minimum value for numbers/arrays', example: '@minValue(1)' },
+    { name: 'maxValue', category: 'validation', description: 'Maximum value for numbers/arrays', example: '@maxValue(100)' },
+    { name: 'minLength', category: 'validation', description: 'Minimum length for strings/arrays', example: '@minLength(3)' },
+    { name: 'maxLength', category: 'validation', description: 'Maximum length for strings/arrays', example: '@maxLength(255)' },
+    { name: 'nonEmpty', category: 'validation', description: 'Ensures strings/arrays are not empty', example: '@nonEmpty' },
+    { name: 'validate', category: 'validation', description: 'Custom validation with regex', example: '@validate(regex: "^[a-z]+$")' },
+    { name: 'allowed', category: 'validation', description: 'Whitelist of allowed values', example: '@allowed(["dev", "prod"])' },
+    { name: 'unique', category: 'validation', description: 'Ensures array elements are unique', example: '@unique' },
     // Resource decorators
-    { name: 'existing', description: 'Reference existing cloud resources', example: '@existing' },
-    { name: 'sensitive', description: 'Mark sensitive data', example: '@sensitive' },
-    { name: 'dependsOn', description: 'Explicit dependency declaration', example: '@dependsOn(["vpc"])' },
-    { name: 'tags', description: 'Add cloud provider tags', example: '@tags({env: "prod"})' },
-    { name: 'provisionOn', description: 'Target specific cloud providers', example: '@provisionOn(["aws"])' },
-    { name: 'cloud', description: 'Property is set by cloud provider', example: '@cloud' },
+    { name: 'existing', category: 'resource', description: 'Reference existing cloud resources', example: '@existing' },
+    { name: 'sensitive', category: 'resource', description: 'Mark sensitive data', example: '@sensitive' },
+    { name: 'dependsOn', category: 'resource', description: 'Explicit dependency declaration', example: '@dependsOn(["vpc"])' },
+    { name: 'tags', category: 'resource', description: 'Add cloud provider tags', example: '@tags({env: "prod"})' },
+    { name: 'provisionOn', category: 'resource', description: 'Target specific cloud providers', example: '@provisionOn(["aws"])' },
+    { name: 'cloud', category: 'resource', description: 'Property is set by cloud provider', example: '@cloud' },
     // Metadata decorators
-    { name: 'description', description: 'Documentation for inputs/outputs', example: '@description("Port number")' },
-    { name: 'count', description: 'Create N instances (injects $count)', example: '@count(3)' },
+    { name: 'description', category: 'metadata', description: 'Documentation for inputs/outputs', example: '@description("Port number")' },
+    { name: 'count', category: 'metadata', description: 'Create N instances (injects $count)', example: '@count(3)' },
 ];
 
 // Completion handler
@@ -119,13 +120,16 @@ connection.onCompletion((params: TextDocumentPositionParams): CompletionItem[] =
 
     // Check if we're after @ (decorator context)
     if (beforeCursor.match(/@\s*\w*$/)) {
-        // Only show decorator names with descriptions
+        // Only show decorator names with description visible immediately
         DECORATORS.forEach(dec => {
             completions.push({
                 label: dec.name,
                 kind: CompletionItemKind.Function,
-                detail: dec.description,
-                documentation: `Example: \`${dec.example}\``
+                detail: dec.category,
+                documentation: {
+                    kind: MarkupKind.Markdown,
+                    value: `${dec.description}\n\n\`\`\`kite\n${dec.example}\n\`\`\``
+                }
             });
         });
         return completions;
