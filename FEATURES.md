@@ -200,11 +200,66 @@ Provides the outline view in VS Code's sidebar.
 
 ---
 
-## 10. Inlay Hints (Partial)
+## 10. Inlay Hints
 
 **Handler:** `connection.onRequest('textDocument/inlayHint')`
 
-*Currently implemented but may need enhancement.*
+Shows inline type and parameter hints.
+
+### Type Hints for Variables
+When `var` is declared without explicit type, shows inferred type:
+```kite
+var x = 5           // x: number
+var name = "hello"  // name: string
+var flag = true     // flag: boolean
+var items = [1, 2]  // items: array
+var config = {}     // config: object
+```
+
+### Parameter Hints at Call Sites
+Shows parameter names before arguments in function calls:
+```kite
+calculateCost(5, "production")
+// Shows: calculateCost(instances: 5, tier: "production")
+```
+
+**Skipped when:**
+- Argument is already a named argument (`name: value`)
+- Argument variable name matches parameter name
+- Calling keywords (`if`, `while`, `for`, etc.)
+
+### Property Type Hints in Resource Bodies
+Shows property types from schema definition:
+```kite
+resource ServerConfig webServer {
+  host = "localhost"  // host: string
+  port = 8080         // port: number
+  ssl = true          // ssl: boolean
+}
+```
+
+### Property Type Hints in Component Instances
+Shows input types from component definition:
+```kite
+component WebServer api {
+  name = "payments"   // name: string
+  replicas = 3        // replicas: number
+}
+```
+
+### Type Inference
+The `inferTypeFromValue` helper detects:
+| Value | Inferred Type |
+|-------|---------------|
+| `"..."` or `'...'` | `string` |
+| `123`, `-45`, `3.14` | `number` |
+| `true`, `false` | `boolean` |
+| `null` | `null` |
+| `[...]` | `array` |
+| `{...}` | `object` |
+
+### VS Code Settings
+Enable inlay hints: **Settings → Editor → Inlay Hints → Enabled**
 
 ---
 
@@ -247,9 +302,9 @@ Provides the outline view in VS Code's sidebar.
 
 ## Future Features
 
-| Feature | Status |
-|---------|--------|
-| Code Formatting | Planned |
-| Rename Symbol | Planned |
-| Type Checking | Planned |
-| Unused Variable Warnings | Planned |
+| Feature | Description | Status |
+|---------|-------------|--------|
+| Code Formatting | Auto-format Kite files with consistent indentation | Planned |
+| Rename Symbol | Rename variables/functions across file | Planned |
+| Type Checking | Warn on type mismatches in assignments | Planned |
+| Unused Variable Warnings | Highlight declared but unused variables | Planned |

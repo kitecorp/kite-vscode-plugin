@@ -2005,12 +2005,111 @@ connection.onDefinition((params: TextDocumentPositionParams): Definition | null 
         }
     }
 
-    // Search for top-level declarations
+    // Search for top-level declarations in current file first
     const declarations = declarationCache.get(params.textDocument.uri) || [];
     const decl = declarations.find(d => d.name === word);
 
     if (decl) {
         return Location.create(decl.uri, decl.nameRange);
+    }
+
+    // Search other files in workspace for imported symbols
+    const currentFilePath = URI.parse(params.textDocument.uri).fsPath;
+    const imports = extractImports(text);
+    const kiteFiles = findKiteFilesInWorkspace();
+
+    for (const filePath of kiteFiles) {
+        if (filePath === currentFilePath) continue;
+
+        // Check if symbols from this file are imported
+        const fileContent = getFileContent(filePath, params.textDocument.uri);
+        if (fileContent) {
+            // Look for the declaration in this file
+            const fileUri = URI.file(filePath).toString();
+
+            // Check for schema definition
+            const schemaRegex = new RegExp(`\\bschema\\s+(${escapeRegex(word)})\\s*\\{`);
+            const schemaMatch = schemaRegex.exec(fileContent);
+            if (schemaMatch) {
+                // Check if imported
+                if (isSymbolImported(imports, word, filePath, currentFilePath)) {
+                    const nameStart = schemaMatch.index + schemaMatch[0].indexOf(word);
+                    const startPos = offsetToPosition(fileContent, nameStart);
+                    const endPos = offsetToPosition(fileContent, nameStart + word.length);
+                    return Location.create(fileUri, Range.create(startPos, endPos));
+                }
+            }
+
+            // Check for component definition
+            const componentDefRegex = new RegExp(`\\bcomponent\\s+(${escapeRegex(word)})\\s*\\{`);
+            const componentDefMatch = componentDefRegex.exec(fileContent);
+            if (componentDefMatch) {
+                // Check if this is a definition (not an instantiation)
+                // If there's no instance name between component name and {, it's a definition
+                const betweenKeywordAndBrace = fileContent.substring(
+                    componentDefMatch.index + 10,
+                    componentDefMatch.index + componentDefMatch[0].length - 1
+                ).trim();
+                const parts = betweenKeywordAndBrace.split(/\s+/).filter((s: string) => s);
+                if (parts.length === 1) {
+                    // Check if imported
+                    if (isSymbolImported(imports, word, filePath, currentFilePath)) {
+                        const nameStart = componentDefMatch.index + componentDefMatch[0].indexOf(word);
+                        const startPos = offsetToPosition(fileContent, nameStart);
+                        const endPos = offsetToPosition(fileContent, nameStart + word.length);
+                        return Location.create(fileUri, Range.create(startPos, endPos));
+                    }
+                }
+            }
+
+            // Check for function definition
+            const funcRegex = new RegExp(`\\bfun\\s+(${escapeRegex(word)})\\s*\\(`);
+            const funcMatch = funcRegex.exec(fileContent);
+            if (funcMatch) {
+                if (isSymbolImported(imports, word, filePath, currentFilePath)) {
+                    const nameStart = funcMatch.index + funcMatch[0].indexOf(word);
+                    const startPos = offsetToPosition(fileContent, nameStart);
+                    const endPos = offsetToPosition(fileContent, nameStart + word.length);
+                    return Location.create(fileUri, Range.create(startPos, endPos));
+                }
+            }
+
+            // Check for type definition
+            const typeRegex = new RegExp(`\\btype\\s+(${escapeRegex(word)})\\s*=`);
+            const typeMatch = typeRegex.exec(fileContent);
+            if (typeMatch) {
+                if (isSymbolImported(imports, word, filePath, currentFilePath)) {
+                    const nameStart = typeMatch.index + typeMatch[0].indexOf(word);
+                    const startPos = offsetToPosition(fileContent, nameStart);
+                    const endPos = offsetToPosition(fileContent, nameStart + word.length);
+                    return Location.create(fileUri, Range.create(startPos, endPos));
+                }
+            }
+
+            // Check for resource/component instance (var-like declarations)
+            const resourceRegex = new RegExp(`\\bresource\\s+\\w+(?:\\.\\w+)*\\s+(${escapeRegex(word)})\\s*\\{`);
+            const resourceMatch = resourceRegex.exec(fileContent);
+            if (resourceMatch) {
+                if (isSymbolImported(imports, word, filePath, currentFilePath)) {
+                    const nameStart = resourceMatch.index + resourceMatch[0].indexOf(word);
+                    const startPos = offsetToPosition(fileContent, nameStart);
+                    const endPos = offsetToPosition(fileContent, nameStart + word.length);
+                    return Location.create(fileUri, Range.create(startPos, endPos));
+                }
+            }
+
+            // Check for variable definition
+            const varRegex = new RegExp(`\\bvar\\s+(?:\\w+\\s+)?(${escapeRegex(word)})\\s*=`);
+            const varMatch = varRegex.exec(fileContent);
+            if (varMatch) {
+                if (isSymbolImported(imports, word, filePath, currentFilePath)) {
+                    const nameStart = varMatch.index + varMatch[0].indexOf(word);
+                    const startPos = offsetToPosition(fileContent, nameStart);
+                    const endPos = offsetToPosition(fileContent, nameStart + word.length);
+                    return Location.create(fileUri, Range.create(startPos, endPos));
+                }
+            }
+        }
     }
 
     return null;
@@ -2025,15 +2124,53 @@ connection.onReferences((params): Location[] => {
     if (!word) return [];
 
     const locations: Location[] = [];
-    const text = document.getText();
+    const currentFilePath = URI.parse(params.textDocument.uri).fsPath;
 
-    // Find all occurrences of the word
+    // Helper to check if position is inside a comment
+    function isInComment(text: string, pos: number): boolean {
+        const lineStart = text.lastIndexOf('\n', pos - 1) + 1;
+        const lineBeforePos = text.substring(lineStart, pos);
+        if (lineBeforePos.includes('//')) return true;
+
+        const textBefore = text.substring(0, pos);
+        const lastBlockStart = textBefore.lastIndexOf('/*');
+        if (lastBlockStart !== -1) {
+            const lastBlockEnd = textBefore.lastIndexOf('*/');
+            if (lastBlockEnd < lastBlockStart) return true;
+        }
+        return false;
+    }
+
+    // Search current file
+    const text = document.getText();
     const regex = new RegExp(`\\b${escapeRegex(word)}\\b`, 'g');
     let match;
     while ((match = regex.exec(text)) !== null) {
+        if (isInComment(text, match.index)) continue;
+
         const startPos = document.positionAt(match.index);
         const endPos = document.positionAt(match.index + word.length);
         locations.push(Location.create(params.textDocument.uri, Range.create(startPos, endPos)));
+    }
+
+    // Search other files in workspace
+    const kiteFiles = findKiteFilesInWorkspace();
+    for (const filePath of kiteFiles) {
+        if (filePath === currentFilePath) continue;
+
+        const fileContent = getFileContent(filePath, params.textDocument.uri);
+        if (fileContent) {
+            const fileUri = URI.file(filePath).toString();
+            const fileRegex = new RegExp(`\\b${escapeRegex(word)}\\b`, 'g');
+            let fileMatch;
+            while ((fileMatch = fileRegex.exec(fileContent)) !== null) {
+                if (isInComment(fileContent, fileMatch.index)) continue;
+
+                const startPos = offsetToPosition(fileContent, fileMatch.index);
+                const endPos = offsetToPosition(fileContent, fileMatch.index + word.length);
+                locations.push(Location.create(fileUri, Range.create(startPos, endPos)));
+            }
+        }
     }
 
     return locations;
@@ -2204,8 +2341,43 @@ connection.onRequest('textDocument/inlayHint', (params: InlayHintParams): InlayH
             continue; // This is a declaration, not a call
         }
 
-        // Find the function declaration to get parameter names
-        const funcDecl = declarations.find(d => d.type === 'function' && d.name === funcName);
+        // Find the function declaration to get parameter names (including cross-file)
+        let funcDecl = declarations.find(d => d.type === 'function' && d.name === funcName);
+
+        // If not found in current file, search other files
+        if (!funcDecl) {
+            const kiteFiles = findKiteFilesInWorkspace();
+            for (const filePath of kiteFiles) {
+                const fileContent = getFileContent(filePath, params.textDocument.uri);
+                if (fileContent) {
+                    // Look for function definition in this file
+                    const funcRegex = new RegExp(`\\bfun\\s+(${escapeRegex(funcName)})\\s*\\(([^)]*)\\)`, 'g');
+                    const funcMatch = funcRegex.exec(fileContent);
+                    if (funcMatch) {
+                        // Parse parameters
+                        const paramsStr = funcMatch[2];
+                        const paramList: FunctionParameter[] = [];
+                        const paramRegex = /(\w+)\s+(\w+)/g;
+                        let paramMatch;
+                        while ((paramMatch = paramRegex.exec(paramsStr)) !== null) {
+                            paramList.push({ type: paramMatch[1], name: paramMatch[2] });
+                        }
+                        if (paramList.length > 0) {
+                            funcDecl = {
+                                name: funcName,
+                                type: 'function',
+                                parameters: paramList,
+                                range: Range.create(Position.create(0, 0), Position.create(0, 0)),
+                                nameRange: Range.create(Position.create(0, 0), Position.create(0, 0)),
+                                uri: filePath
+                            };
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+
         if (!funcDecl || !funcDecl.parameters || funcDecl.parameters.length === 0) {
             continue;
         }
@@ -3211,13 +3383,25 @@ function extractPropertiesFromBody(text: string, declarationName: string): strin
 }
 
 // Helper: Get word at position
+// Helper: Convert offset to Position in a text string
+function offsetToPosition(text: string, offset: number): Position {
+    const lines = text.substring(0, offset).split('\n');
+    return Position.create(lines.length - 1, lines[lines.length - 1].length);
+}
+
 function getWordAtPosition(document: TextDocument, position: Position): string | null {
     const text = document.getText();
     const offset = document.offsetAt(position);
 
+    // Handle case where cursor might be at the very end of a word
+    let adjustedOffset = offset;
+    if (adjustedOffset > 0 && !/\w/.test(text[adjustedOffset] || '') && /\w/.test(text[adjustedOffset - 1])) {
+        adjustedOffset--;
+    }
+
     // Find word boundaries
-    let start = offset;
-    let end = offset;
+    let start = adjustedOffset;
+    let end = adjustedOffset;
 
     while (start > 0 && /\w/.test(text[start - 1])) {
         start--;

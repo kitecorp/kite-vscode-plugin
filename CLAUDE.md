@@ -164,11 +164,11 @@ Key tokens from the ANTLR lexer (`../kite-intellij-plugin/src/main/antlr/cloud/k
 | Feature | IntelliJ File | LSP Method | Status |
 |---------|--------------|------------|--------|
 | Document Symbols | `KiteStructureViewElement.java` | `textDocument/documentSymbol` | ✅ |
+| Inlay Hints | `KiteInlayHintsProvider.java` | `textDocument/inlayHint` | ✅ |
 
 ### Priority 1: Remaining Features
 | Feature | IntelliJ File | LSP Method | Status |
 |---------|--------------|------------|--------|
-| Inlay Hints | `KiteInlayHintsProvider.java` | `textDocument/inlayHint` | ⬜ |
 | Code Formatting | `KiteBlock.java` | `textDocument/formatting` | ⬜ |
 | Rename Symbol | - | `textDocument/rename` | ⬜ |
 | Type Checking | `KiteTypeCheckingAnnotator.java` | `textDocument/publishDiagnostics` | ⬜ |
