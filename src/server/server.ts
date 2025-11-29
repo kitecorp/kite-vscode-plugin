@@ -78,6 +78,35 @@ const KEYWORDS = [
 
 const TYPES = ['string', 'number', 'boolean', 'any', 'object', 'void'];
 
+// Built-in decorators with descriptions (from DECORATORS.md)
+interface DecoratorInfo {
+    name: string;
+    description: string;
+    example: string;
+}
+
+const DECORATORS: DecoratorInfo[] = [
+    // Validation decorators
+    { name: 'minValue', description: 'Minimum value for numbers/arrays', example: '@minValue(1)' },
+    { name: 'maxValue', description: 'Maximum value for numbers/arrays', example: '@maxValue(100)' },
+    { name: 'minLength', description: 'Minimum length for strings/arrays', example: '@minLength(3)' },
+    { name: 'maxLength', description: 'Maximum length for strings/arrays', example: '@maxLength(255)' },
+    { name: 'nonEmpty', description: 'Ensures strings/arrays are not empty', example: '@nonEmpty' },
+    { name: 'validate', description: 'Custom validation with regex', example: '@validate(regex: "^[a-z]+$")' },
+    { name: 'allowed', description: 'Whitelist of allowed values', example: '@allowed(["dev", "prod"])' },
+    { name: 'unique', description: 'Ensures array elements are unique', example: '@unique' },
+    // Resource decorators
+    { name: 'existing', description: 'Reference existing cloud resources', example: '@existing' },
+    { name: 'sensitive', description: 'Mark sensitive data', example: '@sensitive' },
+    { name: 'dependsOn', description: 'Explicit dependency declaration', example: '@dependsOn(["vpc"])' },
+    { name: 'tags', description: 'Add cloud provider tags', example: '@tags({env: "prod"})' },
+    { name: 'provisionOn', description: 'Target specific cloud providers', example: '@provisionOn(["aws"])' },
+    { name: 'cloud', description: 'Property is set by cloud provider', example: '@cloud' },
+    // Metadata decorators
+    { name: 'description', description: 'Documentation for inputs/outputs', example: '@description("Port number")' },
+    { name: 'count', description: 'Create N instances (injects $count)', example: '@count(3)' },
+];
+
 // Completion handler
 connection.onCompletion((params: TextDocumentPositionParams): CompletionItem[] => {
     const document = documents.get(params.textDocument.uri);
@@ -86,9 +115,23 @@ connection.onCompletion((params: TextDocumentPositionParams): CompletionItem[] =
     const completions: CompletionItem[] = [];
     const text = document.getText();
     const offset = document.offsetAt(params.position);
+    const beforeCursor = text.substring(Math.max(0, offset - 100), offset);
+
+    // Check if we're after @ (decorator context)
+    if (beforeCursor.match(/@\s*\w*$/)) {
+        // Only show decorator names with descriptions
+        DECORATORS.forEach(dec => {
+            completions.push({
+                label: dec.name,
+                kind: CompletionItemKind.Function,
+                detail: dec.description,
+                documentation: `Example: \`${dec.example}\``
+            });
+        });
+        return completions;
+    }
 
     // Check if we're after a dot (property access)
-    const beforeCursor = text.substring(Math.max(0, offset - 50), offset);
     const dotMatch = beforeCursor.match(/(\w+)\.\s*$/);
 
     if (dotMatch) {
@@ -114,6 +157,12 @@ connection.onCompletion((params: TextDocumentPositionParams): CompletionItem[] =
         return completions;
     }
 
+    // Find enclosing block context (resource or component we're inside)
+    const enclosingBlock = findEnclosingBlock(text, offset);
+
+    // Check if we're after '=' (value context - types should not be shown)
+    const isValueContext = isAfterEquals(text, offset);
+
     // Add keywords
     KEYWORDS.forEach(kw => {
         completions.push({
@@ -123,23 +172,34 @@ connection.onCompletion((params: TextDocumentPositionParams): CompletionItem[] =
         });
     });
 
-    // Add types
-    TYPES.forEach(t => {
-        completions.push({
-            label: t,
-            kind: CompletionItemKind.TypeParameter,
-            detail: 'type'
+    // Add types only if NOT in value context (right side of =)
+    if (!isValueContext) {
+        TYPES.forEach(t => {
+            completions.push({
+                label: t,
+                kind: CompletionItemKind.TypeParameter,
+                detail: 'type'
+            });
+            completions.push({
+                label: t + '[]',
+                kind: CompletionItemKind.TypeParameter,
+                detail: 'array type'
+            });
         });
-        completions.push({
-            label: t + '[]',
-            kind: CompletionItemKind.TypeParameter,
-            detail: 'array type'
-        });
-    });
+    }
 
-    // Add declarations from current file
+    // Add declarations from current file (filtered based on context)
     const declarations = declarationCache.get(params.textDocument.uri) || [];
     declarations.forEach(decl => {
+        // Skip outputs from the same enclosing block
+        if (enclosingBlock && decl.type === 'output') {
+            // Check if this output is defined inside the same block we're in
+            const outputOffset = document.offsetAt(decl.range.start);
+            if (outputOffset >= enclosingBlock.start && outputOffset <= enclosingBlock.end) {
+                return; // Skip - this output is from the same block
+            }
+        }
+
         completions.push({
             label: decl.name,
             kind: getCompletionKind(decl.type),
@@ -149,6 +209,77 @@ connection.onCompletion((params: TextDocumentPositionParams): CompletionItem[] =
 
     return completions;
 });
+
+// Helper: Check if we're after '=' on the same line (value context)
+function isAfterEquals(text: string, offset: number): boolean {
+    // Walk backwards to find '=' or newline
+    let pos = offset - 1;
+    while (pos >= 0) {
+        const char = text[pos];
+        if (char === '\n') {
+            return false; // Hit newline before finding '='
+        }
+        if (char === '=') {
+            // Make sure it's not == or !=
+            if (pos > 0 && (text[pos - 1] === '=' || text[pos - 1] === '!')) {
+                pos--;
+                continue;
+            }
+            return true;
+        }
+        pos--;
+    }
+    return false;
+}
+
+// Helper: Find the enclosing resource/component block
+interface BlockContext {
+    name: string;
+    type: 'resource' | 'component';
+    start: number;
+    end: number;
+}
+
+function findEnclosingBlock(text: string, offset: number): BlockContext | null {
+    // Find all resource/component declarations
+    const blockRegex = /\b(resource|component)\s+\w+(?:\.\w+)*\s+(\w+)\s*\{/g;
+    let match;
+    let enclosing: BlockContext | null = null;
+
+    while ((match = blockRegex.exec(text)) !== null) {
+        const blockStart = match.index;
+        const openBracePos = blockStart + match[0].length - 1;
+        const blockEnd = findMatchingBraceForCompletion(text, openBracePos);
+
+        // Check if offset is inside this block
+        if (offset > openBracePos && offset < blockEnd) {
+            // Found a block containing our position
+            // Keep searching for nested blocks (most specific)
+            enclosing = {
+                name: match[2],
+                type: match[1] as 'resource' | 'component',
+                start: blockStart,
+                end: blockEnd
+            };
+        }
+    }
+
+    return enclosing;
+}
+
+// Helper for completion (separate from the other one to avoid conflicts)
+function findMatchingBraceForCompletion(text: string, openBracePos: number): number {
+    let braceDepth = 1;
+    let pos = openBracePos + 1;
+
+    while (pos < text.length && braceDepth > 0) {
+        if (text[pos] === '{') braceDepth++;
+        else if (text[pos] === '}') braceDepth--;
+        pos++;
+    }
+
+    return pos;
+}
 
 // Go to Definition handler
 connection.onDefinition((params: TextDocumentPositionParams): Definition | null => {

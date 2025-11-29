@@ -12,7 +12,8 @@
       "outFiles": [
         "${workspaceFolder}/out/**/*.js"
       ],
-      "preLaunchTask": "npm: compile"
+      "preLaunchTask": "npm: compile",
+      "internalConsoleOptions": "neverOpen"
     },
     {
       "name": "Run Extension (No Compile)",
@@ -24,7 +25,8 @@
       ],
       "outFiles": [
         "${workspaceFolder}/out/**/*.js"
-      ]
+      ],
+      "internalConsoleOptions": "neverOpen"
     }
   ]
 }
