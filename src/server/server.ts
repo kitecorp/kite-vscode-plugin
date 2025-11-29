@@ -23,6 +23,11 @@ import {
     InlayHint,
     InlayHintKind,
     InlayHintParams,
+    CodeAction,
+    CodeActionKind,
+    CodeActionParams,
+    TextEdit,
+    WorkspaceEdit,
 } from 'vscode-languageserver/node';
 
 import { TextDocument } from 'vscode-languageserver-textdocument';
@@ -66,6 +71,14 @@ const declarationCache: Map<string, Declaration[]> = new Map();
 // Workspace folders for cross-file resolution
 let workspaceFolders: string[] = [];
 
+// Diagnostic data for code actions (stores import suggestions)
+interface ImportSuggestion {
+    symbolName: string;
+    filePath: string;
+    importPath: string;
+}
+const diagnosticData: Map<string, Map<string, ImportSuggestion>> = new Map(); // uri -> (diagnosticKey -> suggestion)
+
 connection.onInitialize((params: InitializeParams): InitializeResult => {
     // Store workspace folders for cross-file resolution
     if (params.workspaceFolders) {
@@ -91,6 +104,9 @@ connection.onInitialize((params: InitializeParams): InitializeResult => {
             definitionProvider: true,
             referencesProvider: true,
             hoverProvider: true,
+            codeActionProvider: {
+                codeActionKinds: ['quickfix']
+            }
         }
     };
 });
@@ -772,127 +788,6 @@ function extractImports(text: string): ImportInfo[] {
     return imports;
 }
 
-// Helper: Prompt user to import a file
-async function promptForImport(symbolName: string, targetFilePath: string, currentFilePath: string, currentDocUri: string): Promise<void> {
-    const targetFileName = path.basename(targetFilePath);
-    const currentDir = path.dirname(currentFilePath);
-
-    // Calculate relative import path
-    let importPath = path.relative(currentDir, targetFilePath);
-    // Use forward slashes for import paths
-    importPath = importPath.replace(/\\/g, '/');
-
-    const message = `'${symbolName}' is defined in '${targetFileName}' which is not imported. Add import?`;
-
-    const result = await connection.window.showInformationMessage(
-        message,
-        { title: 'Add Import' },
-        { title: 'Cancel' }
-    );
-
-    if (result?.title === 'Add Import') {
-        const document = documents.get(currentDocUri);
-        if (document) {
-            const text = document.getText();
-
-            // Check if there's already an import from this file
-            // Match: import X from "path" or import X, Y from "path"
-            const existingImportRegex = new RegExp(
-                `^(import\\s+)([\\w\\s,]+)(\\s+from\\s+["']${escapeRegex(importPath)}["'])`,
-                'gm'
-            );
-            const existingMatch = existingImportRegex.exec(text);
-
-            if (existingMatch) {
-                // Add to existing import
-                const importPrefix = existingMatch[1];  // "import "
-                const existingSymbols = existingMatch[2];  // "X" or "X, Y"
-                const importSuffix = existingMatch[3];  // " from "path""
-
-                // Check if it's a wildcard import
-                if (existingSymbols.trim() === '*') {
-                    // Already importing everything, no need to add
-                    return;
-                }
-
-                // Check if symbol is already imported
-                const symbolList = existingSymbols.split(',').map(s => s.trim());
-                if (symbolList.includes(symbolName)) {
-                    // Already imported
-                    return;
-                }
-
-                // Add the new symbol
-                const newSymbols = existingSymbols.trim() + ', ' + symbolName;
-                const newImportLine = importPrefix + newSymbols + importSuffix;
-
-                const matchStart = existingMatch.index;
-                const matchEnd = matchStart + existingMatch[0].length;
-
-                // Calculate line and character positions
-                const beforeMatch = text.substring(0, matchStart);
-                const startLine = beforeMatch.split('\n').length - 1;
-                const startChar = matchStart - beforeMatch.lastIndexOf('\n') - 1;
-
-                const beforeEnd = text.substring(0, matchEnd);
-                const endLine = beforeEnd.split('\n').length - 1;
-                const endChar = matchEnd - beforeEnd.lastIndexOf('\n') - 1;
-
-                const edit = {
-                    documentChanges: [
-                        {
-                            textDocument: { uri: currentDocUri, version: document.version },
-                            edits: [
-                                {
-                                    range: Range.create(
-                                        Position.create(startLine, startChar),
-                                        Position.create(endLine, endChar)
-                                    ),
-                                    newText: newImportLine
-                                }
-                            ]
-                        }
-                    ]
-                };
-
-                await connection.workspace.applyEdit(edit);
-            } else {
-                // No existing import - add new import line
-                const importRegex = /^import\s+.*$/gm;
-                let lastImportMatch;
-                let match;
-                while ((match = importRegex.exec(text)) !== null) {
-                    lastImportMatch = match;
-                }
-
-                let insertLine = 0;
-                if (lastImportMatch) {
-                    // Insert after the last import
-                    const beforeLastImport = text.substring(0, lastImportMatch.index + lastImportMatch[0].length);
-                    insertLine = beforeLastImport.split('\n').length;
-                }
-
-                const importStatement = `import ${symbolName} from "${importPath}"`;
-                const edit = {
-                    documentChanges: [
-                        {
-                            textDocument: { uri: currentDocUri, version: document.version },
-                            edits: [
-                                {
-                                    range: Range.create(Position.create(insertLine, 0), Position.create(insertLine, 0)),
-                                    newText: importStatement + '\n'
-                                }
-                            ]
-                        }
-                    ]
-                };
-
-                await connection.workspace.applyEdit(edit);
-            }
-        }
-    }
-}
-
 // Helper: Check if a symbol from a file is imported
 function isSymbolImported(imports: ImportInfo[], symbolName: string, filePath: string, currentFilePath: string): boolean {
     const currentDir = path.dirname(currentFilePath);
@@ -982,11 +877,9 @@ function findTypeDefinition(text: string, offset: number, word: string, currentD
                         // Check if this symbol is imported
                         if (isSymbolImported(imports, word, filePath, currentFilePath)) {
                             return loc;
-                        } else {
-                            // Symbol not imported - prompt user
-                            promptForImport(word, filePath, currentFilePath, currentDocUri);
-                            return null;
                         }
+                        // Symbol not imported - diagnostic will show error with quick fix
+                        return null;
                     }
                 }
             }
@@ -1011,11 +904,9 @@ function findTypeDefinition(text: string, offset: number, word: string, currentD
                         // Check if this symbol is imported
                         if (isSymbolImported(imports, word, filePath, currentFilePath)) {
                             return loc;
-                        } else {
-                            // Symbol not imported - prompt user
-                            promptForImport(word, filePath, currentFilePath, currentDocUri);
-                            return null;
                         }
+                        // Symbol not imported - diagnostic will show error with quick fix
+                        return null;
                     }
                 }
             }
@@ -2301,6 +2192,109 @@ function escapeRegex(str: string): string {
     return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
+// Code Action handler - provides quick fixes
+connection.onCodeAction((params: CodeActionParams): CodeAction[] => {
+    const actions: CodeAction[] = [];
+    const document = documents.get(params.textDocument.uri);
+    if (!document) return actions;
+
+    const docDiagnosticData = diagnosticData.get(params.textDocument.uri);
+    if (!docDiagnosticData) return actions;
+
+    const text = document.getText();
+
+    for (const diagnostic of params.context.diagnostics) {
+        if (diagnostic.source !== 'kite') continue;
+        if (!diagnostic.data) continue;
+
+        const suggestion = docDiagnosticData.get(diagnostic.data as string);
+        if (!suggestion) continue;
+
+        // Check if there's already an import from this file
+        const existingImportRegex = new RegExp(
+            `^(import\\s+)([\\w\\s,]+)(\\s+from\\s+["']${escapeRegex(suggestion.importPath)}["'])`,
+            'gm'
+        );
+        const existingMatch = existingImportRegex.exec(text);
+
+        let edit: WorkspaceEdit;
+
+        if (existingMatch) {
+            // Add to existing import
+            const existingSymbols = existingMatch[2].trim();
+            if (existingSymbols === '*') {
+                // Wildcard import - no action needed
+                continue;
+            }
+
+            const symbolList = existingSymbols.split(',').map(s => s.trim());
+            if (symbolList.includes(suggestion.symbolName)) {
+                // Already imported
+                continue;
+            }
+
+            const newSymbols = existingSymbols + ', ' + suggestion.symbolName;
+            const newImportLine = existingMatch[1] + newSymbols + existingMatch[3];
+
+            const matchStart = existingMatch.index;
+            const matchEnd = matchStart + existingMatch[0].length;
+
+            const beforeMatch = text.substring(0, matchStart);
+            const startLine = beforeMatch.split('\n').length - 1;
+            const startChar = matchStart - beforeMatch.lastIndexOf('\n') - 1;
+
+            const beforeEnd = text.substring(0, matchEnd);
+            const endLine = beforeEnd.split('\n').length - 1;
+            const endChar = matchEnd - beforeEnd.lastIndexOf('\n') - 1;
+
+            edit = {
+                changes: {
+                    [params.textDocument.uri]: [
+                        TextEdit.replace(
+                            Range.create(Position.create(startLine, startChar), Position.create(endLine, endChar)),
+                            newImportLine
+                        )
+                    ]
+                }
+            };
+        } else {
+            // Add new import line
+            const importRegex = /^import\s+.*$/gm;
+            let lastImportMatch;
+            let match;
+            while ((match = importRegex.exec(text)) !== null) {
+                lastImportMatch = match;
+            }
+
+            let insertLine = 0;
+            if (lastImportMatch) {
+                const beforeLastImport = text.substring(0, lastImportMatch.index + lastImportMatch[0].length);
+                insertLine = beforeLastImport.split('\n').length;
+            }
+
+            const importStatement = `import ${suggestion.symbolName} from "${suggestion.importPath}"`;
+
+            edit = {
+                changes: {
+                    [params.textDocument.uri]: [
+                        TextEdit.insert(Position.create(insertLine, 0), importStatement + '\n')
+                    ]
+                }
+            };
+        }
+
+        actions.push({
+            title: `Import '${suggestion.symbolName}' from "${suggestion.importPath}"`,
+            kind: CodeActionKind.QuickFix,
+            diagnostics: [diagnostic],
+            isPreferred: true,
+            edit
+        });
+    }
+
+    return actions;
+});
+
 // Validate document and return diagnostics
 function validateDocument(document: TextDocument): Diagnostic[] {
     const diagnostics: Diagnostic[] = [];
@@ -2472,6 +2466,145 @@ function validateDocument(document: TextDocument): Diagnostic[] {
             }
         }
         // 'reference' type is flexible - accepts identifiers or arrays
+    }
+
+    // Validate resource schema types
+    const currentFilePath = URI.parse(document.uri).fsPath;
+    const currentDir = path.dirname(currentFilePath);
+    const imports = extractImports(text);
+
+    // Clear previous diagnostic data for this document
+    diagnosticData.set(document.uri, new Map());
+    const docDiagnosticData = diagnosticData.get(document.uri)!;
+
+    // Check resource declarations: resource SchemaName instanceName {
+    const resourceRegex = /\bresource\s+([\w.]+)\s+(\w+)\s*\{/g;
+    let resourceMatch;
+    while ((resourceMatch = resourceRegex.exec(text)) !== null) {
+        const schemaName = resourceMatch[1];
+        const instanceName = resourceMatch[2];
+        const schemaStart = resourceMatch.index + 9; // after "resource "
+        const schemaEnd = schemaStart + schemaName.length;
+
+        // Check if schema exists in current file
+        const schemaInCurrentFile = findSchemaDefinition(text, schemaName, document.uri);
+        if (schemaInCurrentFile) continue;
+
+        // Check if schema is imported
+        let foundInFile: string | null = null;
+        const kiteFiles = findKiteFilesInWorkspace();
+        for (const filePath of kiteFiles) {
+            if (filePath === currentFilePath) continue;
+            const fileContent = getFileContent(filePath, document.uri);
+            if (fileContent) {
+                const loc = findSchemaDefinition(fileContent, schemaName, filePath);
+                if (loc) {
+                    foundInFile = filePath;
+                    break;
+                }
+            }
+        }
+
+        const startPos = document.positionAt(schemaStart);
+        const endPos = document.positionAt(schemaEnd);
+        const range = Range.create(startPos, endPos);
+
+        if (foundInFile) {
+            // Schema exists but might not be imported
+            if (!isSymbolImported(imports, schemaName, foundInFile, currentFilePath)) {
+                // Calculate import path
+                let importPath = path.relative(currentDir, foundInFile);
+                importPath = importPath.replace(/\\/g, '/');
+
+                const diagnosticKey = `${startPos.line}:${startPos.character}:${schemaName}`;
+                docDiagnosticData.set(diagnosticKey, {
+                    symbolName: schemaName,
+                    filePath: foundInFile,
+                    importPath
+                });
+
+                diagnostics.push({
+                    severity: DiagnosticSeverity.Error,
+                    range,
+                    message: `Schema '${schemaName}' is not imported. Found in '${path.basename(foundInFile)}'.`,
+                    source: 'kite',
+                    data: diagnosticKey
+                });
+            }
+        } else {
+            // Schema not found anywhere
+            diagnostics.push({
+                severity: DiagnosticSeverity.Error,
+                range,
+                message: `Cannot resolve schema '${schemaName}'`,
+                source: 'kite'
+            });
+        }
+    }
+
+    // Check component instantiations: component TypeName instanceName {
+    const componentInstRegex = /\bcomponent\s+(\w+)\s+(\w+)\s*\{/g;
+    let componentMatch;
+    while ((componentMatch = componentInstRegex.exec(text)) !== null) {
+        const componentType = componentMatch[1];
+        const instanceName = componentMatch[2];
+        const typeStart = componentMatch.index + 10; // after "component "
+        const typeEnd = typeStart + componentType.length;
+
+        // Check if component exists in current file
+        const componentInCurrentFile = findComponentDefinition(text, componentType, document.uri);
+        if (componentInCurrentFile) continue;
+
+        // Check if component is in other files
+        let foundInFile: string | null = null;
+        const kiteFiles = findKiteFilesInWorkspace();
+        for (const filePath of kiteFiles) {
+            if (filePath === currentFilePath) continue;
+            const fileContent = getFileContent(filePath, document.uri);
+            if (fileContent) {
+                const loc = findComponentDefinition(fileContent, componentType, filePath);
+                if (loc) {
+                    foundInFile = filePath;
+                    break;
+                }
+            }
+        }
+
+        const startPos = document.positionAt(typeStart);
+        const endPos = document.positionAt(typeEnd);
+        const range = Range.create(startPos, endPos);
+
+        if (foundInFile) {
+            // Component exists but might not be imported
+            if (!isSymbolImported(imports, componentType, foundInFile, currentFilePath)) {
+                // Calculate import path
+                let importPath = path.relative(currentDir, foundInFile);
+                importPath = importPath.replace(/\\/g, '/');
+
+                const diagnosticKey = `${startPos.line}:${startPos.character}:${componentType}`;
+                docDiagnosticData.set(diagnosticKey, {
+                    symbolName: componentType,
+                    filePath: foundInFile,
+                    importPath
+                });
+
+                diagnostics.push({
+                    severity: DiagnosticSeverity.Error,
+                    range,
+                    message: `Component '${componentType}' is not imported. Found in '${path.basename(foundInFile)}'.`,
+                    source: 'kite',
+                    data: diagnosticKey
+                });
+            }
+        } else {
+            // Component not found anywhere
+            diagnostics.push({
+                severity: DiagnosticSeverity.Error,
+                range,
+                message: `Cannot resolve component '${componentType}'`,
+                source: 'kite'
+            });
+        }
     }
 
     return diagnostics;
