@@ -160,12 +160,16 @@ Key tokens from the ANTLR lexer (`../kite-intellij-plugin/src/main/antlr/cloud/k
 | Context-aware in Schemas | Type-appropriate suggestions for defaults | ✅ |
 | Context-aware in Components | Type-appropriate suggestions for input/output defaults | ✅ |
 
+### Completed: Navigation & Structure
+| Feature | IntelliJ File | LSP Method | Status |
+|---------|--------------|------------|--------|
+| Document Symbols | `KiteStructureViewElement.java` | `textDocument/documentSymbol` | ✅ |
+
 ### Priority 1: Remaining Features
 | Feature | IntelliJ File | LSP Method | Status |
 |---------|--------------|------------|--------|
 | Inlay Hints | `KiteInlayHintsProvider.java` | `textDocument/inlayHint` | ⬜ |
 | Code Formatting | `KiteBlock.java` | `textDocument/formatting` | ⬜ |
-| Document Symbols | `KiteStructureViewElement.java` | `textDocument/documentSymbol` | ⬜ |
 | Rename Symbol | - | `textDocument/rename` | ⬜ |
 | Type Checking | `KiteTypeCheckingAnnotator.java` | `textDocument/publishDiagnostics` | ⬜ |
 

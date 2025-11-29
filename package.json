@@ -3,7 +3,7 @@
   "displayName": "Kite Language",
   "description": "Full language support for Kite - a modern Infrastructure as Code language. Features include syntax highlighting, intelligent autocomplete with DevOps-aware suggestions, go to definition, find references, hover documentation, signature help, diagnostics, and more.",
   "version": "0.1.0",
-  "publisher": "kitelang",
+  "publisher": "EchoStream",
   "license": "MIT",
   "repository": {
     "type": "git",
