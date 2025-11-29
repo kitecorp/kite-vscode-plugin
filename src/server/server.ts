@@ -849,6 +849,54 @@ connection.onRequest('textDocument/inlayHint', (params: InlayHintParams): InlayH
         }
     }
 
+    // 4. Type hints for resource property assignments
+    // Pattern: resource SchemaName instanceName { prop = value }
+    const resourceInstRegex = /\bresource\s+([\w.]+)\s+(\w+)\s*\{/g;
+    let resMatch;
+    while ((resMatch = resourceInstRegex.exec(text)) !== null) {
+        const schemaName = resMatch[1];
+        const braceStart = resMatch.index + resMatch[0].length - 1;
+
+        // Find the schema definition to get property types
+        const schemaTypes = extractSchemaPropertyTypes(text, schemaName);
+        if (Object.keys(schemaTypes).length === 0) {
+            continue;
+        }
+
+        // Find the closing brace
+        let braceDepth = 1;
+        let pos = braceStart + 1;
+        while (pos < text.length && braceDepth > 0) {
+            if (text[pos] === '{') braceDepth++;
+            else if (text[pos] === '}') braceDepth--;
+            pos++;
+        }
+        const bodyEnd = pos - 1;
+        const bodyText = text.substring(braceStart + 1, bodyEnd);
+
+        // Find property assignments in the body: name = value
+        const propRegex = /^\s*(\w+)\s*=/gm;
+        let propMatch;
+        while ((propMatch = propRegex.exec(bodyText)) !== null) {
+            const propName = propMatch[1];
+            const propType = schemaTypes[propName];
+
+            if (propType) {
+                // Calculate absolute position
+                const propNameStart = braceStart + 1 + propMatch.index + propMatch[0].indexOf(propName);
+                const hintPos = document.positionAt(propNameStart + propName.length);
+
+                hints.push({
+                    position: hintPos,
+                    label: `: ${propType}`,
+                    kind: InlayHintKind.Type,
+                    paddingLeft: false,
+                    paddingRight: true
+                });
+            }
+        }
+    }
+
     return hints;
 });
 
@@ -1031,6 +1079,59 @@ function extractComponentInputTypes(text: string, componentTypeName: string): Re
     }
 
     return inputTypes;
+}
+
+// Helper: Extract property types from a schema definition
+function extractSchemaPropertyTypes(text: string, schemaName: string): Record<string, string> {
+    const propertyTypes: Record<string, string> = {};
+
+    // Handle dotted schema names like "VM.Instance" - just use the last part for matching
+    const schemaBaseName = schemaName.includes('.') ? schemaName.split('.').pop()! : schemaName;
+
+    // Find schema definition: schema SchemaName {
+    const defRegex = new RegExp(`\\bschema\\s+${escapeRegex(schemaBaseName)}\\s*\\{`, 'g');
+    let match;
+
+    while ((match = defRegex.exec(text)) !== null) {
+        const braceStart = match.index + match[0].length - 1;
+        let braceDepth = 1;
+        let pos = braceStart + 1;
+
+        while (pos < text.length && braceDepth > 0) {
+            if (text[pos] === '{') braceDepth++;
+            else if (text[pos] === '}') braceDepth--;
+            pos++;
+        }
+
+        const bodyText = text.substring(braceStart + 1, pos - 1);
+
+        // Find property declarations: type name [= value]
+        // Schema properties are: type propertyName
+        const lines = bodyText.split('\n');
+        for (const line of lines) {
+            const trimmed = line.trim();
+            // Skip empty lines and comments
+            if (!trimmed || trimmed.startsWith('//') || trimmed.startsWith('@')) {
+                continue;
+            }
+
+            // Match: type propertyName [= defaultValue]
+            // Types can be: string, number, boolean, any, object, CustomType, or arrays like string[]
+            const propMatch = trimmed.match(/^(\w+(?:\[\])?)\s+(\w+)(?:\s*=.*)?$/);
+            if (propMatch) {
+                const propType = propMatch[1];
+                const propName = propMatch[2];
+                propertyTypes[propName] = propType;
+            }
+        }
+
+        // Found the schema, no need to continue
+        if (Object.keys(propertyTypes).length > 0) {
+            break;
+        }
+    }
+
+    return propertyTypes;
 }
 
 // Helper: Find function call at cursor position and determine active parameter
