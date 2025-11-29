@@ -155,10 +155,29 @@ connection.onDefinition((params: TextDocumentPositionParams): Definition | null 
     const document = documents.get(params.textDocument.uri);
     if (!document) return null;
 
+    const text = document.getText();
+    const offset = document.offsetAt(params.position);
     const word = getWordAtPosition(document, params.position);
     if (!word) return null;
 
-    // Search in current document
+    // Check if this is a property access (e.g., server.tag.New.a)
+    const propertyAccess = getPropertyAccessContext(text, offset, word);
+    if (propertyAccess) {
+        // Find the root object declaration
+        const declarations = declarationCache.get(params.textDocument.uri) || [];
+        const rootName = propertyAccess.chain[0];
+        const objectDecl = declarations.find(d => d.name === rootName);
+
+        if (objectDecl && (objectDecl.type === 'resource' || objectDecl.type === 'component')) {
+            // Find the property definition following the chain
+            const propertyLocation = findPropertyInChain(document, text, propertyAccess.chain);
+            if (propertyLocation) {
+                return propertyLocation;
+            }
+        }
+    }
+
+    // Search for top-level declarations
     const declarations = declarationCache.get(params.textDocument.uri) || [];
     const decl = declarations.find(d => d.name === word);
 
@@ -249,6 +268,187 @@ connection.onHover((params: TextDocumentPositionParams): Hover | null => {
 
     return null;
 });
+
+// Helper: Check if cursor is on a property in a property access (e.g., server.tag.New.a)
+interface PropertyAccessContext {
+    chain: string[];      // Full chain: ['server', 'tag', 'New', 'a']
+    propertyName: string; // The property being accessed (last in chain)
+}
+
+function getPropertyAccessContext(text: string, offset: number, currentWord: string): PropertyAccessContext | null {
+    // Find start of current word
+    let wordStart = offset;
+    while (wordStart > 0 && /\w/.test(text[wordStart - 1])) {
+        wordStart--;
+    }
+
+    // Build the full property chain by walking backwards
+    const chain: string[] = [currentWord];
+    let pos = wordStart - 1;
+
+    while (pos >= 0) {
+        // Skip whitespace
+        while (pos >= 0 && /\s/.test(text[pos])) {
+            pos--;
+        }
+
+        // Check for dot
+        if (pos >= 0 && text[pos] === '.') {
+            pos--; // skip the dot
+
+            // Skip whitespace before dot
+            while (pos >= 0 && /\s/.test(text[pos])) {
+                pos--;
+            }
+
+            // Find the identifier before the dot
+            let identEnd = pos;
+            while (pos > 0 && /\w/.test(text[pos - 1])) {
+                pos--;
+            }
+            let identStart = pos;
+
+            if (identStart <= identEnd) {
+                const ident = text.substring(identStart, identEnd + 1);
+                chain.unshift(ident);
+                pos = identStart - 1;
+            } else {
+                break;
+            }
+        } else {
+            break;
+        }
+    }
+
+    // Need at least object.property (2 elements)
+    if (chain.length >= 2) {
+        return {
+            chain,
+            propertyName: currentWord
+        };
+    }
+
+    return null;
+}
+
+// Helper: Find a property definition following a property chain (e.g., server.tag.New.a)
+function findPropertyInChain(document: TextDocument, text: string, chain: string[]): Location | null {
+    if (chain.length < 2) return null;
+
+    const declarationName = chain[0];
+    const propertyPath = chain.slice(1); // ['tag', 'New', 'a']
+
+    // Find the declaration (resource or component) with this name
+    // Pattern: resource Type name { or component Type name {
+    const declRegex = new RegExp(`\\b(?:resource|component)\\s+\\w+(?:\\.\\w+)*\\s+${escapeRegex(declarationName)}\\s*\\{`, 'g');
+    const declMatch = declRegex.exec(text);
+
+    if (!declMatch) return null;
+
+    // Start searching from the declaration body
+    let searchStart = declMatch.index + declMatch[0].length;
+    let searchEnd = findMatchingBrace(text, searchStart - 1);
+
+    // Navigate through the property path
+    for (let i = 0; i < propertyPath.length; i++) {
+        const propName = propertyPath[i];
+        const isLast = i === propertyPath.length - 1;
+
+        const result = findPropertyInRange(document, text, searchStart, searchEnd, propName);
+
+        if (!result) return null;
+
+        if (isLast) {
+            // This is the target property, return its location
+            return result.location;
+        } else {
+            // Navigate into the nested object
+            if (result.valueStart !== undefined && result.valueEnd !== undefined) {
+                searchStart = result.valueStart;
+                searchEnd = result.valueEnd;
+            } else {
+                return null;
+            }
+        }
+    }
+
+    return null;
+}
+
+// Helper: Find a property within a range of text and return its location and value range
+interface PropertyResult {
+    location: Location;
+    valueStart?: number;  // Start of the value (for nested objects)
+    valueEnd?: number;    // End of the value
+}
+
+function findPropertyInRange(document: TextDocument, text: string, rangeStart: number, rangeEnd: number, propertyName: string): PropertyResult | null {
+    const searchText = text.substring(rangeStart, rangeEnd);
+
+    // Pattern: propertyName = { or propertyName = value or propertyName: value
+    // We need to find propertyName at the start of a line (within braces) followed by = or :
+    const propRegex = new RegExp(`(?:^|\\n)\\s*(${escapeRegex(propertyName)})\\s*[=:]`, 'g');
+    let propMatch;
+
+    while ((propMatch = propRegex.exec(searchText)) !== null) {
+        // Calculate absolute position of the property name
+        const propNameStartInSearch = propMatch.index + propMatch[0].indexOf(propertyName);
+        const propOffset = rangeStart + propNameStartInSearch;
+
+        const startPos = document.positionAt(propOffset);
+        const endPos = document.positionAt(propOffset + propertyName.length);
+        const location = Location.create(document.uri, Range.create(startPos, endPos));
+
+        // Find the value after = or :
+        const afterPropName = rangeStart + propMatch.index + propMatch[0].length;
+
+        // Skip whitespace
+        let valueStart = afterPropName;
+        while (valueStart < rangeEnd && /\s/.test(text[valueStart])) {
+            valueStart++;
+        }
+
+        // Check if value is an object literal
+        if (text[valueStart] === '{') {
+            const valueEnd = findMatchingBrace(text, valueStart);
+            return {
+                location,
+                valueStart: valueStart + 1, // Inside the braces
+                valueEnd: valueEnd - 1
+            };
+        }
+
+        return { location };
+    }
+
+    // Also check for input/output declarations
+    const memberRegex = new RegExp(`(?:^|\\n)\\s*(?:input|output)\\s+\\w+\\s+(${escapeRegex(propertyName)})\\b`, 'g');
+    const memberMatch = memberRegex.exec(searchText);
+
+    if (memberMatch) {
+        const memberOffset = rangeStart + memberMatch.index + memberMatch[0].lastIndexOf(propertyName);
+        const startPos = document.positionAt(memberOffset);
+        const endPos = document.positionAt(memberOffset + propertyName.length);
+
+        return { location: Location.create(document.uri, Range.create(startPos, endPos)) };
+    }
+
+    return null;
+}
+
+// Helper: Find the matching closing brace
+function findMatchingBrace(text: string, openBracePos: number): number {
+    let braceDepth = 1;
+    let pos = openBracePos + 1;
+
+    while (pos < text.length && braceDepth > 0) {
+        if (text[pos] === '{') braceDepth++;
+        else if (text[pos] === '}') braceDepth--;
+        pos++;
+    }
+
+    return pos;
+}
 
 // Helper: Scan document for declarations
 function scanDocument(document: TextDocument): Declaration[] {
