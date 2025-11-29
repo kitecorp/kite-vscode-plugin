@@ -801,6 +801,54 @@ connection.onRequest('textDocument/inlayHint', (params: InlayHintParams): InlayH
         }
     }
 
+    // 3. Type hints for component instantiation property assignments
+    // Pattern: component TypeName instanceName { prop = value }
+    const componentInstRegex = /\bcomponent\s+(\w+)\s+(\w+)\s*\{/g;
+    let compMatch;
+    while ((compMatch = componentInstRegex.exec(text)) !== null) {
+        const componentType = compMatch[1];
+        const braceStart = compMatch.index + compMatch[0].length - 1;
+
+        // Find the component type definition to get input types
+        const inputTypes = extractComponentInputTypes(text, componentType);
+        if (Object.keys(inputTypes).length === 0) {
+            continue;
+        }
+
+        // Find the closing brace
+        let braceDepth = 1;
+        let pos = braceStart + 1;
+        while (pos < text.length && braceDepth > 0) {
+            if (text[pos] === '{') braceDepth++;
+            else if (text[pos] === '}') braceDepth--;
+            pos++;
+        }
+        const bodyEnd = pos - 1;
+        const bodyText = text.substring(braceStart + 1, bodyEnd);
+
+        // Find property assignments in the body: name = value
+        const propRegex = /^\s*(\w+)\s*=/gm;
+        let propMatch;
+        while ((propMatch = propRegex.exec(bodyText)) !== null) {
+            const propName = propMatch[1];
+            const propType = inputTypes[propName];
+
+            if (propType) {
+                // Calculate absolute position
+                const propNameStart = braceStart + 1 + propMatch.index + propMatch[0].indexOf(propName);
+                const hintPos = document.positionAt(propNameStart + propName.length);
+
+                hints.push({
+                    position: hintPos,
+                    label: `: ${propType}`,
+                    kind: InlayHintKind.Type,
+                    paddingLeft: false,
+                    paddingRight: true
+                });
+            }
+        }
+    }
+
     return hints;
 });
 
@@ -926,6 +974,63 @@ function parseArguments(text: string, startPos: number): ArgRange[] {
     }
 
     return args;
+}
+
+// Helper: Extract input types from a component type definition
+function extractComponentInputTypes(text: string, componentTypeName: string): Record<string, string> {
+    const inputTypes: Record<string, string> = {};
+
+    // Find component type definition: component TypeName { (without instance name)
+    // We need to distinguish between definition (one identifier) and instantiation (two identifiers)
+    const defRegex = new RegExp(`\\bcomponent\\s+${escapeRegex(componentTypeName)}\\s*\\{`, 'g');
+    let match;
+
+    while ((match = defRegex.exec(text)) !== null) {
+        // Check if this is a definition (not instantiation) by looking backwards
+        // Instantiation: component Type instance {
+        // Definition: component Type {
+        const beforeBrace = text.substring(match.index, match.index + match[0].length);
+        const parts = beforeBrace.trim().split(/\s+/);
+
+        // Definition has: ['component', 'TypeName', '{'] -> parts.length should reflect just type name
+        // Actually the regex only matches component TypeName { so we need to check what's between component and {
+        const betweenKeywordAndBrace = text.substring(match.index + 10, match.index + match[0].length - 1).trim();
+        const identifiers = betweenKeywordAndBrace.split(/\s+/).filter(s => s && s !== componentTypeName);
+
+        if (identifiers.length > 0) {
+            // Has extra identifier(s), this is an instantiation, skip
+            continue;
+        }
+
+        // This is a component definition - extract inputs
+        const braceStart = match.index + match[0].length - 1;
+        let braceDepth = 1;
+        let pos = braceStart + 1;
+
+        while (pos < text.length && braceDepth > 0) {
+            if (text[pos] === '{') braceDepth++;
+            else if (text[pos] === '}') braceDepth--;
+            pos++;
+        }
+
+        const bodyText = text.substring(braceStart + 1, pos - 1);
+
+        // Find input declarations: input type name [= value]
+        const inputRegex = /\binput\s+(\w+(?:\[\])?)\s+(\w+)/g;
+        let inputMatch;
+        while ((inputMatch = inputRegex.exec(bodyText)) !== null) {
+            const inputType = inputMatch[1];
+            const inputName = inputMatch[2];
+            inputTypes[inputName] = inputType;
+        }
+
+        // Found the definition, no need to continue
+        if (Object.keys(inputTypes).length > 0) {
+            break;
+        }
+    }
+
+    return inputTypes;
 }
 
 // Helper: Find function call at cursor position and determine active parameter

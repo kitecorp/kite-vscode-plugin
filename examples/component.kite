@@ -1,5 +1,10 @@
+schema Instance {
+  string size
+  object tag
+  string[] private_ips
+}
 // asd
-@count
+@count(2)
 component WebServer {
   @unique
   @allowed(["dev", "prod"])
@@ -9,7 +14,7 @@ component WebServer {
   var client = "myClient"
 
 
-  resource VM.Instance server {
+  resource Instance server {
     size        = instanceType
     tag         = {
       Environment: "$env",
