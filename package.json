@@ -1,18 +1,36 @@
 {
   "name": "kite-language",
   "displayName": "Kite Language",
-  "description": "Language support for Kite - Infrastructure as Code language",
+  "description": "Full language support for Kite - a modern Infrastructure as Code language. Features include syntax highlighting, intelligent autocomplete with DevOps-aware suggestions, go to definition, find references, hover documentation, signature help, diagnostics, and more.",
   "version": "0.1.0",
   "publisher": "kitelang",
+  "license": "MIT",
   "repository": {
     "type": "git",
     "url": "https://github.com/kitelang/kite-vscode-plugin"
   },
+  "bugs": {
+    "url": "https://github.com/kitelang/kite-vscode-plugin/issues"
+  },
+  "keywords": [
+    "kite",
+    "infrastructure as code",
+    "iac",
+    "devops",
+    "cloud",
+    "aws",
+    "gcp",
+    "azure",
+    "terraform alternative",
+    "configuration"
+  ],
   "engines": {
     "vscode": "^1.85.0"
   },
   "categories": [
-    "Programming Languages"
+    "Programming Languages",
+    "Linters",
+    "Snippets"
   ],
   "activationEvents": [
     "onLanguage:kite"

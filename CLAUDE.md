@@ -137,15 +137,37 @@ Key tokens from the ANTLR lexer (`../kite-intellij-plugin/src/main/antlr/cloud/k
 | Find References | `KiteReferenceContributor.java` | `textDocument/references` | ✅ |
 | Autocomplete | `KiteCompletionContributor.java` | `textDocument/completion` | ✅ |
 | Hover/Quick Docs | `KiteDocumentationProvider.java` | `textDocument/hover` | ✅ |
+| Parameter Hints | `KiteParameterInfoHandler.java` | `textDocument/signatureHelp` | ✅ |
+| Cross-file Navigation | `KiteGotoDeclarationHandler.java` | `textDocument/definition` | ✅ |
+| Property Navigation | - | `textDocument/definition` | ✅ |
 
-### Priority 1: Advanced Features
+### Completed: Diagnostics & Validation
 | Feature | IntelliJ File | LSP Method | Status |
 |---------|--------------|------------|--------|
-| Diagnostics/Errors | `KiteTypeCheckingAnnotator.java` | `textDocument/publishDiagnostics` | ⬜ |
-| Parameter Hints | `KiteParameterInfoHandler.java` | `textDocument/signatureHelp` | ⬜ |
+| Import Validation | `KiteTypeCheckingAnnotator.java` | `textDocument/publishDiagnostics` | ✅ |
+| Decorator Validation | `KiteTypeCheckingAnnotator.java` | `textDocument/publishDiagnostics` | ✅ |
+| Duplicate Name Detection | `KiteTypeCheckingAnnotator.java` | `textDocument/publishDiagnostics` | ✅ |
+| Quick Fix: Add Import | - | `textDocument/codeAction` | ✅ |
+
+### Completed: Smart Autocomplete
+| Feature | Description | Status |
+|---------|-------------|--------|
+| Scope-aware Variables | Only shows variables in current scope | ✅ |
+| Priority Ordering | inputs → variables → resources → components → outputs → functions | ✅ |
+| Schema Property Completion | Inside resource bodies | ✅ |
+| Component Input Completion | Inside component instances | ✅ |
+| DevOps-aware Defaults | Ports, regions, CIDRs, instance types, etc. | ✅ |
+| Context-aware in Schemas | Type-appropriate suggestions for defaults | ✅ |
+| Context-aware in Components | Type-appropriate suggestions for input/output defaults | ✅ |
+
+### Priority 1: Remaining Features
+| Feature | IntelliJ File | LSP Method | Status |
+|---------|--------------|------------|--------|
 | Inlay Hints | `KiteInlayHintsProvider.java` | `textDocument/inlayHint` | ⬜ |
 | Code Formatting | `KiteBlock.java` | `textDocument/formatting` | ⬜ |
 | Document Symbols | `KiteStructureViewElement.java` | `textDocument/documentSymbol` | ⬜ |
+| Rename Symbol | - | `textDocument/rename` | ⬜ |
+| Type Checking | `KiteTypeCheckingAnnotator.java` | `textDocument/publishDiagnostics` | ⬜ |
 
 ## Project Structure
 
