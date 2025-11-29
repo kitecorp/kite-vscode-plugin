@@ -855,14 +855,41 @@ function scanDocument(document: TextDocument): Declaration[] {
                         if (paramsStr.trim()) {
                             // Parse parameters: "type1 name1, type2 name2"
                             const paramParts = paramsStr.split(',');
+                            let paramOffset = line.indexOf('(') + 1;
+
                             for (const part of paramParts) {
                                 const trimmed = part.trim();
                                 const paramMatch = trimmed.match(/^(\w+(?:\[\])?)\s+(\w+)$/);
                                 if (paramMatch) {
+                                    const paramType = paramMatch[1];
+                                    const paramName = paramMatch[2];
+
                                     decl.parameters.push({
-                                        type: paramMatch[1],
-                                        name: paramMatch[2]
+                                        type: paramType,
+                                        name: paramName
                                     });
+
+                                    // Find exact position of parameter name in the line
+                                    const paramNameIndex = line.indexOf(paramName, paramOffset);
+                                    if (paramNameIndex >= 0) {
+                                        // Add parameter as a declaration for Go to Definition
+                                        declarations.push({
+                                            name: paramName,
+                                            type: 'variable',
+                                            typeName: paramType,
+                                            range: Range.create(
+                                                Position.create(lineNum, paramNameIndex),
+                                                Position.create(lineNum, paramNameIndex + paramName.length)
+                                            ),
+                                            nameRange: Range.create(
+                                                Position.create(lineNum, paramNameIndex),
+                                                Position.create(lineNum, paramNameIndex + paramName.length)
+                                            ),
+                                            uri: document.uri,
+                                            documentation: `Parameter of function \`${decl.name}\``
+                                        });
+                                        paramOffset = paramNameIndex + paramName.length;
+                                    }
                                 }
                             }
                         }

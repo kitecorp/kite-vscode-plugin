@@ -55,8 +55,8 @@ var inlayBoolean        = false
 
 
 fun greet(string name) {
+  
   println(name)
 }
 
 greet("alice")
-greet()
