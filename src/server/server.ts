@@ -18,6 +18,8 @@ import {
     SignatureHelp,
     SignatureInformation,
     ParameterInformation,
+    Diagnostic,
+    DiagnosticSeverity,
 } from 'vscode-languageserver/node';
 
 import { TextDocument } from 'vscode-languageserver-textdocument';
@@ -78,6 +80,10 @@ connection.onInitialize((_params: InitializeParams): InitializeResult => {
 documents.onDidChangeContent(change => {
     const declarations = scanDocument(change.document);
     declarationCache.set(change.document.uri, declarations);
+
+    // Validate document and publish diagnostics
+    const diagnostics = validateDocument(change.document);
+    connection.sendDiagnostics({ uri: change.document.uri, diagnostics });
 });
 
 documents.onDidClose(e => {
@@ -95,11 +101,14 @@ const KEYWORDS = [
 const TYPES = ['string', 'number', 'boolean', 'any', 'object', 'void'];
 
 // Built-in decorators with descriptions (from DECORATORS.md)
+type ArgType = 'none' | 'number' | 'string' | 'array' | 'object' | 'reference' | 'named';
+
 interface DecoratorInfo {
     name: string;
     category: 'validation' | 'resource' | 'metadata';
     description: string;
-    argument?: string;     // Argument type/constraint
+    argument?: string;     // Argument type/constraint (for display)
+    argType: ArgType;      // Expected argument type (for validation)
     targets?: string;      // What it can be applied to
     appliesTo?: string;    // What types it validates (for validation decorators)
     example: string;
@@ -113,72 +122,64 @@ const DECORATORS: DecoratorInfo[] = [
     {
         name: 'minValue', category: 'validation',
         description: 'Minimum value constraint for numbers',
-        argument: 'number (0 to 999999)',
-        targets: 'input, output',
-        appliesTo: 'number',
+        argument: 'number (0 to 999999)', argType: 'number',
+        targets: 'input, output', appliesTo: 'number',
         example: '@minValue(1)\ninput number port = 8080',
         snippet: 'minValue($1)', argHint: '(n)', sortOrder: 0
     },
     {
         name: 'maxValue', category: 'validation',
         description: 'Maximum value constraint for numbers',
-        argument: 'number (0 to 999999)',
-        targets: 'input, output',
-        appliesTo: 'number',
+        argument: 'number (0 to 999999)', argType: 'number',
+        targets: 'input, output', appliesTo: 'number',
         example: '@maxValue(65535)\ninput number port = 8080',
         snippet: 'maxValue($1)', argHint: '(n)', sortOrder: 1
     },
     {
         name: 'minLength', category: 'validation',
         description: 'Minimum length constraint for strings and arrays',
-        argument: 'number (0 to 999999)',
-        targets: 'input, output',
-        appliesTo: 'string, array',
+        argument: 'number (0 to 999999)', argType: 'number',
+        targets: 'input, output', appliesTo: 'string, array',
         example: '@minLength(3)\ninput string name',
         snippet: 'minLength($1)', argHint: '(n)', sortOrder: 2
     },
     {
         name: 'maxLength', category: 'validation',
         description: 'Maximum length constraint for strings and arrays',
-        argument: 'number (0 to 999999)',
-        targets: 'input, output',
-        appliesTo: 'string, array',
+        argument: 'number (0 to 999999)', argType: 'number',
+        targets: 'input, output', appliesTo: 'string, array',
         example: '@maxLength(255)\ninput string name',
         snippet: 'maxLength($1)', argHint: '(n)', sortOrder: 3
     },
     {
         name: 'nonEmpty', category: 'validation',
         description: 'Ensures strings or arrays are not empty',
-        argument: 'none',
-        targets: 'input',
-        appliesTo: 'string, array',
+        argument: 'none', argType: 'none',
+        targets: 'input', appliesTo: 'string, array',
         example: '@nonEmpty\ninput string name',
         sortOrder: 4
     },
     {
         name: 'validate', category: 'validation',
         description: 'Custom validation with regex pattern or preset',
-        argument: 'Named: regex: string or preset: string',
-        targets: 'input, output',
-        appliesTo: 'string, array',
+        argument: 'Named: regex: string or preset: string', argType: 'named',
+        targets: 'input, output', appliesTo: 'string, array',
         example: '@validate(regex: "^[a-z]+$")\ninput string name',
         snippet: 'validate(regex: "$1")', argHint: '(regex: "pattern")', sortOrder: 5
     },
     {
         name: 'allowed', category: 'validation',
         description: 'Whitelist of allowed values',
-        argument: 'array of literals (1 to 256 elements)',
-        targets: 'input',
-        appliesTo: 'string, number, object, array',
+        argument: 'array of literals (1 to 256 elements)', argType: 'array',
+        targets: 'input', appliesTo: 'string, number, object, array',
         example: '@allowed(["dev", "staging", "prod"])\ninput string environment = "dev"',
         snippet: 'allowed([$1])', argHint: '([values])', sortOrder: 6
     },
     {
         name: 'unique', category: 'validation',
         description: 'Ensures array elements are unique',
-        argument: 'none',
-        targets: 'input',
-        appliesTo: 'array',
+        argument: 'none', argType: 'none',
+        targets: 'input', appliesTo: 'array',
         example: '@unique\ninput string[] tags = ["web", "api"]',
         sortOrder: 7
     },
@@ -186,7 +187,7 @@ const DECORATORS: DecoratorInfo[] = [
     {
         name: 'existing', category: 'resource',
         description: 'Reference existing cloud resources by ARN, URL, or ID',
-        argument: 'string (ARN, URL, EC2 instance ID, KMS alias, log group)',
+        argument: 'string (ARN, URL, EC2 instance ID, KMS alias, log group)', argType: 'string',
         targets: 'resource',
         example: '@existing("arn:aws:s3:::my-bucket")\nresource S3.Bucket existing_bucket {}',
         snippet: 'existing("$1")', argHint: '("reference")', sortOrder: 100
@@ -194,7 +195,7 @@ const DECORATORS: DecoratorInfo[] = [
     {
         name: 'sensitive', category: 'resource',
         description: 'Mark sensitive data (passwords, secrets, API keys)',
-        argument: 'none',
+        argument: 'none', argType: 'none',
         targets: 'input, output',
         example: '@sensitive\ninput string api_key',
         sortOrder: 101
@@ -202,7 +203,7 @@ const DECORATORS: DecoratorInfo[] = [
     {
         name: 'dependsOn', category: 'resource',
         description: 'Explicit dependency declaration between resources/components',
-        argument: 'resource/component reference, or array of references',
+        argument: 'resource/component reference, or array of references', argType: 'reference',
         targets: 'resource, component (instances)',
         example: '@dependsOn(subnet)\nresource EC2.Instance server { ... }',
         snippet: 'dependsOn($1)', argHint: '(resources)', sortOrder: 102
@@ -210,7 +211,7 @@ const DECORATORS: DecoratorInfo[] = [
     {
         name: 'tags', category: 'resource',
         description: 'Add cloud provider tags to resources',
-        argument: 'object, array of strings, or string',
+        argument: 'object, array of strings, or string', argType: 'object',
         targets: 'resource, component (instances)',
         example: '@tags({ Environment: "prod", Team: "platform" })\nresource S3.Bucket photos { name = "photos" }',
         snippet: 'tags({ $1 })', argHint: '({key: value})', sortOrder: 103
@@ -218,7 +219,7 @@ const DECORATORS: DecoratorInfo[] = [
     {
         name: 'provider', category: 'resource',
         description: 'Target specific cloud providers for resource provisioning',
-        argument: 'string or array of strings',
+        argument: 'string or array of strings', argType: 'string',
         targets: 'resource, component (instances)',
         example: '@provider("aws")\nresource S3.Bucket photos { name = "photos" }',
         snippet: 'provider("$1")', argHint: '("provider")', sortOrder: 104
@@ -227,7 +228,7 @@ const DECORATORS: DecoratorInfo[] = [
     {
         name: 'description', category: 'metadata',
         description: 'Documentation for any declaration',
-        argument: 'string',
+        argument: 'string', argType: 'string',
         targets: 'resource, component, input, output, var, schema, schema property, fun',
         example: '@description("The port number for the web server")\ninput number port = 8080',
         snippet: 'description("$1")', argHint: '("text")', sortOrder: 200
@@ -235,7 +236,7 @@ const DECORATORS: DecoratorInfo[] = [
     {
         name: 'cloud', category: 'metadata',
         description: 'Mark schema property as cloud-provided (value set by cloud provider)',
-        argument: 'none',
+        argument: 'none', argType: 'none',
         targets: 'schema property',
         example: 'schema Instance {\n    @cloud\n    string publicIp\n}',
         sortOrder: 201
@@ -243,7 +244,7 @@ const DECORATORS: DecoratorInfo[] = [
     {
         name: 'count', category: 'metadata',
         description: 'Create N instances of a resource or component. Injects count variable (0-indexed)',
-        argument: 'number',
+        argument: 'number', argType: 'number',
         targets: 'resource, component (instances)',
         example: '@count(3)\nresource EC2.Instance server {\n    name = "server-$count"\n}',
         snippet: 'count($1)', argHint: '(n)', sortOrder: 202
@@ -1181,6 +1182,182 @@ function getCompletionKind(type: DeclarationType): CompletionItemKind {
 // Helper: Escape regex special characters
 function escapeRegex(str: string): string {
     return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+// Validate document and return diagnostics
+function validateDocument(document: TextDocument): Diagnostic[] {
+    const diagnostics: Diagnostic[] = [];
+    const text = document.getText();
+
+    // Find all decorator usages: @decoratorName or @decoratorName(args)
+    const decoratorRegex = /@(\w+)(\s*\(([^)]*)\))?/g;
+    let match;
+
+    while ((match = decoratorRegex.exec(text)) !== null) {
+        const decoratorName = match[1];
+        const hasParens = match[2] !== undefined;
+        const argsStr = match[3]?.trim() || '';
+
+        // Find the decorator definition
+        const decoratorDef = DECORATORS.find(d => d.name === decoratorName);
+
+        if (!decoratorDef) {
+            // Unknown decorator - could add a warning but skip for now
+            continue;
+        }
+
+        const startPos = document.positionAt(match.index);
+        const endPos = document.positionAt(match.index + match[0].length);
+        const range = Range.create(startPos, endPos);
+
+        // Validate based on expected argument type
+        const expectedType = decoratorDef.argType;
+
+        if (expectedType === 'none') {
+            // Should not have arguments
+            if (hasParens && argsStr) {
+                diagnostics.push({
+                    severity: DiagnosticSeverity.Error,
+                    range,
+                    message: `@${decoratorName} does not take arguments`,
+                    source: 'kite'
+                });
+            }
+        } else if (expectedType === 'number') {
+            if (!hasParens || !argsStr) {
+                diagnostics.push({
+                    severity: DiagnosticSeverity.Error,
+                    range,
+                    message: `@${decoratorName} requires a number argument`,
+                    source: 'kite'
+                });
+            } else if (!/^\d+$/.test(argsStr) && !/^\w+$/.test(argsStr)) {
+                // Allow numbers or variable references
+                if (/^".*"$/.test(argsStr) || /^'.*'$/.test(argsStr)) {
+                    diagnostics.push({
+                        severity: DiagnosticSeverity.Error,
+                        range,
+                        message: `@${decoratorName} expects a number, got string`,
+                        source: 'kite'
+                    });
+                } else if (/^\[/.test(argsStr)) {
+                    diagnostics.push({
+                        severity: DiagnosticSeverity.Error,
+                        range,
+                        message: `@${decoratorName} expects a number, got array`,
+                        source: 'kite'
+                    });
+                } else if (/^\{/.test(argsStr)) {
+                    diagnostics.push({
+                        severity: DiagnosticSeverity.Error,
+                        range,
+                        message: `@${decoratorName} expects a number, got object`,
+                        source: 'kite'
+                    });
+                }
+            }
+        } else if (expectedType === 'string') {
+            if (!hasParens || !argsStr) {
+                diagnostics.push({
+                    severity: DiagnosticSeverity.Error,
+                    range,
+                    message: `@${decoratorName} requires a string argument`,
+                    source: 'kite'
+                });
+            } else if (!/^".*"$/.test(argsStr) && !/^'.*'$/.test(argsStr) && !/^\w+$/.test(argsStr)) {
+                // Allow string literals or variable references
+                if (/^\d+$/.test(argsStr)) {
+                    diagnostics.push({
+                        severity: DiagnosticSeverity.Error,
+                        range,
+                        message: `@${decoratorName} expects a string, got number`,
+                        source: 'kite'
+                    });
+                } else if (/^\[/.test(argsStr)) {
+                    // Allow arrays for @provider(["aws", "azure"])
+                    if (decoratorName !== 'provider') {
+                        diagnostics.push({
+                            severity: DiagnosticSeverity.Error,
+                            range,
+                            message: `@${decoratorName} expects a string, got array`,
+                            source: 'kite'
+                        });
+                    }
+                } else if (/^\{/.test(argsStr)) {
+                    diagnostics.push({
+                        severity: DiagnosticSeverity.Error,
+                        range,
+                        message: `@${decoratorName} expects a string, got object`,
+                        source: 'kite'
+                    });
+                }
+            }
+        } else if (expectedType === 'array') {
+            if (!hasParens || !argsStr) {
+                diagnostics.push({
+                    severity: DiagnosticSeverity.Error,
+                    range,
+                    message: `@${decoratorName} requires an array argument`,
+                    source: 'kite'
+                });
+            } else if (!/^\[/.test(argsStr) && !/^\w+$/.test(argsStr)) {
+                // Must start with [ or be a variable reference
+                if (/^".*"$/.test(argsStr) || /^'.*'$/.test(argsStr)) {
+                    diagnostics.push({
+                        severity: DiagnosticSeverity.Error,
+                        range,
+                        message: `@${decoratorName} expects an array, got string`,
+                        source: 'kite'
+                    });
+                } else if (/^\d+$/.test(argsStr)) {
+                    diagnostics.push({
+                        severity: DiagnosticSeverity.Error,
+                        range,
+                        message: `@${decoratorName} expects an array, got number`,
+                        source: 'kite'
+                    });
+                } else if (/^\{/.test(argsStr)) {
+                    diagnostics.push({
+                        severity: DiagnosticSeverity.Error,
+                        range,
+                        message: `@${decoratorName} expects an array, got object`,
+                        source: 'kite'
+                    });
+                }
+            }
+        } else if (expectedType === 'object') {
+            if (!hasParens || !argsStr) {
+                diagnostics.push({
+                    severity: DiagnosticSeverity.Error,
+                    range,
+                    message: `@${decoratorName} requires an argument`,
+                    source: 'kite'
+                });
+            }
+            // @tags accepts object, array, or string - so we allow all for it
+        } else if (expectedType === 'named') {
+            // Named arguments like @validate(regex: "pattern")
+            if (!hasParens || !argsStr) {
+                diagnostics.push({
+                    severity: DiagnosticSeverity.Error,
+                    range,
+                    message: `@${decoratorName} requires named arguments (e.g., regex: "pattern")`,
+                    source: 'kite'
+                });
+            } else if (!/\w+\s*:/.test(argsStr)) {
+                // Must have named argument format
+                diagnostics.push({
+                    severity: DiagnosticSeverity.Error,
+                    range,
+                    message: `@${decoratorName} requires named arguments (e.g., regex: "pattern")`,
+                    source: 'kite'
+                });
+            }
+        }
+        // 'reference' type is flexible - accepts identifiers or arrays
+    }
+
+    return diagnostics;
 }
 
 // Start the server

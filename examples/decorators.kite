@@ -1,11 +1,11 @@
 // Decorator examples
-@existing
+@existing("")
 @sensitive
 resource Database prod {
   name = "production-db"
 }
 
-@minValue(1)
+@minValue(true)
 @maxValue(100)
 @description("Number of instances to create")
 input number instanceCount = 10
