@@ -262,18 +262,15 @@ connection.onCompletion((params: TextDocumentPositionParams): CompletionItem[] =
 
     // Check if we're after @ (decorator context)
     if (beforeCursor.match(/@\s*\w*$/)) {
-        // Detect context for prioritization
+        // Detect context for filtering and prioritization
         const context = getDecoratorContext(text, offset);
 
-        // Sort decorators: prioritize by context, then by sortOrder
-        const sortedDecorators = [...DECORATORS].sort((a, b) => {
-            // Prioritize decorators matching the context
-            const aContextMatch = context && a.category === context ? -1000 : 0;
-            const bContextMatch = context && b.category === context ? -1000 : 0;
-            return (a.sortOrder + aContextMatch) - (b.sortOrder + bContextMatch);
-        });
+        // Filter decorators that apply to the current context, then sort by sortOrder
+        const applicableDecorators = DECORATORS
+            .filter(dec => decoratorAppliesToTarget(dec, context))
+            .sort((a, b) => a.sortOrder - b.sortOrder);
 
-        sortedDecorators.forEach((dec, index) => {
+        applicableDecorators.forEach((dec, index) => {
             // Build detailed documentation for second Ctrl+Space
             let docContent = '';
             if (dec.argument) {
@@ -393,31 +390,66 @@ connection.onCompletion((params: TextDocumentPositionParams): CompletionItem[] =
 });
 
 // Helper: Detect decorator context for prioritization
-function getDecoratorContext(text: string, offset: number): 'validation' | 'resource' | 'metadata' | null {
-    // Look at the lines around the cursor to determine context
-    // Find start of current line
-    let lineStart = offset;
-    while (lineStart > 0 && text[lineStart - 1] !== '\n') {
-        lineStart--;
-    }
+type DecoratorTarget = 'input' | 'output' | 'resource' | 'component' | 'schema' | 'schema property' | 'var' | 'fun' | null;
 
+function getDecoratorContext(text: string, offset: number): DecoratorTarget {
     // Look at next few lines to see what declaration follows
-    let lookAhead = text.substring(offset, Math.min(text.length, offset + 200));
+    let lookAhead = text.substring(offset, Math.min(text.length, offset + 300));
     // Remove the current partial decorator if any
     lookAhead = lookAhead.replace(/^\w*/, '');
 
-    // Check what follows
-    if (/^\s*\n?\s*(input|output)\b/.test(lookAhead)) {
-        return 'validation'; // input/output -> prioritize validation decorators
+    // Skip other decorators that may follow
+    lookAhead = lookAhead.replace(/^(\s*\n?\s*@\w+(\([^)]*\))?\s*)+/, '');
+
+    // Check what follows - order matters (more specific first)
+    if (/^\s*\n?\s*input\b/.test(lookAhead)) {
+        return 'input';
     }
-    if (/^\s*\n?\s*(resource|component)\b/.test(lookAhead)) {
-        return 'resource'; // resource/component -> prioritize resource decorators
+    if (/^\s*\n?\s*output\b/.test(lookAhead)) {
+        return 'output';
     }
-    if (/^\s*\n?\s*(schema)\b/.test(lookAhead)) {
-        return 'metadata';
+    if (/^\s*\n?\s*resource\b/.test(lookAhead)) {
+        return 'resource';
+    }
+    if (/^\s*\n?\s*component\b/.test(lookAhead)) {
+        return 'component';
+    }
+    if (/^\s*\n?\s*schema\b/.test(lookAhead)) {
+        return 'schema';
+    }
+    if (/^\s*\n?\s*var\b/.test(lookAhead)) {
+        return 'var';
+    }
+    if (/^\s*\n?\s*fun\b/.test(lookAhead)) {
+        return 'fun';
+    }
+    // Check if we're inside a schema (for schema property)
+    // Look backwards to see if we're inside a schema block
+    const beforeCursor = text.substring(Math.max(0, offset - 500), offset);
+    if (/schema\s+\w+\s*\{[^}]*$/.test(beforeCursor)) {
+        return 'schema property';
     }
 
     return null;
+}
+
+// Helper: Check if a decorator can be applied to the given target
+function decoratorAppliesToTarget(dec: DecoratorInfo, target: DecoratorTarget): boolean {
+    if (!target || !dec.targets) return true; // No filtering if unknown context
+
+    const targets = dec.targets.toLowerCase();
+
+    // Handle special cases
+    if (target === 'component') {
+        // component (instances) means it applies to component instantiation
+        return targets.includes('component');
+    }
+    if (target === 'schema property') {
+        return targets.includes('schema property');
+    }
+
+    // Direct match
+    return targets.includes(target);
 }
 
 // Helper: Check if we're after '=' on the same line (value context)
