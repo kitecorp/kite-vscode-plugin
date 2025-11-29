@@ -742,6 +742,192 @@ function isInsideNestedStructure(text: string, blockStart: number, cursorOffset:
     return depth > 0;
 }
 
+// Helper: Represents an import statement
+interface ImportInfo {
+    path: string;
+    symbols: string[];  // Empty array means wildcard import (import *)
+}
+
+// Helper: Extract imports from text
+function extractImports(text: string): ImportInfo[] {
+    const imports: ImportInfo[] = [];
+
+    // Pattern: import * from "path"
+    const wildcardRegex = /\bimport\s+\*\s+from\s+["']([^"']+)["']/g;
+    let match;
+    while ((match = wildcardRegex.exec(text)) !== null) {
+        imports.push({ path: match[1], symbols: [] });
+    }
+
+    // Pattern: import SymbolName from "path" or import Symbol1, Symbol2 from "path"
+    const namedRegex = /\bimport\s+([\w\s,]+)\s+from\s+["']([^"']+)["']/g;
+    while ((match = namedRegex.exec(text)) !== null) {
+        const symbolsPart = match[1].trim();
+        if (symbolsPart !== '*') {
+            const symbols = symbolsPart.split(',').map(s => s.trim()).filter(s => s);
+            imports.push({ path: match[2], symbols });
+        }
+    }
+
+    return imports;
+}
+
+// Helper: Prompt user to import a file
+async function promptForImport(symbolName: string, targetFilePath: string, currentFilePath: string, currentDocUri: string): Promise<void> {
+    const targetFileName = path.basename(targetFilePath);
+    const currentDir = path.dirname(currentFilePath);
+
+    // Calculate relative import path
+    let importPath = path.relative(currentDir, targetFilePath);
+    // Use forward slashes for import paths
+    importPath = importPath.replace(/\\/g, '/');
+
+    const message = `'${symbolName}' is defined in '${targetFileName}' which is not imported. Add import?`;
+
+    const result = await connection.window.showInformationMessage(
+        message,
+        { title: 'Add Import' },
+        { title: 'Cancel' }
+    );
+
+    if (result?.title === 'Add Import') {
+        const document = documents.get(currentDocUri);
+        if (document) {
+            const text = document.getText();
+
+            // Check if there's already an import from this file
+            // Match: import X from "path" or import X, Y from "path"
+            const existingImportRegex = new RegExp(
+                `^(import\\s+)([\\w\\s,]+)(\\s+from\\s+["']${escapeRegex(importPath)}["'])`,
+                'gm'
+            );
+            const existingMatch = existingImportRegex.exec(text);
+
+            if (existingMatch) {
+                // Add to existing import
+                const importPrefix = existingMatch[1];  // "import "
+                const existingSymbols = existingMatch[2];  // "X" or "X, Y"
+                const importSuffix = existingMatch[3];  // " from "path""
+
+                // Check if it's a wildcard import
+                if (existingSymbols.trim() === '*') {
+                    // Already importing everything, no need to add
+                    return;
+                }
+
+                // Check if symbol is already imported
+                const symbolList = existingSymbols.split(',').map(s => s.trim());
+                if (symbolList.includes(symbolName)) {
+                    // Already imported
+                    return;
+                }
+
+                // Add the new symbol
+                const newSymbols = existingSymbols.trim() + ', ' + symbolName;
+                const newImportLine = importPrefix + newSymbols + importSuffix;
+
+                const matchStart = existingMatch.index;
+                const matchEnd = matchStart + existingMatch[0].length;
+
+                // Calculate line and character positions
+                const beforeMatch = text.substring(0, matchStart);
+                const startLine = beforeMatch.split('\n').length - 1;
+                const startChar = matchStart - beforeMatch.lastIndexOf('\n') - 1;
+
+                const beforeEnd = text.substring(0, matchEnd);
+                const endLine = beforeEnd.split('\n').length - 1;
+                const endChar = matchEnd - beforeEnd.lastIndexOf('\n') - 1;
+
+                const edit = {
+                    documentChanges: [
+                        {
+                            textDocument: { uri: currentDocUri, version: document.version },
+                            edits: [
+                                {
+                                    range: Range.create(
+                                        Position.create(startLine, startChar),
+                                        Position.create(endLine, endChar)
+                                    ),
+                                    newText: newImportLine
+                                }
+                            ]
+                        }
+                    ]
+                };
+
+                await connection.workspace.applyEdit(edit);
+            } else {
+                // No existing import - add new import line
+                const importRegex = /^import\s+.*$/gm;
+                let lastImportMatch;
+                let match;
+                while ((match = importRegex.exec(text)) !== null) {
+                    lastImportMatch = match;
+                }
+
+                let insertLine = 0;
+                if (lastImportMatch) {
+                    // Insert after the last import
+                    const beforeLastImport = text.substring(0, lastImportMatch.index + lastImportMatch[0].length);
+                    insertLine = beforeLastImport.split('\n').length;
+                }
+
+                const importStatement = `import ${symbolName} from "${importPath}"`;
+                const edit = {
+                    documentChanges: [
+                        {
+                            textDocument: { uri: currentDocUri, version: document.version },
+                            edits: [
+                                {
+                                    range: Range.create(Position.create(insertLine, 0), Position.create(insertLine, 0)),
+                                    newText: importStatement + '\n'
+                                }
+                            ]
+                        }
+                    ]
+                };
+
+                await connection.workspace.applyEdit(edit);
+            }
+        }
+    }
+}
+
+// Helper: Check if a symbol from a file is imported
+function isSymbolImported(imports: ImportInfo[], symbolName: string, filePath: string, currentFilePath: string): boolean {
+    const currentDir = path.dirname(currentFilePath);
+
+    for (const importInfo of imports) {
+        // Handle relative imports like "common.kite" or "./common.kite"
+        let resolvedPath: string;
+
+        if (importInfo.path.startsWith('./') || importInfo.path.startsWith('../')) {
+            resolvedPath = path.resolve(currentDir, importInfo.path);
+        } else if (importInfo.path.endsWith('.kite')) {
+            // Relative to current directory
+            resolvedPath = path.resolve(currentDir, importInfo.path);
+        } else {
+            // Package-style path like "aws.DatabaseConfig" -> aws/DatabaseConfig.kite
+            const packagePath = importInfo.path.replace(/\./g, '/') + '.kite';
+            resolvedPath = path.resolve(currentDir, packagePath);
+        }
+
+        // Normalize paths for comparison
+        if (path.normalize(resolvedPath) === path.normalize(filePath)) {
+            // File matches - check if symbol is imported
+            if (importInfo.symbols.length === 0) {
+                // Wildcard import - all symbols are accessible
+                return true;
+            } else if (importInfo.symbols.includes(symbolName)) {
+                // Named import includes this symbol
+                return true;
+            }
+        }
+    }
+
+    return false;
+}
+
 // Helper: Find schema or component type definition
 function findTypeDefinition(text: string, offset: number, word: string, currentDocUri: string): Location | null {
     // Check if this word is a type reference in a resource or component declaration
@@ -777,19 +963,31 @@ function findTypeDefinition(text: string, offset: number, word: string, currentD
         }
     }
 
+    const currentFilePath = URI.parse(currentDocUri).fsPath;
+    const imports = extractImports(text);
+
     if (isSchemaRef) {
         // Find schema definition in current file
         const location = findSchemaDefinition(text, word, currentDocUri);
         if (location) return location;
 
-        // Try other files in workspace
+        // Try other files in workspace (only if imported)
         try {
             const kiteFiles = findKiteFilesInWorkspace();
             for (const filePath of kiteFiles) {
                 const fileContent = getFileContent(filePath, currentDocUri);
                 if (fileContent) {
                     const loc = findSchemaDefinition(fileContent, word, filePath);
-                    if (loc) return loc;
+                    if (loc) {
+                        // Check if this symbol is imported
+                        if (isSymbolImported(imports, word, filePath, currentFilePath)) {
+                            return loc;
+                        } else {
+                            // Symbol not imported - prompt user
+                            promptForImport(word, filePath, currentFilePath, currentDocUri);
+                            return null;
+                        }
+                    }
                 }
             }
         } catch {
@@ -802,14 +1000,23 @@ function findTypeDefinition(text: string, offset: number, word: string, currentD
         const location = findComponentDefinition(text, word, currentDocUri);
         if (location) return location;
 
-        // Try other files in workspace
+        // Try other files in workspace (only if imported)
         try {
             const kiteFiles = findKiteFilesInWorkspace();
             for (const filePath of kiteFiles) {
                 const fileContent = getFileContent(filePath, currentDocUri);
                 if (fileContent) {
                     const loc = findComponentDefinition(fileContent, word, filePath);
-                    if (loc) return loc;
+                    if (loc) {
+                        // Check if this symbol is imported
+                        if (isSymbolImported(imports, word, filePath, currentFilePath)) {
+                            return loc;
+                        } else {
+                            // Symbol not imported - prompt user
+                            promptForImport(word, filePath, currentFilePath, currentDocUri);
+                            return null;
+                        }
+                    }
                 }
             }
         } catch {

@@ -25,6 +25,18 @@ component WebServer {
     }
     private_ips = ["172.16.10.100"]
   }
+
+  resource DatabaseConfig server {
+    size        = instanceType
+    tag         = {
+      Environment: "$env",
+      Name       : "web-server",
+      New        : {
+        a: "b"
+      }
+    }
+    private_ips = ["172.16.10.100"]
+  }
   // some output
   output string endpoint = server.size
   output string tag      = server.tag.Name
