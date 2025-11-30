@@ -1,92 +1,14 @@
 /**
- * Utility functions for scope detection and bracket/brace matching.
+ * Utility functions for scope detection and string literal handling.
  */
 
 import { Location, Range } from 'vscode-languageserver/node';
 import { TextDocument } from 'vscode-languageserver-textdocument';
 import { escapeRegex, isInComment } from '../../utils/rename-utils';
-import { offsetToPosition } from '../../utils/text-utils';
+import { offsetToPosition, findMatchingBrace, findMatchingBracket } from '../../utils/text-utils';
 
-/**
- * Find the matching closing bracket for an opening bracket.
- * Handles nested brackets and string literals.
- */
-export function findMatchingBracket(text: string, startPos: number): number {
-    if (text[startPos] !== '[') return -1;
-
-    let depth = 0;
-    let inString = false;
-    let stringChar = '';
-
-    for (let i = startPos; i < text.length; i++) {
-        const char = text[i];
-        const prevChar = i > 0 ? text[i - 1] : '';
-
-        // Handle string literals
-        if ((char === '"' || char === "'") && prevChar !== '\\') {
-            if (!inString) {
-                inString = true;
-                stringChar = char;
-            } else if (char === stringChar) {
-                inString = false;
-            }
-            continue;
-        }
-
-        if (inString) continue;
-
-        if (char === '[') {
-            depth++;
-        } else if (char === ']') {
-            depth--;
-            if (depth === 0) {
-                return i;
-            }
-        }
-    }
-
-    return -1;
-}
-
-/**
- * Find the matching closing brace for an opening brace.
- * Handles nested braces and string literals.
- */
-export function findMatchingBrace(text: string, startPos: number): number {
-    if (text[startPos] !== '{') return -1;
-
-    let depth = 0;
-    let inString = false;
-    let stringChar = '';
-
-    for (let i = startPos; i < text.length; i++) {
-        const char = text[i];
-        const prevChar = i > 0 ? text[i - 1] : '';
-
-        if ((char === '"' || char === "'") && prevChar !== '\\') {
-            if (!inString) {
-                inString = true;
-                stringChar = char;
-            } else if (char === stringChar) {
-                inString = false;
-            }
-            continue;
-        }
-
-        if (inString) continue;
-
-        if (char === '{') {
-            depth++;
-        } else if (char === '}') {
-            depth--;
-            if (depth === 0) {
-                return i;
-            }
-        }
-    }
-
-    return -1;
-}
+// Re-export for backward compatibility
+export { findMatchingBrace, findMatchingBracket } from '../../utils/text-utils';
 
 /**
  * Check if an offset is inside a string literal.

@@ -62,19 +62,90 @@ export function getCompletionKind(type: DeclarationType): CompletionItemKind {
 }
 
 /**
- * Find the matching closing brace for an opening brace
+ * Find the matching closing brace for an opening brace.
+ * Handles nested braces and string literals.
+ * @param text - The text to search in
+ * @param startPos - Position of the opening brace
+ * @returns Position of the matching closing brace, or -1 if not found
  */
-export function findMatchingBrace(text: string, openBracePos: number): number {
-    let braceDepth = 1;
-    let pos = openBracePos + 1;
+export function findMatchingBrace(text: string, startPos: number): number {
+    if (text[startPos] !== '{') return -1;
 
-    while (pos < text.length && braceDepth > 0) {
-        if (text[pos] === '{') braceDepth++;
-        else if (text[pos] === '}') braceDepth--;
-        pos++;
+    let depth = 0;
+    let inString = false;
+    let stringChar = '';
+
+    for (let i = startPos; i < text.length; i++) {
+        const char = text[i];
+        const prevChar = i > 0 ? text[i - 1] : '';
+
+        if ((char === '"' || char === "'") && prevChar !== '\\') {
+            if (!inString) {
+                inString = true;
+                stringChar = char;
+            } else if (char === stringChar) {
+                inString = false;
+            }
+            continue;
+        }
+
+        if (inString) continue;
+
+        if (char === '{') {
+            depth++;
+        } else if (char === '}') {
+            depth--;
+            if (depth === 0) {
+                return i;
+            }
+        }
     }
 
-    return pos;
+    return -1;
+}
+
+/**
+ * Find the matching closing bracket for an opening bracket.
+ * Handles nested brackets and string literals.
+ * @param text - The text to search in
+ * @param startPos - Position of the opening bracket
+ * @returns Position of the matching closing bracket, or -1 if not found
+ */
+export function findMatchingBracket(text: string, startPos: number): number {
+    if (text[startPos] !== '[') return -1;
+
+    let depth = 0;
+    let inString = false;
+    let stringChar = '';
+
+    for (let i = startPos; i < text.length; i++) {
+        const char = text[i];
+        const prevChar = i > 0 ? text[i - 1] : '';
+
+        // Handle string literals
+        if ((char === '"' || char === "'") && prevChar !== '\\') {
+            if (!inString) {
+                inString = true;
+                stringChar = char;
+            } else if (char === stringChar) {
+                inString = false;
+            }
+            continue;
+        }
+
+        if (inString) continue;
+
+        if (char === '[') {
+            depth++;
+        } else if (char === ']') {
+            depth--;
+            if (depth === 0) {
+                return i;
+            }
+        }
+    }
+
+    return -1;
 }
 
 /**
@@ -106,10 +177,12 @@ export function findEnclosingBlock(text: string, offset: number): BlockContext |
     while ((match = blockRegex.exec(text)) !== null) {
         const blockStart = match.index;
         const openBracePos = blockStart + match[0].length - 1;
-        const blockEnd = findMatchingBrace(text, openBracePos);
+        const closeBracePos = findMatchingBrace(text, openBracePos);
 
-        // Check if offset is inside this block
-        if (offset > openBracePos && offset < blockEnd) {
+        if (closeBracePos === -1) continue;
+
+        // Check if offset is inside this block (between the braces)
+        if (offset > openBracePos && offset < closeBracePos) {
             // Found a block containing our position
             // Keep searching for nested blocks (most specific)
             enclosing = {
@@ -117,7 +190,7 @@ export function findEnclosingBlock(text: string, offset: number): BlockContext |
                 type: match[1] as 'resource' | 'component',
                 typeName: match[2],
                 start: blockStart,
-                end: blockEnd
+                end: closeBracePos
             };
         }
     }

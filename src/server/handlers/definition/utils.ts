@@ -2,19 +2,14 @@
  * Utility functions for the definition handler.
  */
 
-import { Location, Range, Position } from 'vscode-languageserver/node';
+import { Location, Range } from 'vscode-languageserver/node';
 import { TextDocument } from 'vscode-languageserver-textdocument';
 import { PropertyAccessContext, PropertyResult } from '../../types';
 import { escapeRegex } from '../../utils/rename-utils';
-import { findMatchingBrace } from '../../utils/text-utils';
+import { findMatchingBrace, offsetToPosition } from '../../utils/text-utils';
 
-/**
- * Convert offset to Position.
- */
-export function offsetToPosition(text: string, offset: number): Position {
-    const lines = text.substring(0, offset).split('\n');
-    return Position.create(lines.length - 1, lines[lines.length - 1].length);
-}
+// Re-export for backward compatibility
+export { offsetToPosition } from '../../utils/text-utils';
 
 /**
  * Get property access context (e.g., server.tag.New.a).

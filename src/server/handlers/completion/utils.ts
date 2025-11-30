@@ -3,6 +3,7 @@
  */
 
 import { escapeRegex } from '../../utils/rename-utils';
+import { findMatchingBrace } from '../../utils/text-utils';
 
 /**
  * Check if cursor is after '=' sign (assignment, not comparison)
@@ -48,22 +49,6 @@ export function isInsideNestedStructure(text: string, blockStart: number, cursor
 }
 
 /**
- * Find matching brace for completion
- */
-export function findMatchingBraceForCompletion(text: string, openBracePos: number): number {
-    let depth = 1;
-    let pos = openBracePos + 1;
-
-    while (pos < text.length && depth > 0) {
-        if (text[pos] === '{') depth++;
-        else if (text[pos] === '}') depth--;
-        pos++;
-    }
-
-    return depth === 0 ? pos - 1 : -1;
-}
-
-/**
  * Extract properties from body of a resource/component instantiation
  */
 export function extractPropertiesFromBody(text: string, declarationName: string): string[] {
@@ -74,7 +59,7 @@ export function extractPropertiesFromBody(text: string, declarationName: string)
     if (!match) return properties;
 
     const braceStart = match.index + match[0].length - 1;
-    const braceEnd = findMatchingBraceForCompletion(text, braceStart);
+    const braceEnd = findMatchingBrace(text, braceStart);
     if (braceEnd === -1) return properties;
 
     const bodyText = text.substring(braceStart + 1, braceEnd);
