@@ -267,3 +267,412 @@ describe('isInsideNestedStructure', () => {
         expect(isInsideNestedStructure(text, 0, text.length)).toBe(false);
     });
 });
+
+describe('property access completions', () => {
+    it('should provide schema properties for resource dot access', () => {
+        const text = `schema ServerConfig {
+    string host
+    number port
+}
+
+resource ServerConfig server {
+    host = "localhost"
+}
+
+var x = server.|`;
+        const offset = text.indexOf('|');
+        const doc = createDocument(text.replace('|', ''));
+        const position = positionFromOffset(text.replace('|', ''), offset);
+
+        const declarations: Declaration[] = [
+            {
+                name: 'server',
+                type: 'resource',
+                schemaName: 'ServerConfig',
+                range: Range.create(5, 0, 7, 1),
+                nameRange: Range.create(5, 20, 5, 26),
+                uri: 'file:///test.kite',
+            },
+        ];
+
+        const ctx: CompletionContext = {
+            getDeclarations: () => declarations,
+            findKiteFilesInWorkspace: () => [],
+            getFileContent: () => text.replace('|', ''),
+            findEnclosingBlock: () => null,
+        };
+
+        const completions = handleCompletion(doc, position, ctx);
+        const labels = completions.map(c => c.label);
+
+        expect(labels).toContain('host');
+        expect(labels).toContain('port');
+    });
+
+    it('should show set properties first with indicator for resource dot access', () => {
+        const text = `schema ServerConfig {
+    string host
+    number port
+}
+
+resource ServerConfig server {
+    host = "localhost"
+}
+
+var x = server.|`;
+        const offset = text.indexOf('|');
+        const doc = createDocument(text.replace('|', ''));
+        const position = positionFromOffset(text.replace('|', ''), offset);
+
+        const declarations: Declaration[] = [
+            {
+                name: 'server',
+                type: 'resource',
+                schemaName: 'ServerConfig',
+                range: Range.create(5, 0, 7, 1),
+                nameRange: Range.create(5, 20, 5, 26),
+                uri: 'file:///test.kite',
+            },
+        ];
+
+        const ctx: CompletionContext = {
+            getDeclarations: () => declarations,
+            findKiteFilesInWorkspace: () => [],
+            getFileContent: () => text.replace('|', ''),
+            findEnclosingBlock: () => null,
+        };
+
+        const completions = handleCompletion(doc, position, ctx);
+        const hostCompletion = completions.find(c => c.label === 'host');
+
+        // Set property should have indicator in detail
+        expect(hostCompletion?.detail).toContain('(set)');
+        // Set property should sort before unset
+        expect(hostCompletion?.sortText).toBe('0host');
+    });
+
+    it('should provide outputs for component dot access', () => {
+        const text = `component WebServer {
+    input string name
+    output string endpoint = "http://example.com"
+    output number status = 200
+}
+
+component WebServer api {
+    name = "api"
+}
+
+var url = api.|`;
+        const offset = text.indexOf('|');
+        const doc = createDocument(text.replace('|', ''));
+        const position = positionFromOffset(text.replace('|', ''), offset);
+
+        const declarations: Declaration[] = [
+            {
+                name: 'api',
+                type: 'component',
+                componentType: 'WebServer',
+                range: Range.create(6, 0, 8, 1),
+                nameRange: Range.create(6, 20, 6, 23),
+                uri: 'file:///test.kite',
+            },
+        ];
+
+        const ctx: CompletionContext = {
+            getDeclarations: () => declarations,
+            findKiteFilesInWorkspace: () => [],
+            getFileContent: () => text.replace('|', ''),
+            findEnclosingBlock: () => null,
+        };
+
+        const completions = handleCompletion(doc, position, ctx);
+        const labels = completions.map(c => c.label);
+
+        expect(labels).toContain('endpoint');
+        expect(labels).toContain('status');
+
+        const endpointCompletion = completions.find(c => c.label === 'endpoint');
+        expect(endpointCompletion?.detail).toBe('output: string');
+    });
+
+    it('should return empty for unknown object dot access', () => {
+        const text = `var x = unknown.|`;
+        const offset = text.indexOf('|');
+        const doc = createDocument(text.replace('|', ''));
+        const position = positionFromOffset(text.replace('|', ''), offset);
+
+        const completions = handleCompletion(doc, position, createContext());
+
+        expect(completions).toHaveLength(0);
+    });
+});
+
+describe('block body completions', () => {
+    it('should provide schema properties inside resource body', () => {
+        const text = `schema ServerConfig {
+    string host
+    number port
+}
+
+resource ServerConfig server {
+    |
+}`;
+        const offset = text.indexOf('|');
+        const cleanText = text.replace('|', '');
+        const doc = createDocument(cleanText);
+        const position = positionFromOffset(cleanText, offset);
+
+        const blockStart = cleanText.indexOf('resource ServerConfig server {') + 'resource ServerConfig server {'.length - 1;
+        const blockEnd = cleanText.lastIndexOf('}');
+
+        const ctx: CompletionContext = {
+            getDeclarations: () => [],
+            findKiteFilesInWorkspace: () => [],
+            getFileContent: () => cleanText,
+            findEnclosingBlock: () => ({
+                type: 'resource',
+                name: 'server',
+                typeName: 'ServerConfig',
+                start: blockStart,
+                end: blockEnd,
+            }),
+        };
+
+        const completions = handleCompletion(doc, position, ctx);
+        const labels = completions.map(c => c.label);
+
+        expect(labels).toContain('host');
+        expect(labels).toContain('port');
+
+        // Check insertText includes ' = '
+        const hostCompletion = completions.find(c => c.label === 'host');
+        expect(hostCompletion?.insertText).toBe('host = ');
+    });
+
+    it('should filter already-set properties in resource body', () => {
+        const text = `schema ServerConfig {
+    string host
+    number port
+}
+
+resource ServerConfig server {
+    host = "localhost"
+    |
+}`;
+        const offset = text.indexOf('|');
+        const cleanText = text.replace('|', '');
+        const doc = createDocument(cleanText);
+        const position = positionFromOffset(cleanText, offset);
+
+        const blockStart = cleanText.indexOf('resource ServerConfig server {') + 'resource ServerConfig server {'.length - 1;
+        const blockEnd = cleanText.lastIndexOf('}');
+
+        const ctx: CompletionContext = {
+            getDeclarations: () => [],
+            findKiteFilesInWorkspace: () => [],
+            getFileContent: () => cleanText,
+            findEnclosingBlock: () => ({
+                type: 'resource',
+                name: 'server',
+                typeName: 'ServerConfig',
+                start: blockStart,
+                end: blockEnd,
+            }),
+        };
+
+        const completions = handleCompletion(doc, position, ctx);
+        const labels = completions.map(c => c.label);
+
+        // host is already set, should not appear
+        expect(labels).not.toContain('host');
+        // port is not set, should appear
+        expect(labels).toContain('port');
+    });
+
+    it('should provide input properties inside component instantiation body', () => {
+        const text = `component WebServer {
+    input string name
+    input number replicas = 1
+}
+
+component WebServer api {
+    |
+}`;
+        const offset = text.indexOf('|');
+        const cleanText = text.replace('|', '');
+        const doc = createDocument(cleanText);
+        const position = positionFromOffset(cleanText, offset);
+
+        const blockStart = cleanText.indexOf('component WebServer api {') + 'component WebServer api {'.length - 1;
+        const blockEnd = cleanText.lastIndexOf('}');
+
+        const ctx: CompletionContext = {
+            getDeclarations: () => [],
+            findKiteFilesInWorkspace: () => [],
+            getFileContent: () => cleanText,
+            findEnclosingBlock: () => ({
+                type: 'component',
+                name: 'api',
+                typeName: 'WebServer',
+                start: blockStart,
+                end: blockEnd,
+            }),
+        };
+
+        const completions = handleCompletion(doc, position, ctx);
+        const labels = completions.map(c => c.label);
+
+        expect(labels).toContain('name');
+        expect(labels).toContain('replicas');
+    });
+
+    it('should return empty completions inside nested structure', () => {
+        const text = `schema Config {
+    object settings
+}
+
+resource Config myConfig {
+    settings = {
+        |
+    }
+}`;
+        const offset = text.indexOf('|');
+        const cleanText = text.replace('|', '');
+        const doc = createDocument(cleanText);
+        const position = positionFromOffset(cleanText, offset);
+
+        const blockStart = cleanText.indexOf('resource Config myConfig {') + 'resource Config myConfig {'.length - 1;
+        const blockEnd = cleanText.lastIndexOf('}');
+
+        const ctx: CompletionContext = {
+            getDeclarations: () => [],
+            findKiteFilesInWorkspace: () => [],
+            getFileContent: () => cleanText,
+            findEnclosingBlock: () => ({
+                type: 'resource',
+                name: 'myConfig',
+                typeName: 'Config',
+                start: blockStart,
+                end: blockEnd,
+            }),
+        };
+
+        const completions = handleCompletion(doc, position, ctx);
+
+        // Inside nested structure, should return empty (not schema properties)
+        expect(completions).toHaveLength(0);
+    });
+});
+
+describe('context-aware value suggestions', () => {
+    it('should provide boolean suggestions for boolean property value', () => {
+        const text = `schema Config {
+    boolean enabled
+}
+
+resource Config myConfig {
+    enabled = |
+}`;
+        const offset = text.indexOf('|');
+        const cleanText = text.replace('|', '');
+        const doc = createDocument(cleanText);
+        const position = positionFromOffset(cleanText, offset);
+
+        const blockStart = cleanText.indexOf('resource Config myConfig {') + 'resource Config myConfig {'.length - 1;
+        const blockEnd = cleanText.lastIndexOf('}');
+
+        const ctx: CompletionContext = {
+            getDeclarations: () => [],
+            findKiteFilesInWorkspace: () => [],
+            getFileContent: () => cleanText,
+            findEnclosingBlock: () => ({
+                type: 'resource',
+                name: 'myConfig',
+                typeName: 'Config',
+                start: blockStart,
+                end: blockEnd,
+            }),
+        };
+
+        const completions = handleCompletion(doc, position, ctx);
+        const labels = completions.map(c => c.label);
+
+        expect(labels).toContain('true');
+        expect(labels).toContain('false');
+    });
+
+    it('should provide port suggestions for port property', () => {
+        const text = `schema Config {
+    number port
+}
+
+resource Config myConfig {
+    port = |
+}`;
+        const offset = text.indexOf('|');
+        const cleanText = text.replace('|', '');
+        const doc = createDocument(cleanText);
+        const position = positionFromOffset(cleanText, offset);
+
+        const blockStart = cleanText.indexOf('resource Config myConfig {') + 'resource Config myConfig {'.length - 1;
+        const blockEnd = cleanText.lastIndexOf('}');
+
+        const ctx: CompletionContext = {
+            getDeclarations: () => [],
+            findKiteFilesInWorkspace: () => [],
+            getFileContent: () => cleanText,
+            findEnclosingBlock: () => ({
+                type: 'resource',
+                name: 'myConfig',
+                typeName: 'Config',
+                start: blockStart,
+                end: blockEnd,
+            }),
+        };
+
+        const completions = handleCompletion(doc, position, ctx);
+        const labels = completions.map(c => c.label);
+
+        // Should have common port suggestions
+        expect(labels).toContain('80');
+        expect(labels).toContain('443');
+        expect(labels).toContain('8080');
+    });
+
+    it('should provide region suggestions for region property', () => {
+        const text = `schema Config {
+    string region
+}
+
+resource Config myConfig {
+    region = |
+}`;
+        const offset = text.indexOf('|');
+        const cleanText = text.replace('|', '');
+        const doc = createDocument(cleanText);
+        const position = positionFromOffset(cleanText, offset);
+
+        const blockStart = cleanText.indexOf('resource Config myConfig {') + 'resource Config myConfig {'.length - 1;
+        const blockEnd = cleanText.lastIndexOf('}');
+
+        const ctx: CompletionContext = {
+            getDeclarations: () => [],
+            findKiteFilesInWorkspace: () => [],
+            getFileContent: () => cleanText,
+            findEnclosingBlock: () => ({
+                type: 'resource',
+                name: 'myConfig',
+                typeName: 'Config',
+                start: blockStart,
+                end: blockEnd,
+            }),
+        };
+
+        const completions = handleCompletion(doc, position, ctx);
+        const labels = completions.map(c => c.label);
+
+        // Should have AWS region suggestions
+        expect(labels).toContain('"us-east-1"');
+        expect(labels).toContain('"eu-west-1"');
+    });
+});
