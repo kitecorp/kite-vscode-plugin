@@ -22,3 +22,6 @@ export {
     ParseResult,
     SyntaxError
 } from './parse-utils';
+
+// AST-based scanner
+export { scanDocumentAST } from './ast-scanner';

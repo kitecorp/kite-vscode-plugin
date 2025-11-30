@@ -43,7 +43,7 @@ import { handleDefinition, DefinitionContext, findSchemaDefinition, findComponen
 import { handleReferences, ReferencesContext } from './handlers/references';
 import { handlePrepareRename, handleRename, RenameContext } from './handlers/rename';
 import { handleCompletion, CompletionContext } from './handlers/completion';
-import { scanDocument } from './scanner';
+import { scanDocumentAST } from '../parser';
 
 // Create a connection for the server using Node's IPC
 const connection = createConnection(ProposedFeatures.all);
@@ -119,7 +119,7 @@ connection.onInitialize((params: InitializeParams): InitializeResult => {
 
 // Scan document for declarations when it changes
 documents.onDidChangeContent(change => {
-    const declarations = scanDocument(change.document);
+    const declarations = scanDocumentAST(change.document);
     declarationCache.set(change.document.uri, declarations);
 
     // Validate document and publish diagnostics
