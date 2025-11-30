@@ -4,3 +4,7 @@ resource Configs server {
     host = "localhost"
     port = 8080
 }
+
+var number aaa = "asd"
+var number aaa = "asd"
+var number a = "asd"

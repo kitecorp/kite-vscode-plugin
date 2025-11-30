@@ -21,6 +21,8 @@ import {
     DocumentSymbolParams,
     RenameParams,
     PrepareRenameParams,
+    DocumentFormattingParams,
+    TextEdit,
 } from 'vscode-languageserver/node';
 
 import { TextDocument } from 'vscode-languageserver-textdocument';
@@ -43,6 +45,7 @@ import { handleDefinition, DefinitionContext, findSchemaDefinition, findComponen
 import { handleReferences, ReferencesContext } from './handlers/references';
 import { handlePrepareRename, handleRename, RenameContext } from './handlers/rename';
 import { handleCompletion, CompletionContext } from './handlers/completion';
+import { formatDocument } from './handlers/formatting';
 import { scanDocumentAST } from '../parser';
 
 // Create a connection for the server using Node's IPC
@@ -112,7 +115,8 @@ connection.onInitialize((params: InitializeParams): InitializeResult => {
             documentSymbolProvider: true,
             renameProvider: {
                 prepareProvider: true
-            }
+            },
+            documentFormattingProvider: true
         }
     };
 });
@@ -312,6 +316,16 @@ connection.onDocumentSymbol((params: DocumentSymbolParams): DocumentSymbol[] => 
     const document = documents.get(params.textDocument.uri);
     if (!document) return [];
     return handleDocumentSymbol(document);
+});
+
+// Document Formatting handler - provides code formatting
+connection.onDocumentFormatting((params: DocumentFormattingParams): TextEdit[] => {
+    const document = documents.get(params.textDocument.uri);
+    if (!document) return [];
+    return formatDocument(document, {
+        tabSize: params.options.tabSize,
+        insertSpaces: params.options.insertSpaces
+    });
 });
 
 // Start the server

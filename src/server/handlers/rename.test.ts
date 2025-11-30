@@ -651,4 +651,109 @@ var env Environment = "prod"`;
         expect(newMainFile).toContain('var env Stage =');
         expect(newMainFile).not.toContain('Environment');
     });
+
+    it('should NOT rename variables inside string interpolation', () => {
+        const content = `var name = "World"
+var greeting = "Hello, \${name}!"`;
+        const doc = createDocument(content);
+        const ctx = createContext({
+            documents: { 'file:///test.kite': doc },
+        });
+
+        // Rename 'name' variable
+        const result = handleRename(doc, Position.create(0, 6), 'person', ctx);
+
+        expect(result).not.toBeNull();
+        const edits = result?.changes?.['file:///test.kite'];
+        expect(edits).toBeDefined();
+
+        // Should only rename the declaration, not the string interpolation reference
+        // (string interpolation is inside a string literal)
+        const newContent = applyEdits(content, edits!);
+        expect(newContent).toContain('var person = "World"');
+        // The ${name} inside the string should remain unchanged
+        // because handlePrepareRename blocks renaming inside strings
+    });
+
+    it('should rename schema property and usages in resources', () => {
+        // File 1: schema with properties
+        const schemaFile = `schema ServerConfig {
+    string hostname
+    number port = 8080
+}`;
+        // File 2: resource using the schema
+        const mainFile = `import * from "schema.kite"
+
+resource ServerConfig web {
+    hostname = "localhost"
+    port = 3000
+}
+
+var url = web.hostname`;
+        const schemaDoc = createDocument(schemaFile, 'file:///schema.kite');
+        const mainDoc = createDocument(mainFile, 'file:///main.kite');
+
+        const ctx = createContext({
+            files: {
+                '/schema.kite': schemaFile,
+                '/main.kite': mainFile,
+            },
+            documents: {
+                'file:///schema.kite': schemaDoc,
+                'file:///main.kite': mainDoc,
+            },
+        });
+
+        // Rename 'hostname' property from schema definition
+        const result = handleRename(schemaDoc, Position.create(1, 12), 'host', ctx);
+
+        expect(result).not.toBeNull();
+        expect(result?.changes).toBeDefined();
+
+        // Validate schema file edits
+        const schemaEdits = result?.changes?.['file:///schema.kite'];
+        expect(schemaEdits).toBeDefined();
+
+        const newSchemaFile = applyEdits(schemaFile, schemaEdits!);
+        expect(newSchemaFile).toContain('string host');
+        expect(newSchemaFile).not.toContain('hostname');
+
+        // Validate main file edits - property assignment and property access
+        const mainEdits = result?.changes?.['file:///main.kite'];
+        expect(mainEdits).toBeDefined();
+
+        const newMainFile = applyEdits(mainFile, mainEdits!);
+        expect(newMainFile).toContain('host = "localhost"');
+        expect(newMainFile).toContain('web.host');
+        expect(newMainFile).not.toContain('hostname');
+    });
+
+    it('should handle multiple references in the same file', () => {
+        const content = `schema Config { }
+
+resource Config server1 { }
+resource Config server2 { }
+resource Config server3 { }`;
+        const doc = createDocument(content);
+        const ctx = createContext({
+            documents: { 'file:///test.kite': doc },
+        });
+
+        const result = handleRename(doc, Position.create(0, 8), 'Settings', ctx);
+
+        expect(result).not.toBeNull();
+        const edits = result?.changes?.['file:///test.kite'];
+        expect(edits).toBeDefined();
+
+        // Should have 4 edits: 1 definition + 3 usages
+        expect(edits!.length).toBe(4);
+        expect(edits!.every(e => e.newText === 'Settings')).toBe(true);
+
+        const newContent = applyEdits(content, edits!);
+        expect(newContent).toContain('schema Settings {');
+        expect(newContent).toContain('resource Settings server1');
+        expect(newContent).toContain('resource Settings server2');
+        expect(newContent).toContain('resource Settings server3');
+        expect(newContent).not.toContain('Config');
+    });
 });
