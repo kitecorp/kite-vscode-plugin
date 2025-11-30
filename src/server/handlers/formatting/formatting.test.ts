@@ -4,7 +4,7 @@
 
 import { describe, it, expect } from 'vitest';
 import { TextDocument } from 'vscode-languageserver-textdocument';
-import { formatDocument, FormatOptions } from './formatting';
+import { formatDocument, FormatOptions } from '.';
 
 // Helper to create a mock TextDocument
 function createDocument(content: string, uri = 'file:///test.kite'): TextDocument {

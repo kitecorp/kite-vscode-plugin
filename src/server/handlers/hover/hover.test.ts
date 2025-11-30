@@ -5,8 +5,8 @@
 import { describe, it, expect } from 'vitest';
 import { TextDocument } from 'vscode-languageserver-textdocument';
 import { MarkupKind, Position, Range } from 'vscode-languageserver/node';
-import { handleHover } from './hover';
-import { Declaration } from '../types';
+import { handleHover } from '.';
+import { Declaration } from '../../types';
 
 // Helper to create a mock TextDocument
 function createDocument(content: string, uri = 'file:///test.kite'): TextDocument {

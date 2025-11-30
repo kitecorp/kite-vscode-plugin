@@ -5,8 +5,8 @@
 import { describe, it, expect } from 'vitest';
 import { TextDocument } from 'vscode-languageserver-textdocument';
 import { DiagnosticSeverity, Location, Range, Position } from 'vscode-languageserver/node';
-import { validateDocument, ValidationContext } from './validation';
-import { ImportInfo } from '../types';
+import { validateDocument, ValidationContext } from '.';
+import { ImportInfo } from '../../types';
 
 // Helper to create a mock TextDocument
 function createDocument(content: string, uri = 'file:///test.kite'): TextDocument {

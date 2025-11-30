@@ -9,9 +9,9 @@ import {
 } from 'vscode-languageserver/node';
 import { TextDocument } from 'vscode-languageserver-textdocument';
 import { Position } from 'vscode-languageserver/node';
-import { Declaration } from '../types';
-import { KEYWORDS, TYPES } from '../constants';
-import { getWordAtPosition } from '../utils/text-utils';
+import { Declaration } from '../../types';
+import { KEYWORDS, TYPES } from '../../constants';
+import { getWordAtPosition } from '../../utils/text-utils';
 
 /**
  * Handle hover request

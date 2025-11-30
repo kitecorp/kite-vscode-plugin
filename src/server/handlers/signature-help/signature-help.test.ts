@@ -5,8 +5,8 @@
 import { describe, it, expect } from 'vitest';
 import { TextDocument } from 'vscode-languageserver-textdocument';
 import { Position, Range } from 'vscode-languageserver/node';
-import { handleSignatureHelp, findFunctionCallAtPosition } from './signature-help';
-import { Declaration } from '../types';
+import { handleSignatureHelp, findFunctionCallAtPosition } from '.';
+import { Declaration } from '../../types';
 
 // Helper to create a mock TextDocument
 function createDocument(content: string, uri = 'file:///test.kite'): TextDocument {

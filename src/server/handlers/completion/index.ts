@@ -11,13 +11,13 @@ import {
 } from 'vscode-languageserver/node';
 import { TextDocument } from 'vscode-languageserver-textdocument';
 import { Position } from 'vscode-languageserver/node';
-import { Declaration, DecoratorInfo, DecoratorTarget, BlockContext, OutputInfo, BaseContext } from '../types';
-import { KEYWORDS, TYPES, DECORATORS } from '../constants';
-import { getCompletionKind } from '../utils/text-utils';
-import { extractSchemaPropertyTypes, extractComponentInputTypes, InlayHintContext } from './inlay-hints';
+import { Declaration, DecoratorInfo, DecoratorTarget, BlockContext, OutputInfo, BaseContext } from '../../types';
+import { KEYWORDS, TYPES, DECORATORS } from '../../constants';
+import { getCompletionKind } from '../../utils/text-utils';
+import { extractSchemaPropertyTypes, extractComponentInputTypes, InlayHintContext } from '../inlay-hints';
 import { addNumberSuggestions, addStringSuggestions, getNumberSuggestionsForProp, getStringSuggestionsForProp } from './devops-suggestions';
-import { getCursorContext, isInDecoratorContext, getDotAccessTarget } from '../../parser';
-import { escapeRegex } from '../utils/rename-utils';
+import { getCursorContext, isInDecoratorContext, getDotAccessTarget } from '../../../parser';
+import { escapeRegex } from '../../utils/rename-utils';
 import { getSnippetCompletions } from './snippets';
 
 /**

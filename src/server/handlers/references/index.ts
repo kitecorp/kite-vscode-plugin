@@ -19,14 +19,14 @@ import {
     findResourceInstantiations,
     findPropertyAssignments,
     findPropertyAccess,
-} from '../utils/rename-utils';
-import { Declaration, BaseContext } from '../types';
-import { offsetToPosition } from '../utils/text-utils';
+} from '../../utils/rename-utils';
+import { Declaration, BaseContext } from '../../types';
+import { offsetToPosition } from '../../utils/text-utils';
 import {
     parseKite,
     findComponentDefByName,
     findComponentInputAST,
-} from '../../parser';
+} from '../../../parser';
 
 /**
  * Context interface for dependency injection into references handler.

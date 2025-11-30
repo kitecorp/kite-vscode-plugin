@@ -14,13 +14,13 @@ import {
     WorkspaceEdit,
 } from 'vscode-languageserver/node';
 import { TextDocument } from 'vscode-languageserver-textdocument';
-import { ImportSuggestion } from '../types';
-import { escapeRegex } from '../utils/rename-utils';
+import { ImportSuggestion } from '../../types';
+import { escapeRegex } from '../../utils/rename-utils';
 import {
     parseKite,
     findImportByPathAST,
     findLastImportLineAST,
-} from '../../parser';
+} from '../../../parser';
 
 /**
  * Handle code action request

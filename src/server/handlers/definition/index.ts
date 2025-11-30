@@ -13,9 +13,9 @@ import {
 } from 'vscode-languageserver/node';
 import { TextDocument } from 'vscode-languageserver-textdocument';
 import { URI } from 'vscode-uri';
-import { Declaration, BlockContext, ImportInfo, PropertyAccessContext, PropertyResult, BaseContext } from '../types';
-import { escapeRegex } from '../utils/rename-utils';
-import { getWordAtPosition, findMatchingBrace } from '../utils/text-utils';
+import { Declaration, BlockContext, ImportInfo, PropertyAccessContext, PropertyResult, BaseContext } from '../../types';
+import { escapeRegex } from '../../utils/rename-utils';
+import { getWordAtPosition, findMatchingBrace } from '../../utils/text-utils';
 import {
     parseKite,
     findSchemaDefinitionAST,
@@ -25,7 +25,7 @@ import {
     findSchemaPropertyAST,
     findComponentInputAST,
     DefinitionLocation,
-} from '../../parser';
+} from '../../../parser';
 
 /**
  * Context for definition handler - provides access to shared functions

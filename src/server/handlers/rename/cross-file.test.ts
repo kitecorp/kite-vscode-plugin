@@ -4,8 +4,8 @@
 
 import { describe, it, expect } from 'vitest';
 import { Position, Range } from 'vscode-languageserver/node';
-import { handleRename } from './rename';
-import { createDocument, createContext, applyEdits } from './rename-test-utils';
+import { handleRename } from '.';
+import { createDocument, createContext, applyEdits } from './test-utils';
 
 describe('handleRename - cross-file', () => {
     it('should rename schema definition and usages across files', () => {

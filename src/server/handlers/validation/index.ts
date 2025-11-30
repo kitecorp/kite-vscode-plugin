@@ -11,8 +11,8 @@ import {
 import { TextDocument } from 'vscode-languageserver-textdocument';
 import { URI } from 'vscode-uri';
 import * as path from 'path';
-import { Declaration, ImportSuggestion, ImportInfo, BaseContext } from '../types';
-import { DECORATORS } from '../constants';
+import { Declaration, ImportSuggestion, ImportInfo, BaseContext } from '../../types';
+import { DECORATORS } from '../../constants';
 import { checkTypeMismatches } from './type-checking';
 
 /**

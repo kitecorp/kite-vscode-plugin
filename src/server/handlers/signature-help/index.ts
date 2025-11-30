@@ -10,7 +10,7 @@ import {
 } from 'vscode-languageserver/node';
 import { TextDocument } from 'vscode-languageserver-textdocument';
 import { Position } from 'vscode-languageserver/node';
-import { Declaration, FunctionCallInfo } from '../types';
+import { Declaration, FunctionCallInfo } from '../../types';
 
 /**
  * Handle signature help request

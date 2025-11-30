@@ -10,11 +10,11 @@ import {
     Position,
 } from 'vscode-languageserver/node';
 import { TextDocument } from 'vscode-languageserver-textdocument';
-import { isInComment } from '../utils/rename-utils';
-import { KEYWORDS, TYPES } from '../constants';
-import { getWordAtPosition } from '../utils/text-utils';
-import { findAllReferences, ReferencesContext } from './references';
-import { BaseContext } from '../types';
+import { isInComment } from '../../utils/rename-utils';
+import { KEYWORDS, TYPES } from '../../constants';
+import { getWordAtPosition } from '../../utils/text-utils';
+import { findAllReferences, ReferencesContext } from '../references';
+import { BaseContext } from '../../types';
 
 /**
  * Context interface for dependency injection into rename handler.

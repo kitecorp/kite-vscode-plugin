@@ -4,8 +4,8 @@
 
 import { describe, it, expect } from 'vitest';
 import { Position } from 'vscode-languageserver/node';
-import { handleRename } from './rename';
-import { createDocument, createContext } from './rename-test-utils';
+import { handleRename } from '.';
+import { createDocument, createContext } from './test-utils';
 
 describe('handleRename - basic', () => {
     it('should rename variable in single file', () => {

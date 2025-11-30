@@ -11,10 +11,10 @@ import {
     findComponentDefinition,
     handleDefinition,
     DefinitionContext,
-} from './definition';
-import { Declaration, ImportInfo, BlockContext } from '../types';
-import { findEnclosingBlock } from '../utils/text-utils';
-import { scanDocumentAST } from '../../parser';
+} from '.';
+import { Declaration, ImportInfo, BlockContext } from '../../types';
+import { findEnclosingBlock } from '../../utils/text-utils';
+import { scanDocumentAST } from '../../../parser';
 
 // Helper to create a mock TextDocument
 function createDocument(content: string, uri = 'file:///test.kite'): TextDocument {

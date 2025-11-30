@@ -21,7 +21,7 @@ import {
     VarDeclarationContext,
     InputDeclarationContext,
     OutputDeclarationContext,
-} from '../../parser';
+} from '../../../parser';
 
 /**
  * Handle document symbol request - provides outline view

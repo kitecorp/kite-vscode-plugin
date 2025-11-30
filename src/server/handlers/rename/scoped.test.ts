@@ -4,8 +4,8 @@
 
 import { describe, it, expect } from 'vitest';
 import { Position } from 'vscode-languageserver/node';
-import { handleRename } from './rename';
-import { createDocument, createContext, applyEdits } from './rename-test-utils';
+import { handleRename } from '.';
+import { createDocument, createContext, applyEdits } from './test-utils';
 
 describe('handleRename - scoped loop variables', () => {
     it('should only rename loop variable within its scope (for-resource)', () => {

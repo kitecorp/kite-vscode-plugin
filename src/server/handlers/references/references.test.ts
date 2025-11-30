@@ -5,8 +5,8 @@
 import { describe, it, expect } from 'vitest';
 import { TextDocument } from 'vscode-languageserver-textdocument';
 import { Range, Position } from 'vscode-languageserver/node';
-import { handleReferences, findAllReferences, ReferencesContext } from './references';
-import { Declaration } from '../types';
+import { handleReferences, findAllReferences, ReferencesContext } from '.';
+import { Declaration } from '../../types';
 
 // Helper to create a mock TextDocument
 function createDocument(content: string, uri = 'file:///test.kite'): TextDocument {

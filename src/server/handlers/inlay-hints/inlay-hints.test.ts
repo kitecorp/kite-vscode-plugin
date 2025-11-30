@@ -10,8 +10,8 @@ import {
     extractSchemaPropertyTypes,
     extractComponentInputTypes,
     InlayHintContext,
-} from './inlay-hints';
-import { Declaration } from '../types';
+} from '.';
+import { Declaration } from '../../types';
 
 // Helper to create a mock TextDocument
 function createDocument(content: string, uri = 'file:///test.kite'): TextDocument {

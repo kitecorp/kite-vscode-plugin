@@ -5,7 +5,7 @@
 import { describe, it, expect } from 'vitest';
 import { TextDocument } from 'vscode-languageserver-textdocument';
 import { SymbolKind } from 'vscode-languageserver/node';
-import { handleDocumentSymbol } from './document-symbols';
+import { handleDocumentSymbol } from '.';
 
 // Helper to create a mock TextDocument
 function createDocument(content: string, uri = 'file:///test.kite'): TextDocument {

@@ -4,8 +4,8 @@
 
 import { describe, it, expect } from 'vitest';
 import { Position } from 'vscode-languageserver/node';
-import { handlePrepareRename } from './rename';
-import { createDocument } from './rename-test-utils';
+import { handlePrepareRename } from '.';
+import { createDocument } from './test-utils';
 
 describe('handlePrepareRename', () => {
     it('should return range and placeholder for valid identifier', () => {

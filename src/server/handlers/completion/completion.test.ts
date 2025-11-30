@@ -5,8 +5,8 @@
 import { describe, it, expect } from 'vitest';
 import { TextDocument } from 'vscode-languageserver-textdocument';
 import { CompletionItemKind, Position, Range } from 'vscode-languageserver/node';
-import { handleCompletion, CompletionContext, isAfterEquals, isInsideNestedStructure } from './completion';
-import { Declaration, BlockContext } from '../types';
+import { handleCompletion, CompletionContext, isAfterEquals, isInsideNestedStructure } from '.';
+import { Declaration, BlockContext } from '../../types';
 
 // Helper to create a mock TextDocument
 function createDocument(content: string, uri = 'file:///test.kite'): TextDocument {

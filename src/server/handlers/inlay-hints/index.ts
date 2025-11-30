@@ -11,15 +11,15 @@ import {
     Position,
 } from 'vscode-languageserver/node';
 import { TextDocument } from 'vscode-languageserver-textdocument';
-import { Declaration, FunctionParameter, ArgRange, BaseContext } from '../types';
-import { escapeRegex } from '../utils/rename-utils';
+import { Declaration, FunctionParameter, ArgRange, BaseContext } from '../../types';
+import { escapeRegex } from '../../utils/rename-utils';
 import {
     parseKite,
     findSchemaByName,
     findComponentDefByName,
     extractSchemaPropertiesAST,
     extractComponentInputsAST,
-} from '../../parser';
+} from '../../../parser';
 
 /**
  * Context for inlay hints - provides access to cross-file functions

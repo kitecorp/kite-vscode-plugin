@@ -4,8 +4,8 @@
 
 import { TextDocument } from 'vscode-languageserver-textdocument';
 import { Range } from 'vscode-languageserver/node';
-import { RenameContext } from './rename';
-import { Declaration } from '../types';
+import { RenameContext } from '.';
+import { Declaration } from '../../types';
 
 /**
  * Create a mock TextDocument for testing.
