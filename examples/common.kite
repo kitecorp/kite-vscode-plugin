@@ -18,12 +18,18 @@ var string appName       = "MyApplication"
 output string names = "my-output"
 
 // Shared function
-fun formatName(string prefix, string name) string {
-  return prefix + "-" + names
+fun formatName(string prefix, string end) string {
+  return prefix + "-" + end
 }
-
+var log = ""
+var level=shared.endpointsout
 // Shared component
 component SharedLogger {
-  input string logLevel = "INFO"
+  input string logLevels = "INFO"
   output string endpoint = "https://logs.example.com"
+  output string endpointsout = logLevels
+}
+
+component SharedLogger shared{
+  logLevels = "info"
 }

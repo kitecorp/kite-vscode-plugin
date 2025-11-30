@@ -2147,6 +2147,124 @@ function isInComment(text: string, pos: number): boolean {
     return false;
 }
 
+// Helper: Find the component type name that contains a given scope
+function findComponentTypeForScope(text: string, scopeStart: number): string | null {
+    // Look backwards from scopeStart to find the component definition
+    // Pattern: component TypeName {
+    const beforeScope = text.substring(0, scopeStart + 1);
+    const compDefRegex = /\bcomponent\s+(\w+)\s*\{$/;
+    const match = beforeScope.match(compDefRegex);
+    if (match) {
+        return match[1];
+    }
+
+    // Try a more lenient search - find the last component definition before this position
+    const allCompDefs = [...beforeScope.matchAll(/\bcomponent\s+(\w+)\s*\{/g)];
+    if (allCompDefs.length > 0) {
+        const lastMatch = allCompDefs[allCompDefs.length - 1];
+        // Verify this component's brace is at scopeStart
+        const bracePos = lastMatch.index! + lastMatch[0].length - 1;
+        if (bracePos === scopeStart) {
+            return lastMatch[1];
+        }
+    }
+
+    return null;
+}
+
+// Helper: Find property assignments and property access references in component instantiations
+function findComponentPropertyReferences(
+    componentTypeName: string,
+    propertyName: string,
+    currentDocUri: string
+): Location[] {
+    const locations: Location[] = [];
+    const currentFilePath = URI.parse(currentDocUri).fsPath;
+
+    // Search all kite files
+    const kiteFiles = findKiteFilesInWorkspace();
+
+    for (const filePath of kiteFiles) {
+        const fileContent = getFileContent(filePath, currentDocUri);
+        if (!fileContent) continue;
+
+        const fileUri = filePath === currentFilePath ? currentDocUri : URI.file(filePath).toString();
+        const doc = documents.get(fileUri);
+
+        // Collect all instance names of this component type
+        const instanceNames: string[] = [];
+
+        // Find all instantiations of this component type: component TypeName instanceName {
+        const instRegex = new RegExp(`\\bcomponent\\s+${escapeRegex(componentTypeName)}\\s+(\\w+)\\s*\\{`, 'g');
+        let instMatch;
+
+        while ((instMatch = instRegex.exec(fileContent)) !== null) {
+            const instanceName = instMatch[1];
+            instanceNames.push(instanceName);
+
+            // Find the matching closing brace
+            const braceStart = instMatch.index + instMatch[0].length - 1;
+            let braceDepth = 1;
+            let pos = braceStart + 1;
+
+            while (pos < fileContent.length && braceDepth > 0) {
+                if (fileContent[pos] === '{') braceDepth++;
+                else if (fileContent[pos] === '}') braceDepth--;
+                pos++;
+            }
+
+            const bodyStart = braceStart + 1;
+            const bodyEnd = pos - 1;
+            const bodyText = fileContent.substring(bodyStart, bodyEnd);
+
+            // Find property assignments: propertyName = value
+            // Need to match at the start of a line or after whitespace, followed by = (not ==)
+            const propRegex = new RegExp(`(?:^|\\n)\\s*(${escapeRegex(propertyName)})\\s*=(?!=)`, 'g');
+            let propMatch;
+
+            while ((propMatch = propRegex.exec(bodyText)) !== null) {
+                const propNameStart = bodyStart + propMatch.index + propMatch[0].indexOf(propertyName);
+                const propNameEnd = propNameStart + propertyName.length;
+
+                const startPos = doc
+                    ? doc.positionAt(propNameStart)
+                    : offsetToPosition(fileContent, propNameStart);
+                const endPos = doc
+                    ? doc.positionAt(propNameEnd)
+                    : offsetToPosition(fileContent, propNameEnd);
+
+                locations.push(Location.create(fileUri, Range.create(startPos, endPos)));
+            }
+        }
+
+        // Find property access references: instanceName.propertyName
+        // This handles cases like: shared.endpoints, api.url, etc.
+        for (const instanceName of instanceNames) {
+            const accessRegex = new RegExp(`\\b${escapeRegex(instanceName)}\\.(${escapeRegex(propertyName)})\\b`, 'g');
+            let accessMatch;
+
+            while ((accessMatch = accessRegex.exec(fileContent)) !== null) {
+                if (isInComment(fileContent, accessMatch.index)) continue;
+
+                // The property name starts after "instanceName."
+                const propNameStart = accessMatch.index + instanceName.length + 1;
+                const propNameEnd = propNameStart + propertyName.length;
+
+                const startPos = doc
+                    ? doc.positionAt(propNameStart)
+                    : offsetToPosition(fileContent, propNameStart);
+                const endPos = doc
+                    ? doc.positionAt(propNameEnd)
+                    : offsetToPosition(fileContent, propNameEnd);
+
+                locations.push(Location.create(fileUri, Range.create(startPos, endPos)));
+            }
+        }
+    }
+
+    return locations;
+}
+
 // Helper: Find all references to a symbol across the workspace (scope-aware)
 // If cursorOffset is provided, finds the declaration at that position and respects its scope
 function findAllReferences(word: string, currentDocUri: string, cursorOffset?: number): Location[] {
@@ -2166,6 +2284,8 @@ function findAllReferences(word: string, currentDocUri: string, cursorOffset?: n
     let scopeEnd: number | undefined;
     let isLocalScope = false;
     let searchOtherFiles = true;
+    let isComponentField = false;
+    let componentTypeName: string | null = null;
 
     // If we have a cursor position, find the declaration and its scope
     if (cursorOffset !== undefined) {
@@ -2217,15 +2337,42 @@ function findAllReferences(word: string, currentDocUri: string, cursorOffset?: n
         // If we found a declaration, use its scope
         if (declaration) {
             if (declaration.scopeStart !== undefined && declaration.scopeEnd !== undefined) {
-                // Local variable/parameter - only search within scope, don't search other files
-                scopeStart = declaration.scopeStart;
-                scopeEnd = declaration.scopeEnd;
-                isLocalScope = true;
-                searchOtherFiles = false;
+                // Check if this is an input/output in a component definition
+                if (declaration.type === 'input' || declaration.type === 'output') {
+                    componentTypeName = findComponentTypeForScope(currentText, declaration.scopeStart);
+                    if (componentTypeName) {
+                        isComponentField = true;
+                        // Still search within the component definition scope
+                        scopeStart = declaration.scopeStart;
+                        scopeEnd = declaration.scopeEnd;
+                        isLocalScope = true;
+                        searchOtherFiles = false;
 
-                // Always include the declaration itself (important for parameters which are
-                // declared before the function body scope starts)
-                locations.push(Location.create(currentDocUri, declaration.nameRange));
+                        // Include the declaration itself
+                        locations.push(Location.create(currentDocUri, declaration.nameRange));
+
+                        // Also find all property assignments in component instantiations
+                        const propRefs = findComponentPropertyReferences(componentTypeName, word, currentDocUri);
+                        locations.push(...propRefs);
+                    } else {
+                        // Regular scoped input/output (shouldn't happen, but handle gracefully)
+                        scopeStart = declaration.scopeStart;
+                        scopeEnd = declaration.scopeEnd;
+                        isLocalScope = true;
+                        searchOtherFiles = false;
+                        locations.push(Location.create(currentDocUri, declaration.nameRange));
+                    }
+                } else {
+                    // Local variable/parameter - only search within scope, don't search other files
+                    scopeStart = declaration.scopeStart;
+                    scopeEnd = declaration.scopeEnd;
+                    isLocalScope = true;
+                    searchOtherFiles = false;
+
+                    // Always include the declaration itself (important for parameters which are
+                    // declared before the function body scope starts)
+                    locations.push(Location.create(currentDocUri, declaration.nameRange));
+                }
             } else {
                 // File-scoped or global declaration
                 // For functions, schemas, components, resources, types - search all files
@@ -3396,8 +3543,9 @@ function scanDocument(document: TextDocument): Declaration[] {
                     uri: document.uri,
                 };
 
-                // Add scope information for variables/for loops
-                if (pattern.type === 'variable' || pattern.type === 'for') {
+                // Add scope information for variables/for loops/inputs/outputs
+                // These are scoped to their enclosing function or component definition
+                if (pattern.type === 'variable' || pattern.type === 'for' || pattern.type === 'input' || pattern.type === 'output') {
                     const declOffset = lineOffset + nameIndex;
                     const scope = findEnclosingScope(declOffset);
                     if (scope) {
@@ -3426,8 +3574,25 @@ function scanDocument(document: TextDocument): Declaration[] {
                             Position.create(lineNum, instNameIndex),
                             Position.create(lineNum, instNameIndex + componentMatch[2].length)
                         );
+                        // Component instantiations inside a component definition are scoped
+                        const declOffset = lineOffset + instNameIndex;
+                        const scope = findEnclosingScope(declOffset);
+                        if (scope && scope.type === 'component-def') {
+                            decl.scopeStart = scope.start;
+                            decl.scopeEnd = scope.end;
+                        }
                     }
                     // Otherwise it's a component type definition, name is already correct
+                }
+
+                // Handle resource - add scope if inside a component definition
+                if (pattern.type === 'resource') {
+                    const declOffset = lineOffset + nameIndex;
+                    const scope = findEnclosingScope(declOffset);
+                    if (scope && scope.type === 'component-def') {
+                        decl.scopeStart = scope.start;
+                        decl.scopeEnd = scope.end;
+                    }
                 }
 
                 // Handle function - extract parameters and return type
@@ -3499,6 +3664,14 @@ function scanDocument(document: TextDocument): Declaration[] {
                         if (returnType) {
                             decl.returnType = returnType;
                         }
+                    }
+
+                    // Functions inside component definitions are scoped to the component
+                    const funcDeclOffset = lineOffset + nameIndex;
+                    const funcScope = findEnclosingScope(funcDeclOffset);
+                    if (funcScope && funcScope.type === 'component-def') {
+                        decl.scopeStart = funcScope.start;
+                        decl.scopeEnd = funcScope.end;
                     }
                 }
 

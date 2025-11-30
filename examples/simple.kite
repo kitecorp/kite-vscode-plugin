@@ -33,6 +33,7 @@ resource DatabaseConfig photos {
   ssl = common.data
 }
 
+var x = photos.host
 input string inname = "asd"
 output string outname = "asda"
 
