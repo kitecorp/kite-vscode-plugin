@@ -177,6 +177,15 @@ export function findAllReferences(
         return locations;
     }
 
+    // Check if we're renaming a loop variable (for x in ...)
+    if (cursorOffset !== undefined) {
+        const loopVarScope = findLoopVariableScope(currentText, cursorOffset, word);
+        if (loopVarScope) {
+            // Find all references to the loop variable within its scope
+            return findReferencesInScope(currentText, word, loopVarScope.scopeStart, loopVarScope.scopeEnd, currentDocUri, currentDoc);
+        }
+    }
+
     // Check if we're renaming a schema property
     if (cursorOffset !== undefined) {
         const schemaContext = getSchemaContextAtPosition(currentText, cursorOffset);
@@ -467,4 +476,288 @@ export function findAllReferences(
     }
 
     return locations;
+}
+
+/**
+ * Find the scope of a loop variable if the cursor is on one.
+ * Returns the scope boundaries where the loop variable is valid.
+ *
+ * Handles patterns like:
+ * - [for x in items: { ... }] - list comprehension
+ * - [for env in environments] resource S3.Bucket data { ... } - for-prefixed statement
+ */
+function findLoopVariableScope(
+    text: string,
+    cursorOffset: number,
+    word: string
+): { scopeStart: number; scopeEnd: number } | null {
+    // Check if cursor is on a loop variable declaration in a for expression
+    // Pattern: [for <variable> in ...
+    const forPattern = /\[\s*for\s+(\w+)\s+in\s+/g;
+    let forMatch;
+
+    while ((forMatch = forPattern.exec(text)) !== null) {
+        const varName = forMatch[1];
+        if (varName !== word) continue;
+
+        const varStart = forMatch.index + forMatch[0].indexOf(varName, 5);
+        const varEnd = varStart + varName.length;
+
+        // Check if cursor is on this variable declaration
+        if (cursorOffset >= varStart && cursorOffset <= varEnd) {
+            // Find the scope - look for the closing bracket of the for expression
+            const bracketStart = forMatch.index;
+
+            // Check if this is a list comprehension [for x in items: { ... }]
+            // or a for-prefixed statement [for x in items] resource ... { }
+            const afterFor = text.substring(bracketStart);
+            const closingBracketIdx = findMatchingBracket(afterFor, 0);
+
+            if (closingBracketIdx === -1) continue;
+
+            const closingBracketPos = bracketStart + closingBracketIdx;
+
+            // Check what follows the closing bracket
+            const afterBracket = text.substring(closingBracketPos + 1).trimStart();
+
+            if (afterBracket.startsWith('resource') || afterBracket.startsWith('component')) {
+                // For-prefixed statement: scope is the following resource/component block
+                const blockMatch = afterBracket.match(/^(resource|component)\s+\S+\s+\S+\s*\{/);
+                if (blockMatch) {
+                    const blockStartInAfter = afterBracket.indexOf('{');
+                    const blockStartInText = closingBracketPos + 1 + (text.substring(closingBracketPos + 1).indexOf('{'));
+                    const scopeEnd = findMatchingBrace(text, blockStartInText);
+                    if (scopeEnd !== -1) {
+                        return { scopeStart: bracketStart, scopeEnd: scopeEnd + 1 };
+                    }
+                }
+            } else {
+                // List comprehension: scope is within the brackets
+                return { scopeStart: bracketStart, scopeEnd: closingBracketPos + 1 };
+            }
+        }
+    }
+
+    // Also check if cursor is on a reference to the loop variable within scope
+    // We need to find all loop variables and check if cursor is in their scope
+    forPattern.lastIndex = 0;
+    while ((forMatch = forPattern.exec(text)) !== null) {
+        const varName = forMatch[1];
+        if (varName !== word) continue;
+
+        const bracketStart = forMatch.index;
+        const afterFor = text.substring(bracketStart);
+        const closingBracketIdx = findMatchingBracket(afterFor, 0);
+
+        if (closingBracketIdx === -1) continue;
+
+        const closingBracketPos = bracketStart + closingBracketIdx;
+        const afterBracket = text.substring(closingBracketPos + 1).trimStart();
+
+        let scopeStart = bracketStart;
+        let scopeEnd: number;
+
+        if (afterBracket.startsWith('resource') || afterBracket.startsWith('component')) {
+            // For-prefixed statement
+            const blockStartInText = closingBracketPos + 1 + (text.substring(closingBracketPos + 1).indexOf('{'));
+            const blockEnd = findMatchingBrace(text, blockStartInText);
+            if (blockEnd === -1) continue;
+            scopeEnd = blockEnd + 1;
+        } else {
+            // List comprehension
+            scopeEnd = closingBracketPos + 1;
+        }
+
+        // Check if cursor is within this scope
+        if (cursorOffset >= scopeStart && cursorOffset <= scopeEnd) {
+            return { scopeStart, scopeEnd };
+        }
+    }
+
+    return null;
+}
+
+/**
+ * Find the matching closing bracket for an opening bracket at position 0.
+ * Handles nested brackets.
+ */
+function findMatchingBracket(text: string, startPos: number): number {
+    if (text[startPos] !== '[') return -1;
+
+    let depth = 0;
+    let inString = false;
+    let stringChar = '';
+
+    for (let i = startPos; i < text.length; i++) {
+        const char = text[i];
+        const prevChar = i > 0 ? text[i - 1] : '';
+
+        // Handle string literals
+        if ((char === '"' || char === "'") && prevChar !== '\\') {
+            if (!inString) {
+                inString = true;
+                stringChar = char;
+            } else if (char === stringChar) {
+                inString = false;
+            }
+            continue;
+        }
+
+        if (inString) continue;
+
+        if (char === '[') {
+            depth++;
+        } else if (char === ']') {
+            depth--;
+            if (depth === 0) {
+                return i;
+            }
+        }
+    }
+
+    return -1;
+}
+
+/**
+ * Find the matching closing brace for an opening brace.
+ */
+function findMatchingBrace(text: string, startPos: number): number {
+    if (text[startPos] !== '{') return -1;
+
+    let depth = 0;
+    let inString = false;
+    let stringChar = '';
+
+    for (let i = startPos; i < text.length; i++) {
+        const char = text[i];
+        const prevChar = i > 0 ? text[i - 1] : '';
+
+        if ((char === '"' || char === "'") && prevChar !== '\\') {
+            if (!inString) {
+                inString = true;
+                stringChar = char;
+            } else if (char === stringChar) {
+                inString = false;
+            }
+            continue;
+        }
+
+        if (inString) continue;
+
+        if (char === '{') {
+            depth++;
+        } else if (char === '}') {
+            depth--;
+            if (depth === 0) {
+                return i;
+            }
+        }
+    }
+
+    return -1;
+}
+
+/**
+ * Find all references to a word within a specific scope.
+ * Handles string interpolation correctly.
+ */
+function findReferencesInScope(
+    text: string,
+    word: string,
+    scopeStart: number,
+    scopeEnd: number,
+    docUri: string,
+    doc: TextDocument | undefined
+): Location[] {
+    const locations: Location[] = [];
+    const scopeText = text.substring(scopeStart, scopeEnd);
+    const regex = new RegExp(`\\b${escapeRegex(word)}\\b`, 'g');
+
+    let match;
+    while ((match = regex.exec(scopeText)) !== null) {
+        const offset = scopeStart + match.index;
+
+        // Skip if in comment
+        if (isInComment(text, offset)) continue;
+
+        // Check if this is in a regular string literal (not in interpolation)
+        if (isInStringLiteral(text, offset) && !isInInterpolation(text, offset)) {
+            continue;
+        }
+
+        const startPos = doc
+            ? doc.positionAt(offset)
+            : offsetToPosition(text, offset);
+        const endPos = doc
+            ? doc.positionAt(offset + word.length)
+            : offsetToPosition(text, offset + word.length);
+
+        locations.push(Location.create(docUri, Range.create(startPos, endPos)));
+    }
+
+    return locations;
+}
+
+/**
+ * Check if an offset is inside a string literal.
+ */
+function isInStringLiteral(text: string, offset: number): boolean {
+    let inString = false;
+    let stringChar = '';
+
+    for (let i = 0; i < offset; i++) {
+        const char = text[i];
+        const prevChar = i > 0 ? text[i - 1] : '';
+
+        if ((char === '"' || char === "'") && prevChar !== '\\') {
+            if (!inString) {
+                inString = true;
+                stringChar = char;
+            } else if (char === stringChar) {
+                inString = false;
+            }
+        }
+    }
+
+    return inString;
+}
+
+/**
+ * Check if an offset is inside a ${...} interpolation within a string.
+ */
+function isInInterpolation(text: string, offset: number): boolean {
+    // Look backwards for ${ that hasn't been closed by }
+    let depth = 0;
+    let inString = false;
+    let stringChar = '';
+
+    for (let i = 0; i < offset; i++) {
+        const char = text[i];
+        const prevChar = i > 0 ? text[i - 1] : '';
+        const nextChar = i < text.length - 1 ? text[i + 1] : '';
+
+        // Track string state
+        if ((char === '"' || char === "'") && prevChar !== '\\') {
+            if (!inString) {
+                inString = true;
+                stringChar = char;
+            } else if (char === stringChar) {
+                // Check if we're in an interpolation before ending the string
+                if (depth > 0) continue;
+                inString = false;
+            }
+            continue;
+        }
+
+        // Only check for interpolation inside double-quoted strings
+        if (inString && stringChar === '"') {
+            if (char === '$' && nextChar === '{') {
+                depth++;
+            } else if (char === '}' && depth > 0) {
+                depth--;
+            }
+        }
+    }
+
+    return depth > 0;
 }

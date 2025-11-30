@@ -49,6 +49,12 @@ export function handleDefinition(
     const word = getWordAtPosition(document, params.position);
     if (!word) return null;
 
+    // Check if this is a loop variable reference in a list comprehension
+    const listCompLocation = findListComprehensionVariable(document, text, offset, word);
+    if (listCompLocation) {
+        return listCompLocation;
+    }
+
     // Check if this is a schema type in a resource declaration: resource SchemaName instanceName {
     // or a component type in a component instantiation: component TypeName instanceName {
     try {
@@ -566,6 +572,93 @@ function findPropertyInChain(document: TextDocument, text: string, chain: string
     }
 
     return null;
+}
+
+/**
+ * Find list comprehension variable definition.
+ * For expressions like: [for x in items: if x > 10 { x }]
+ * When clicking on 'x' (reference), find the 'x' in 'for x in' (declaration)
+ */
+function findListComprehensionVariable(
+    document: TextDocument,
+    text: string,
+    offset: number,
+    word: string
+): Location | null {
+    // Find the enclosing list comprehension brackets
+    const bracketRange = findEnclosingBrackets(text, offset);
+    if (!bracketRange) return null;
+
+    const { start: bracketStart, end: bracketEnd } = bracketRange;
+    const comprehensionText = text.substring(bracketStart, bracketEnd + 1);
+
+    // Check if this is a list comprehension (contains 'for ... in')
+    const forInMatch = comprehensionText.match(/\bfor\s+(\w+)\s+in\b/);
+    if (!forInMatch) return null;
+
+    const loopVar = forInMatch[1];
+
+    // Check if the word we're looking for matches the loop variable
+    if (word !== loopVar) return null;
+
+    // Check if the cursor is on the declaration itself (for x in) - if so, don't navigate
+    const forVarOffset = bracketStart + forInMatch.index! + forInMatch[0].indexOf(loopVar);
+    const forVarEnd = forVarOffset + loopVar.length;
+    if (offset >= forVarOffset && offset < forVarEnd) {
+        // Cursor is on the declaration, return null or return itself
+        return null;
+    }
+
+    // Return the location of the loop variable declaration
+    const startPos = document.positionAt(forVarOffset);
+    const endPos = document.positionAt(forVarEnd);
+
+    return Location.create(document.uri, Range.create(startPos, endPos));
+}
+
+/**
+ * Find the enclosing square brackets for a list comprehension
+ */
+function findEnclosingBrackets(text: string, offset: number): { start: number; end: number } | null {
+    // Walk backwards to find opening bracket
+    let depth = 0;
+    let start = -1;
+
+    for (let i = offset; i >= 0; i--) {
+        const char = text[i];
+        if (char === ']') {
+            depth++;
+        } else if (char === '[') {
+            if (depth === 0) {
+                start = i;
+                break;
+            }
+            depth--;
+        }
+    }
+
+    if (start === -1) return null;
+
+    // Walk forward to find closing bracket
+    depth = 0;
+    let end = -1;
+
+    for (let i = start; i < text.length; i++) {
+        const char = text[i];
+        if (char === '[') {
+            depth++;
+        } else if (char === ']') {
+            depth--;
+            if (depth === 0) {
+                end = i;
+                break;
+            }
+        }
+    }
+
+    if (end === -1) return null;
+
+    return { start, end };
 }
 
 /**

@@ -3,11 +3,59 @@
  */
 
 import { describe, it, expect } from 'vitest';
+import { TextDocument } from 'vscode-languageserver-textdocument';
+import { Position, Location } from 'vscode-languageserver/node';
 import {
     findSchemaDefinition,
     findFunctionDefinition,
     findComponentDefinition,
+    handleDefinition,
+    DefinitionContext,
 } from './definition';
+import { Declaration, ImportInfo, BlockContext } from '../types';
+import { findEnclosingBlock } from '../utils/text-utils';
+import { scanDocumentAST } from '../../parser';
+
+// Helper to create a mock TextDocument
+function createDocument(content: string, uri = 'file:///test.kite'): TextDocument {
+    return TextDocument.create(uri, 'kite', 1, content);
+}
+
+// Helper to get position from line and character
+function pos(line: number, character: number): Position {
+    return Position.create(line, character);
+}
+
+// Create a mock context for testing
+function createMockContext(document: TextDocument): DefinitionContext {
+    const text = document.getText();
+    const declarations = scanDocumentAST(document);
+
+    return {
+        findKiteFilesInWorkspace: () => [],
+        getFileContent: () => null,
+        extractImports: () => [],
+        isSymbolImported: () => false,
+        findEnclosingBlock: (t: string, offset: number) => findEnclosingBlock(t, offset),
+        getDeclarations: (uri: string) => uri === document.uri ? declarations : undefined,
+    };
+}
+
+// Helper to find definition at a position
+function findDefinitionAt(content: string, line: number, character: number): Location | null {
+    const doc = createDocument(content);
+    const ctx = createMockContext(doc);
+    const result = handleDefinition(
+        { textDocument: { uri: doc.uri }, position: pos(line, character) },
+        doc,
+        ctx
+    );
+    // handleDefinition can return Definition which could be Location or Location[]
+    if (Array.isArray(result)) {
+        return result[0] || null;
+    }
+    return result;
+}
 
 describe('findSchemaDefinition', () => {
     it('should find schema definition', () => {
@@ -158,6 +206,144 @@ component Third { }`;
         expect(first?.range.start.line).toBe(0);
         expect(second?.range.start.line).toBe(1);
         expect(third?.range.start.line).toBe(2);
+    });
+});
+
+describe('scoped definition lookup', () => {
+    it('should find resource declaration when clicking on resource name in property access', () => {
+        // When clicking on 'server' in 'server.tag', should go to the 'server' resource declaration
+        const text = `component WebServer {
+    resource Instance server {
+        tag = {
+            Name: "test"
+        }
+    }
+    output string name = server.tag.Name
+}`;
+        // Line 6: 'output string name = server.tag.Name'
+        // 'server' starts at character 25
+        const result = findDefinitionAt(text, 6, 26);
+
+        expect(result).not.toBeNull();
+        expect(result?.range.start.line).toBe(1); // Line 1: resource Instance server
+    });
+
+    it('should find property in correct resource when clicking on property in chain', () => {
+        // When clicking on 'tag' in 'server.tag', should go to the tag in 'server' resource
+        const text = `component WebServer {
+    resource Instance server {
+        tag = {
+            Name: "server-tag"
+        }
+    }
+    resource Instance config {
+        tag = {
+            Name: "config-tag"
+        }
+    }
+    output string serverTag = server.tag.Name
+    output string configTag = config.tag.Name
+}`;
+        // Line 11: '    output string serverTag = server.tag.Name'
+        // 'tag' after 'server.' is at position 37
+        const serverTagResult = findDefinitionAt(text, 11, 37);
+
+        expect(serverTagResult).not.toBeNull();
+        expect(serverTagResult?.range.start.line).toBe(2); // Line 2: tag = { in server
+
+        // Line 12: '    output string configTag = config.tag.Name'
+        // 'tag' after 'config.' is at position 37
+        const configTagResult = findDefinitionAt(text, 12, 37);
+
+        expect(configTagResult).not.toBeNull();
+        expect(configTagResult?.range.start.line).toBe(7); // Line 7: tag = { in config (NOT line 2!)
+    });
+
+    it('should find nested property in correct path', () => {
+        // When clicking on 'Name' in 'server.tag.Name', should go to 'Name' inside server.tag
+        const text = `component WebServer {
+    resource Instance server {
+        tag = {
+            Name: "server-name"
+        }
+    }
+    output string name = server.tag.Name
+}`;
+        // Line 6: 'output string name = server.tag.Name'
+        // 'Name' starts around character 36
+        const result = findDefinitionAt(text, 6, 37);
+
+        expect(result).not.toBeNull();
+        expect(result?.range.start.line).toBe(3); // Line 3: Name: "server-name"
+    });
+});
+
+describe('list comprehension variable lookup', () => {
+    it('should find loop variable declaration when clicking on reference in condition', () => {
+        // var filtered = [for x in items: if x > 10 { x }]
+        // Clicking on 'x' in 'x > 10' should go to 'x' in 'for x in'
+        const text = `var filtered = [for x in items: if x > 10 { x }]`;
+        // 'x' in 'if x > 10' is at position 35
+        const result = findDefinitionAt(text, 0, 35);
+
+        expect(result).not.toBeNull();
+        expect(result?.range.start.character).toBe(20); // 'x' in 'for x in' is at position 20
+    });
+
+    it('should find loop variable declaration when clicking on reference in body', () => {
+        // var filtered = [for x in items: if x > 10 { x }]
+        // Clicking on 'x' in '{ x }' should go to 'x' in 'for x in'
+        const text = `var filtered = [for x in items: if x > 10 { x }]`;
+        // 'x' in '{ x }' is at position 44
+        const result = findDefinitionAt(text, 0, 44);
+
+        expect(result).not.toBeNull();
+        expect(result?.range.start.character).toBe(20); // 'x' in 'for x in' is at position 20
+    });
+
+    it('should find loop variable in simple for comprehension', () => {
+        // var doubled = [for n in numbers: { n * 2 }]
+        const text = `var doubled = [for n in numbers: { n * 2 }]`;
+        // 'n' in '{ n * 2 }' is at position 35
+        const result = findDefinitionAt(text, 0, 35);
+
+        expect(result).not.toBeNull();
+        expect(result?.range.start.character).toBe(19); // 'n' in 'for n in'
+    });
+
+    it('should find loop variable in multiline comprehension', () => {
+        const text = `var filtered = [
+    for item in items:
+    if item.active {
+        item
+    }
+]`;
+        // Click on 'item' in 'if item.active' - line 2, around position 7
+        const result = findDefinitionAt(text, 2, 7);
+
+        expect(result).not.toBeNull();
+        expect(result?.range.start.line).toBe(1); // 'item' declaration is on line 1
+    });
+
+    it('should not find loop variable outside of comprehension scope', () => {
+        const text = `var filtered = [for x in items: { x }]
+var y = x`;
+        // Click on 'x' on line 1 (outside the comprehension)
+        // Position of 'x' on line 1 is at character 8
+        const result = findDefinitionAt(text, 1, 8);
+
+        // Should NOT find the loop variable 'x' from the comprehension
+        // (it's out of scope)
+        expect(result).toBeNull();
+    });
+
+    it('should handle nested property access on loop variable', () => {
+        const text = `var names = [for user in users: { user.name }]`;
+        // Click on 'user' in 'user.name' - around position 34
+        const result = findDefinitionAt(text, 0, 34);
+
+        expect(result).not.toBeNull();
+        expect(result?.range.start.character).toBe(17); // 'user' in 'for user in'
     });
 });
 
