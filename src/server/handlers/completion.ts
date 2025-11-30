@@ -17,6 +17,7 @@ import { getCompletionKind } from '../utils/text-utils';
 import { extractSchemaPropertyTypes, extractComponentInputTypes, InlayHintContext } from './inlay-hints';
 import { addNumberSuggestions, addStringSuggestions, getNumberSuggestionsForProp, getStringSuggestionsForProp } from './devops-suggestions';
 import { getCursorContext, isInDecoratorContext, getDotAccessTarget } from '../../parser';
+import { escapeRegex } from '../utils/rename-utils';
 
 /**
  * Context interface for dependency injection into completion handler.
@@ -649,7 +650,7 @@ function extractComponentOutputs(
     const outputs: OutputInfo[] = [];
 
     // Try local file first
-    const componentRegex = new RegExp(`\\bcomponent\\s+${componentTypeName}\\s*\\{`, 'g');
+    const componentRegex = new RegExp(`\\bcomponent\\s+${escapeRegex(componentTypeName)}\\s*\\{`, 'g');
     let match = componentRegex.exec(text);
 
     if (!match) {
@@ -699,7 +700,7 @@ function extractComponentOutputs(
 function extractPropertiesFromBody(text: string, declarationName: string): string[] {
     const properties: string[] = [];
 
-    const regex = new RegExp(`\\b(?:resource|component)\\s+\\w+\\s+${declarationName}\\s*\\{`, 'g');
+    const regex = new RegExp(`\\b(?:resource|component)\\s+\\w+\\s+${escapeRegex(declarationName)}\\s*\\{`, 'g');
     const match = regex.exec(text);
     if (!match) return properties;
 

@@ -130,6 +130,20 @@ describe('positionToOffset', () => {
         const source = 'var x = 1';
         expect(positionToOffset(source, 1, 4)).toBe(4);
     });
+
+    it('should handle Windows line endings (CRLF)', () => {
+        const source = 'line1\r\nline2\r\nline3';
+        expect(positionToOffset(source, 1, 0)).toBe(0);
+        expect(positionToOffset(source, 2, 0)).toBe(7);  // 5 + 2 for \r\n
+        expect(positionToOffset(source, 3, 0)).toBe(14); // 7 + 5 + 2
+    });
+
+    it('should handle old Mac line endings (CR only)', () => {
+        const source = 'line1\rline2\rline3';
+        expect(positionToOffset(source, 1, 0)).toBe(0);
+        expect(positionToOffset(source, 2, 0)).toBe(6);
+        expect(positionToOffset(source, 3, 0)).toBe(12);
+    });
 });
 
 describe('offsetToPosition', () => {
@@ -143,5 +157,19 @@ describe('offsetToPosition', () => {
     it('should handle column correctly', () => {
         const source = 'var x = 1';
         expect(offsetToPosition(source, 4)).toEqual({ line: 1, column: 4 });
+    });
+
+    it('should handle Windows line endings (CRLF)', () => {
+        const source = 'line1\r\nline2\r\nline3';
+        expect(offsetToPosition(source, 0)).toEqual({ line: 1, column: 0 });
+        expect(offsetToPosition(source, 7)).toEqual({ line: 2, column: 0 });
+        expect(offsetToPosition(source, 14)).toEqual({ line: 3, column: 0 });
+    });
+
+    it('should handle old Mac line endings (CR only)', () => {
+        const source = 'line1\rline2\rline3';
+        expect(offsetToPosition(source, 0)).toEqual({ line: 1, column: 0 });
+        expect(offsetToPosition(source, 6)).toEqual({ line: 2, column: 0 });
+        expect(offsetToPosition(source, 12)).toEqual({ line: 3, column: 0 });
     });
 });

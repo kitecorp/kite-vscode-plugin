@@ -128,11 +128,22 @@ export function getTokenAtOffset(source: string, offset: number): Token | undefi
  * @returns The character offset
  */
 export function positionToOffset(source: string, line: number, column: number): number {
-    const lines = source.split('\n');
+    let currentLine = 1;
     let offset = 0;
 
-    for (let i = 0; i < line - 1 && i < lines.length; i++) {
-        offset += lines[i].length + 1; // +1 for newline
+    // Find the start of the target line
+    while (offset < source.length && currentLine < line) {
+        const char = source[offset];
+        if (char === '\r') {
+            // Handle \r\n (Windows) or \r (old Mac)
+            if (offset + 1 < source.length && source[offset + 1] === '\n') {
+                offset++; // Skip the \n in \r\n
+            }
+            currentLine++;
+        } else if (char === '\n') {
+            currentLine++;
+        }
+        offset++;
     }
 
     return offset + column;
@@ -150,7 +161,16 @@ export function offsetToPosition(source: string, offset: number): { line: number
     let lastNewline = -1;
 
     for (let i = 0; i < offset && i < source.length; i++) {
-        if (source[i] === '\n') {
+        const char = source[i];
+        if (char === '\r') {
+            // Handle \r\n (Windows) or \r (old Mac)
+            line++;
+            lastNewline = i;
+            if (i + 1 < source.length && source[i + 1] === '\n') {
+                i++; // Skip the \n in \r\n
+                lastNewline = i;
+            }
+        } else if (char === '\n') {
             line++;
             lastNewline = i;
         }
