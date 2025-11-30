@@ -31,10 +31,8 @@ import {
     Declaration,
     ImportSuggestion,
 } from './types';
-import { getWordAtPosition } from './utils/text-utils';
+import { getWordAtPosition, readFileContent, findEnclosingBlock } from './utils/text-utils';
 import { extractImports, isSymbolImported } from './utils/import-utils';
-import { findEnclosingBlock } from './utils/block-utils';
-import { readFileContent } from './utils/file-utils';
 import { validateDocument, ValidationContext } from './handlers/validation';
 import { handleDocumentSymbol } from './handlers/document-symbols';
 import { handleHover } from './handlers/hover';

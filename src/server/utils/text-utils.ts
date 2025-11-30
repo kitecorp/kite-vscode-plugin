@@ -1,10 +1,11 @@
 /**
- * Text utility functions for the Kite language server.
+ * Text and file utility functions for the Kite language server.
  */
 
+import * as fs from 'fs';
 import { Position, CompletionItemKind } from 'vscode-languageserver/node';
 import { TextDocument } from 'vscode-languageserver-textdocument';
-import { DeclarationType } from '../types';
+import { DeclarationType, BlockContext } from '../types';
 
 /**
  * Convert text offset to LSP position
@@ -74,4 +75,52 @@ export function findMatchingBrace(text: string, openBracePos: number): number {
     }
 
     return pos;
+}
+
+/**
+ * Read file content safely.
+ * @param filePath - Path to the file to read
+ * @returns File content as string or null if read fails
+ */
+export function readFileContent(filePath: string): string | null {
+    try {
+        return fs.readFileSync(filePath, 'utf-8');
+    } catch {
+        return null;
+    }
+}
+
+/**
+ * Find the enclosing resource/component block for a given offset.
+ * @param text - The document text
+ * @param offset - The cursor offset to find enclosing block for
+ * @returns The enclosing block context or null if not inside a block
+ */
+export function findEnclosingBlock(text: string, offset: number): BlockContext | null {
+    // Find all resource/component declarations
+    // Pattern: resource SchemaName instanceName { or component TypeName instanceName {
+    const blockRegex = /\b(resource|component)\s+([\w.]+)\s+(\w+)\s*\{/g;
+    let match;
+    let enclosing: BlockContext | null = null;
+
+    while ((match = blockRegex.exec(text)) !== null) {
+        const blockStart = match.index;
+        const openBracePos = blockStart + match[0].length - 1;
+        const blockEnd = findMatchingBrace(text, openBracePos);
+
+        // Check if offset is inside this block
+        if (offset > openBracePos && offset < blockEnd) {
+            // Found a block containing our position
+            // Keep searching for nested blocks (most specific)
+            enclosing = {
+                name: match[3],
+                type: match[1] as 'resource' | 'component',
+                typeName: match[2],
+                start: blockStart,
+                end: blockEnd
+            };
+        }
+    }
+
+    return enclosing;
 }
