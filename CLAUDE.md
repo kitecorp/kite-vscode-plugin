@@ -46,6 +46,57 @@ We follow these engineering practices:
   - Dependency Inversion - Depend on abstractions, not concretions
 - **DRY (Don't Repeat Yourself)** - Avoid code duplication, extract shared logic
 
+## File Size Guidelines
+
+Keep files small and focused. Large files are hard to navigate, test, and maintain.
+
+### Size Limits
+
+| File Type | Soft Limit | Hard Limit | Action |
+|-----------|------------|------------|--------|
+| Handler (`index.ts`) | 300 lines | 500 lines | Split into modules |
+| Utility module | 200 lines | 400 lines | Extract related functions |
+| Test file | 400 lines | 700 lines | Split by feature/scenario |
+| Type definitions | 150 lines | 300 lines | Group related types |
+
+### When to Split
+
+Split a file when:
+- It exceeds the soft limit (~300 lines for handlers)
+- It has multiple distinct responsibilities
+- You find yourself scrolling to find functions
+- Tests are hard to organize
+
+### How to Split
+
+Follow the established pattern in `handlers/`:
+
+```
+handlers/feature/
+├── index.ts           # Main handler + re-exports (thin orchestration layer)
+├── types.ts           # Context interface and types
+├── utils.ts           # Helper utilities
+├── specific-logic.ts  # Focused modules by responsibility
+└── feature.test.ts    # Tests
+```
+
+**Key principles:**
+1. **Single Responsibility** - Each file handles one aspect
+2. **index.ts is thin** - Only orchestration and re-exports (~100-150 lines)
+3. **Group by functionality** - Not by code type
+4. **Re-export from index** - Maintain clean public API
+
+### Examples
+
+Good splits:
+- `completion/decorators.ts` - All decorator completion logic
+- `definition/type-definitions.ts` - Schema/component/function lookup
+- `references/loop-scope.ts` - Loop variable scope detection
+
+Bad splits:
+- `helpers.ts` - Generic grab-bag of utilities
+- `part1.ts`, `part2.ts` - Arbitrary splits by line count
+
 ## Test-Driven Development (TDD)
 
 When developing new features, follow the TDD cycle:
