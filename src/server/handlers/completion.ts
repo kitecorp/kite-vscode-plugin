@@ -1,0 +1,969 @@
+/**
+ * Completion handler for the Kite language server.
+ * Provides intelligent code completion with context awareness.
+ */
+
+import {
+    CompletionItem,
+    CompletionItemKind,
+    MarkupKind,
+    InsertTextFormat,
+} from 'vscode-languageserver/node';
+import { TextDocument } from 'vscode-languageserver-textdocument';
+import { Position } from 'vscode-languageserver/node';
+import { Declaration, DecoratorInfo, DecoratorTarget, BlockContext, OutputInfo } from '../types';
+import { KEYWORDS, TYPES, DECORATORS } from '../constants';
+import { getCompletionKind } from '../utils/text-utils';
+import { extractSchemaPropertyTypes, extractComponentInputTypes, InlayHintContext } from './inlay-hints';
+
+/**
+ * Context interface for dependency injection into completion handler.
+ */
+export interface CompletionContext {
+    /** Get declarations for a document */
+    getDeclarations: (uri: string) => Declaration[] | undefined;
+    /** Find all .kite files in the workspace */
+    findKiteFilesInWorkspace: () => string[];
+    /** Get file content by path */
+    getFileContent: (filePath: string, currentDocUri?: string) => string | null;
+    /** Find enclosing block (resource or component) */
+    findEnclosingBlock: (text: string, offset: number) => BlockContext | null;
+}
+
+/**
+ * Handle completion request
+ */
+export function handleCompletion(
+    document: TextDocument,
+    position: Position,
+    ctx: CompletionContext
+): CompletionItem[] {
+    const completions: CompletionItem[] = [];
+    const text = document.getText();
+    const offset = document.offsetAt(position);
+    const beforeCursor = text.substring(Math.max(0, offset - 100), offset);
+    const uri = document.uri;
+
+    // Check if we're after @ (decorator context)
+    if (beforeCursor.match(/@\s*\w*$/)) {
+        return getDecoratorCompletions(text, offset);
+    }
+
+    // Check if we're after a dot (property access)
+    const dotMatch = beforeCursor.match(/(\w+)\.\s*$/);
+    if (dotMatch) {
+        return getPropertyAccessCompletions(dotMatch[1], text, uri, ctx);
+    }
+
+    // Check if we're inside a schema body - only show types, not variables/functions/etc
+    if (isInsideSchemaBody(text, offset)) {
+        return getSchemaBodyCompletions(text, offset);
+    }
+
+    // Check if we're inside a component definition body
+    if (isInsideComponentDefinition(text, offset)) {
+        return getComponentDefinitionCompletions(text, offset);
+    }
+
+    // Find enclosing block context (resource or component we're inside)
+    const enclosingBlock = ctx.findEnclosingBlock(text, offset);
+
+    // Check if we're after '=' (value context - types should not be shown)
+    const isValueContext = isAfterEquals(text, offset);
+
+    // If inside a resource/component body and NOT after '=', show only schema/input properties
+    if (enclosingBlock && !isValueContext) {
+        const result = getBlockBodyCompletions(text, offset, enclosingBlock, uri, ctx);
+        if (result !== null) {
+            return result;
+        }
+    }
+
+    // Add keywords only if NOT in value context
+    if (!isValueContext) {
+        addKeywordCompletions(completions);
+    }
+
+    // Add types only if NOT in value context (right side of =)
+    if (!isValueContext) {
+        addTypeCompletions(completions);
+    }
+
+    // Add declarations from current file (filtered based on context and scope)
+    addDeclarationCompletions(completions, document, offset, enclosingBlock, isValueContext, ctx);
+
+    // Add context-aware suggestions at the end for resource/component value context
+    if (isValueContext && enclosingBlock) {
+        addContextAwareSuggestions(completions, text, offset, enclosingBlock, uri, ctx);
+    }
+
+    return completions;
+}
+
+/**
+ * Get completions for decorator context (after @)
+ */
+function getDecoratorCompletions(text: string, offset: number): CompletionItem[] {
+    const completions: CompletionItem[] = [];
+    const context = getDecoratorContext(text, offset);
+
+    // Filter decorators that apply to the current context, then sort by sortOrder
+    const applicableDecorators = DECORATORS
+        .filter(dec => decoratorAppliesToTarget(dec, context))
+        .sort((a, b) => a.sortOrder - b.sortOrder);
+
+    applicableDecorators.forEach((dec, index) => {
+        // Build detailed documentation for second Ctrl+Space
+        let docContent = '';
+        if (dec.argument) {
+            docContent += `**Argument:** ${dec.argument}\n\n`;
+        }
+        if (dec.targets) {
+            docContent += `**Targets:** ${dec.targets}\n\n`;
+        }
+        if (dec.appliesTo) {
+            docContent += `**Applies to:** ${dec.appliesTo}\n\n`;
+        }
+        docContent += '```kite\n' + dec.example + '\n```';
+
+        const item: CompletionItem = {
+            label: dec.argHint ? `${dec.name}${dec.argHint}` : dec.name,
+            kind: CompletionItemKind.Event,
+            detail: dec.description,
+            sortText: String(index).padStart(3, '0'),
+            filterText: dec.name,
+            documentation: {
+                kind: MarkupKind.Markdown,
+                value: docContent
+            }
+        };
+
+        if (dec.snippet) {
+            item.insertText = dec.snippet;
+            item.insertTextFormat = InsertTextFormat.Snippet;
+            item.commitCharacters = ['('];
+        } else {
+            item.insertText = dec.name;
+        }
+
+        completions.push(item);
+    });
+
+    return completions;
+}
+
+/**
+ * Get completions for property access (after dot)
+ */
+function getPropertyAccessCompletions(
+    objectName: string,
+    text: string,
+    uri: string,
+    ctx: CompletionContext
+): CompletionItem[] {
+    const completions: CompletionItem[] = [];
+    const declarations = ctx.getDeclarations(uri) || [];
+    const decl = declarations.find(d => d.name === objectName);
+
+    if (decl) {
+        if (decl.type === 'resource' && decl.schemaName) {
+            const bodyProps = new Set(extractPropertiesFromBody(text, decl.name));
+            const inlayCtx: InlayHintContext = {
+                findKiteFilesInWorkspace: ctx.findKiteFilesInWorkspace,
+                getFileContent: ctx.getFileContent
+            };
+            const schemaProps = extractSchemaPropertyTypes(text, decl.schemaName, inlayCtx, uri);
+
+            // First add set properties (from resource body) - shown first with indicator
+            bodyProps.forEach(prop => {
+                const propType = schemaProps[prop] || 'any';
+                completions.push({
+                    label: prop,
+                    kind: CompletionItemKind.Property,
+                    detail: `● ${propType} (set)`,
+                    sortText: '0' + prop,
+                    labelDetails: { description: '●' }
+                });
+            });
+
+            // Then add unset schema properties
+            for (const [propName, propType] of Object.entries(schemaProps)) {
+                if (!bodyProps.has(propName)) {
+                    completions.push({
+                        label: propName,
+                        kind: CompletionItemKind.Property,
+                        detail: propType,
+                        sortText: '1' + propName
+                    });
+                }
+            }
+        } else if (decl.type === 'component' && decl.componentType) {
+            const outputs = extractComponentOutputs(text, decl.componentType, ctx);
+            outputs.forEach(output => {
+                completions.push({
+                    label: output.name,
+                    kind: CompletionItemKind.Property,
+                    detail: `output: ${output.type}`
+                });
+            });
+        }
+    }
+
+    return completions;
+}
+
+/**
+ * Get completions inside schema body
+ */
+function getSchemaBodyCompletions(text: string, offset: number): CompletionItem[] {
+    const completions: CompletionItem[] = [];
+    const isValueContext = isAfterEquals(text, offset);
+
+    if (isValueContext) {
+        return getSchemaDefaultValueCompletions(text, offset);
+    } else {
+        // Before '=' in schema - show types for property declarations
+        TYPES.forEach(t => {
+            completions.push({ label: t, kind: CompletionItemKind.TypeParameter, detail: 'type' });
+            completions.push({ label: t + '[]', kind: CompletionItemKind.TypeParameter, detail: 'array type' });
+        });
+    }
+
+    return completions;
+}
+
+/**
+ * Get completions for default values in schema definitions
+ */
+function getSchemaDefaultValueCompletions(text: string, offset: number): CompletionItem[] {
+    const completions: CompletionItem[] = [];
+    const lineStart = text.lastIndexOf('\n', offset - 1) + 1;
+    const lineText = text.substring(lineStart, offset);
+
+    const propMatch = lineText.match(/^\s*(\w+(?:\[\])?)\s+\w+\s*=\s*$/);
+    const propType = propMatch ? propMatch[1] : null;
+
+    const propNameMatch = lineText.match(/^\s*\w+(?:\[\])?\s+(\w+)\s*=\s*$/);
+    const propName = propNameMatch ? propNameMatch[1].toLowerCase() : '';
+
+    if (propType === 'boolean') {
+        completions.push({ label: 'true', kind: CompletionItemKind.Value, detail: 'boolean' });
+        completions.push({ label: 'false', kind: CompletionItemKind.Value, detail: 'boolean' });
+    } else if (propType === 'number') {
+        addNumberSuggestions(completions, propName);
+    } else if (propType === 'string') {
+        addStringSuggestions(completions, propName);
+    }
+
+    return completions;
+}
+
+/**
+ * Get completions inside component definition body
+ */
+function getComponentDefinitionCompletions(text: string, offset: number): CompletionItem[] {
+    const completions: CompletionItem[] = [];
+    const isValueContext = isAfterEquals(text, offset);
+
+    if (isValueContext) {
+        return getComponentDefaultValueCompletions(text, offset);
+    } else {
+        // Before '=' in component definition - show keywords for input/output declarations
+        ['input', 'output', 'var', 'resource', 'component'].forEach(kw => {
+            completions.push({ label: kw, kind: CompletionItemKind.Keyword, detail: 'keyword' });
+        });
+        TYPES.forEach(t => {
+            completions.push({ label: t, kind: CompletionItemKind.TypeParameter, detail: 'type' });
+        });
+    }
+
+    return completions;
+}
+
+/**
+ * Get completions for default values in component definitions
+ */
+function getComponentDefaultValueCompletions(text: string, offset: number): CompletionItem[] {
+    const completions: CompletionItem[] = [];
+    const lineStart = text.lastIndexOf('\n', offset - 1) + 1;
+    const lineText = text.substring(lineStart, offset);
+
+    const propMatch = lineText.match(/^\s*(?:input|output)\s+(\w+(?:\[\])?)\s+\w+\s*=\s*$/);
+    const propType = propMatch ? propMatch[1] : null;
+
+    const propNameMatch = lineText.match(/^\s*(?:input|output)\s+\w+(?:\[\])?\s+(\w+)\s*=\s*$/);
+    const propName = propNameMatch ? propNameMatch[1].toLowerCase() : '';
+
+    if (propType === 'boolean') {
+        completions.push({ label: 'true', kind: CompletionItemKind.Value, detail: 'boolean' });
+        completions.push({ label: 'false', kind: CompletionItemKind.Value, detail: 'boolean' });
+    } else if (propType === 'number') {
+        addNumberSuggestions(completions, propName);
+    } else if (propType === 'string') {
+        addStringSuggestions(completions, propName);
+    }
+
+    return completions;
+}
+
+/**
+ * Get completions inside resource/component block body
+ */
+function getBlockBodyCompletions(
+    text: string,
+    offset: number,
+    enclosingBlock: BlockContext,
+    uri: string,
+    ctx: CompletionContext
+): CompletionItem[] | null {
+    // Check if we're on a line that already has a property assignment started
+    const lineStart = text.lastIndexOf('\n', offset - 1) + 1;
+    const lineBeforeCursor = text.substring(lineStart, offset);
+    const isStartOfProperty = /^\s*\w*$/.test(lineBeforeCursor);
+
+    // Check if we're inside a nested structure
+    const isInsideNestedValue = isInsideNestedStructure(text, enclosingBlock.start, offset);
+
+    if (isInsideNestedValue) {
+        return [];
+    }
+
+    if (!isStartOfProperty) {
+        return [];
+    }
+
+    const completions: CompletionItem[] = [];
+    const alreadySet = findAlreadySetProperties(text, enclosingBlock.start, offset);
+    const inlayCtx: InlayHintContext = {
+        findKiteFilesInWorkspace: ctx.findKiteFilesInWorkspace,
+        getFileContent: ctx.getFileContent
+    };
+
+    if (enclosingBlock.type === 'resource') {
+        const schemaProps = extractSchemaPropertyTypes(text, enclosingBlock.typeName, inlayCtx, uri);
+        for (const [propName, propType] of Object.entries(schemaProps)) {
+            if (!alreadySet.has(propName)) {
+                completions.push({
+                    label: propName,
+                    kind: CompletionItemKind.Property,
+                    detail: propType,
+                    insertText: `${propName} = `
+                });
+            }
+        }
+        return completions;
+    } else if (enclosingBlock.type === 'component') {
+        const inputTypes = extractComponentInputTypes(text, enclosingBlock.typeName, inlayCtx, uri);
+        for (const [inputName, inputType] of Object.entries(inputTypes)) {
+            if (!alreadySet.has(inputName)) {
+                completions.push({
+                    label: inputName,
+                    kind: CompletionItemKind.Property,
+                    detail: inputType,
+                    insertText: `${inputName} = `
+                });
+            }
+        }
+        return completions;
+    }
+
+    return null; // Fall through to general completions
+}
+
+/**
+ * Add keyword completions
+ */
+function addKeywordCompletions(completions: CompletionItem[]): void {
+    KEYWORDS.forEach(kw => {
+        completions.push({
+            label: kw,
+            kind: CompletionItemKind.Keyword,
+            detail: 'keyword',
+            sortText: '9' + kw
+        });
+    });
+}
+
+/**
+ * Add type completions
+ */
+function addTypeCompletions(completions: CompletionItem[]): void {
+    TYPES.forEach(t => {
+        completions.push({
+            label: t,
+            kind: CompletionItemKind.TypeParameter,
+            detail: 'type',
+            sortText: '8' + t
+        });
+        completions.push({
+            label: t + '[]',
+            kind: CompletionItemKind.TypeParameter,
+            detail: 'array type',
+            sortText: '8' + t + '[]'
+        });
+    });
+}
+
+/**
+ * Add declaration completions
+ */
+function addDeclarationCompletions(
+    completions: CompletionItem[],
+    document: TextDocument,
+    offset: number,
+    enclosingBlock: BlockContext | null,
+    isValueContext: boolean,
+    ctx: CompletionContext
+): void {
+    const valuePriority: Record<string, string> = {
+        'input': '0',
+        'variable': '1',
+        'for': '1',
+        'resource': '2',
+        'component': '3',
+        'output': '4',
+        'function': '5',
+        'schema': '6',
+        'type': '7'
+    };
+
+    const declarations = ctx.getDeclarations(document.uri) || [];
+    declarations.forEach(decl => {
+        // Skip outputs from the same enclosing block
+        if (enclosingBlock && decl.type === 'output') {
+            const outputOffset = document.offsetAt(decl.range.start);
+            if (outputOffset >= enclosingBlock.start && outputOffset <= enclosingBlock.end) {
+                return;
+            }
+        }
+
+        // Scope filtering for variables
+        if ((decl.type === 'variable' || decl.type === 'for') &&
+            decl.scopeStart !== undefined && decl.scopeEnd !== undefined) {
+            if (offset < decl.scopeStart || offset > decl.scopeEnd) {
+                return;
+            }
+        }
+
+        const priority = isValueContext ? (valuePriority[decl.type] || '9') : '';
+
+        completions.push({
+            label: decl.name,
+            kind: getCompletionKind(decl.type),
+            detail: decl.type + (decl.typeName ? `: ${decl.typeName}` : ''),
+            sortText: priority + decl.name
+        });
+    });
+}
+
+/**
+ * Add context-aware suggestions for value context
+ */
+function addContextAwareSuggestions(
+    completions: CompletionItem[],
+    text: string,
+    offset: number,
+    enclosingBlock: BlockContext,
+    uri: string,
+    ctx: CompletionContext
+): void {
+    const lineStart = text.lastIndexOf('\n', offset - 1) + 1;
+    const lineText = text.substring(lineStart, offset);
+
+    const propNameMatch = lineText.match(/^\s*(\w+)\s*=\s*$/);
+    if (!propNameMatch) return;
+
+    const propName = propNameMatch[1].toLowerCase();
+    const inlayCtx: InlayHintContext = {
+        findKiteFilesInWorkspace: ctx.findKiteFilesInWorkspace,
+        getFileContent: ctx.getFileContent
+    };
+
+    let propType: string | null = null;
+    if (enclosingBlock.type === 'resource') {
+        const schemaProps = extractSchemaPropertyTypes(text, enclosingBlock.typeName, inlayCtx, uri);
+        propType = schemaProps[propNameMatch[1]] || null;
+    } else if (enclosingBlock.type === 'component') {
+        const inputTypes = extractComponentInputTypes(text, enclosingBlock.typeName, inlayCtx, uri);
+        propType = inputTypes[propNameMatch[1]] || null;
+    }
+
+    const contextSuggestions: { value: string; desc: string }[] = [];
+
+    if (propType === 'boolean') {
+        contextSuggestions.push({ value: 'true', desc: 'boolean' });
+        contextSuggestions.push({ value: 'false', desc: 'boolean' });
+    } else if (propType === 'number') {
+        const numSuggestions = getNumberSuggestionsForProp(propName);
+        if (numSuggestions) {
+            contextSuggestions.push(...numSuggestions);
+        }
+    } else if (propType === 'string') {
+        const strSuggestions = getStringSuggestionsForProp(propName);
+        if (strSuggestions) {
+            contextSuggestions.push(...strSuggestions);
+        }
+    }
+
+    contextSuggestions.forEach((s, index) => {
+        completions.push({
+            label: s.value,
+            kind: CompletionItemKind.Value,
+            detail: `💡 ${s.desc}`,
+            sortText: '8' + String(index).padStart(2, '0'),
+            insertText: s.value
+        });
+    });
+}
+
+// ============================================================================
+// Helper functions
+// ============================================================================
+
+/**
+ * Detect decorator context for prioritization
+ */
+function getDecoratorContext(text: string, offset: number): DecoratorTarget {
+    let lookAhead = text.substring(offset, Math.min(text.length, offset + 300));
+    lookAhead = lookAhead.replace(/^\w*/, '');
+    lookAhead = lookAhead.replace(/^(\s*\n?\s*@\w+(\([^)]*\))?\s*)+/, '');
+
+    if (/^\s*input\s+/.test(lookAhead)) {
+        return 'input';
+    } else if (/^\s*output\s+/.test(lookAhead)) {
+        return 'output';
+    } else if (/^\s*resource\s+/.test(lookAhead)) {
+        return 'resource';
+    } else if (/^\s*component\s+\w+\s*\{/.test(lookAhead)) {
+        return 'component';
+    } else if (/^\s*schema\s+/.test(lookAhead)) {
+        return 'schema';
+    } else if (/^\s*var\s+/.test(lookAhead)) {
+        return 'var';
+    } else if (/^\s*fun\s+/.test(lookAhead)) {
+        return 'fun';
+    }
+
+    // Check if we're inside a schema (for schema property)
+    const beforeCursor = text.substring(Math.max(0, offset - 500), offset);
+    if (/schema\s+\w+\s*\{[^}]*$/.test(beforeCursor)) {
+        return 'schema property';
+    }
+
+    return null;
+}
+
+/**
+ * Check if decorator applies to target
+ */
+function decoratorAppliesToTarget(dec: DecoratorInfo, target: DecoratorTarget): boolean {
+    if (!target || !dec.targets) return true; // No filtering if unknown context
+
+    const targets = dec.targets.toLowerCase();
+
+    // Handle special cases
+    switch (target) {
+        case 'input':
+            return targets.includes('input') || targets.includes('any');
+        case 'output':
+            return targets.includes('output') || targets.includes('any');
+        case 'resource':
+            return targets.includes('resource') || targets.includes('schema') || targets.includes('any');
+        case 'component':
+            return targets.includes('component') || targets.includes('any');
+        case 'schema':
+            return targets.includes('schema') || targets.includes('any');
+        case 'var':
+            return targets.includes('var') || targets.includes('any');
+        case 'fun':
+            return targets.includes('fun') || targets.includes('function') || targets.includes('any');
+        case 'schema property':
+            return targets.includes('property') || targets.includes('any');
+        default:
+            return true;
+    }
+}
+
+/**
+ * Check if cursor is after '=' sign
+ */
+export function isAfterEquals(text: string, offset: number): boolean {
+    const lineStart = text.lastIndexOf('\n', offset - 1) + 1;
+    const lineBeforeCursor = text.substring(lineStart, offset);
+
+    const beforeEquals = lineBeforeCursor.indexOf('=');
+    if (beforeEquals === -1) return false;
+
+    const afterEquals = lineBeforeCursor.substring(beforeEquals + 1).trim();
+    return afterEquals === '' || /^[\w"'\[\{]/.test(afterEquals) === false;
+}
+
+/**
+ * Check if cursor is inside a schema body
+ */
+export function isInsideSchemaBody(text: string, offset: number): boolean {
+    const beforeCursor = text.substring(0, offset);
+    const schemaMatch = beforeCursor.match(/\bschema\s+\w+\s*\{[^}]*$/);
+    if (!schemaMatch) return false;
+
+    const braceIndex = schemaMatch.index! + schemaMatch[0].indexOf('{');
+    let depth = 1;
+    for (let i = braceIndex + 1; i < offset; i++) {
+        if (text[i] === '{') depth++;
+        else if (text[i] === '}') depth--;
+    }
+
+    return depth > 0;
+}
+
+/**
+ * Check if cursor is inside a component definition body
+ */
+export function isInsideComponentDefinition(text: string, offset: number): boolean {
+    const beforeCursor = text.substring(0, offset);
+    const componentMatch = beforeCursor.match(/\bcomponent\s+(\w+)\s*\{[^}]*$/);
+    if (!componentMatch) return false;
+
+    const braceIndex = componentMatch.index! + componentMatch[0].indexOf('{');
+    let depth = 1;
+    for (let i = braceIndex + 1; i < offset; i++) {
+        if (text[i] === '{') depth++;
+        else if (text[i] === '}') depth--;
+    }
+
+    if (depth <= 0) return false;
+
+    const lineStart = text.lastIndexOf('\n', offset - 1) + 1;
+    const lineText = text.substring(lineStart, offset);
+
+    if (/^\s*(?:input|output)\s+/.test(lineText)) return true;
+    if (/^\s*(?:input|output)\s+\w+(?:\[\])?\s+\w+\s*=\s*$/.test(lineText)) return true;
+    if (/^\s*(?:input|output|var|resource|component)?\s*$/.test(lineText)) return true;
+
+    return false;
+}
+
+/**
+ * Find properties already set in a block
+ */
+export function findAlreadySetProperties(text: string, blockStart: number, currentOffset: number): Set<string> {
+    const already = new Set<string>();
+    const bodyText = text.substring(blockStart, currentOffset);
+
+    let depth = 0;
+    let lineStart = 0;
+
+    for (let i = 0; i < bodyText.length; i++) {
+        if (bodyText[i] === '{') depth++;
+        else if (bodyText[i] === '}') depth--;
+        else if (bodyText[i] === '\n') lineStart = i + 1;
+
+        if (depth === 1 && bodyText[i] === '=') {
+            const linePart = bodyText.substring(lineStart, i);
+            const propMatch = linePart.match(/^\s*(\w+)\s*$/);
+            if (propMatch) {
+                already.add(propMatch[1]);
+            }
+        }
+    }
+
+    return already;
+}
+
+/**
+ * Check if cursor is inside a nested structure
+ */
+export function isInsideNestedStructure(text: string, blockStart: number, cursorOffset: number): boolean {
+    const bodyText = text.substring(blockStart, cursorOffset);
+    let braceDepth = 0;
+    let bracketDepth = 0;
+
+    for (let i = 0; i < bodyText.length; i++) {
+        const char = bodyText[i];
+        if (char === '{') braceDepth++;
+        else if (char === '}') braceDepth--;
+        else if (char === '[') bracketDepth++;
+        else if (char === ']') bracketDepth--;
+    }
+
+    return braceDepth > 1 || bracketDepth > 0;
+}
+
+/**
+ * Extract component outputs
+ */
+function extractComponentOutputs(
+    text: string,
+    componentTypeName: string,
+    ctx: CompletionContext
+): OutputInfo[] {
+    const outputs: OutputInfo[] = [];
+
+    // Try local file first
+    const componentRegex = new RegExp(`\\bcomponent\\s+${componentTypeName}\\s*\\{`, 'g');
+    let match = componentRegex.exec(text);
+
+    if (!match) {
+        // Search in other files
+        const kiteFiles = ctx.findKiteFilesInWorkspace();
+        for (const filePath of kiteFiles) {
+            const fileContent = ctx.getFileContent(filePath);
+            if (fileContent) {
+                match = componentRegex.exec(fileContent);
+                if (match) {
+                    text = fileContent;
+                    break;
+                }
+            }
+        }
+    }
+
+    if (!match) return outputs;
+
+    const braceStart = match.index + match[0].length - 1;
+    let depth = 1;
+    let pos = braceStart + 1;
+
+    while (pos < text.length && depth > 0) {
+        if (text[pos] === '{') depth++;
+        else if (text[pos] === '}') depth--;
+        pos++;
+    }
+
+    const bodyText = text.substring(braceStart + 1, pos - 1);
+    const outputRegex = /output\s+(\w+(?:\[\])?)\s+(\w+)(?:\s*=\s*[^\n]+)?/g;
+    let outputMatch;
+
+    while ((outputMatch = outputRegex.exec(bodyText)) !== null) {
+        outputs.push({
+            name: outputMatch[2],
+            type: outputMatch[1]
+        });
+    }
+
+    return outputs;
+}
+
+/**
+ * Extract properties from body
+ */
+function extractPropertiesFromBody(text: string, declarationName: string): string[] {
+    const properties: string[] = [];
+
+    const regex = new RegExp(`\\b(?:resource|component)\\s+\\w+\\s+${declarationName}\\s*\\{`, 'g');
+    const match = regex.exec(text);
+    if (!match) return properties;
+
+    const braceStart = match.index + match[0].length - 1;
+    const braceEnd = findMatchingBraceForCompletion(text, braceStart);
+    if (braceEnd === -1) return properties;
+
+    const bodyText = text.substring(braceStart + 1, braceEnd);
+    const propRegex = /^\s*(\w+)\s*=/gm;
+    let propMatch;
+
+    while ((propMatch = propRegex.exec(bodyText)) !== null) {
+        properties.push(propMatch[1]);
+    }
+
+    return properties;
+}
+
+/**
+ * Find matching brace for completion
+ */
+function findMatchingBraceForCompletion(text: string, openBracePos: number): number {
+    let depth = 1;
+    let pos = openBracePos + 1;
+
+    while (pos < text.length && depth > 0) {
+        if (text[pos] === '{') depth++;
+        else if (text[pos] === '}') depth--;
+        pos++;
+    }
+
+    return depth === 0 ? pos - 1 : -1;
+}
+
+/**
+ * Add number suggestions based on property name
+ */
+function addNumberSuggestions(completions: CompletionItem[], propName: string): void {
+    const suggestions = getNumberSuggestionsForProp(propName);
+    if (suggestions) {
+        suggestions.forEach(s => {
+            completions.push({
+                label: s.value,
+                kind: CompletionItemKind.Value,
+                detail: s.desc,
+                insertText: s.value
+            });
+        });
+    }
+}
+
+/**
+ * Get number suggestions for a property name
+ */
+function getNumberSuggestionsForProp(propName: string): { value: string; desc: string }[] | null {
+    const numberSuggestions: Record<string, { value: string; desc: string }[]> = {
+        'port': [
+            { value: '80', desc: 'HTTP' },
+            { value: '443', desc: 'HTTPS' },
+            { value: '22', desc: 'SSH' },
+            { value: '3000', desc: 'Dev server' },
+            { value: '3306', desc: 'MySQL' },
+            { value: '5432', desc: 'PostgreSQL' },
+            { value: '6379', desc: 'Redis' },
+            { value: '8080', desc: 'HTTP alt' },
+            { value: '27017', desc: 'MongoDB' },
+        ],
+        'timeout': [
+            { value: '30', desc: '30 seconds' },
+            { value: '60', desc: '1 minute' },
+            { value: '300', desc: '5 minutes' },
+            { value: '900', desc: '15 minutes' },
+            { value: '3600', desc: '1 hour' },
+        ],
+        'memory': [
+            { value: '128', desc: '128 MB' },
+            { value: '256', desc: '256 MB' },
+            { value: '512', desc: '512 MB' },
+            { value: '1024', desc: '1 GB' },
+            { value: '2048', desc: '2 GB' },
+            { value: '4096', desc: '4 GB' },
+        ],
+        'memorysize': [
+            { value: '128', desc: '128 MB (Lambda min)' },
+            { value: '256', desc: '256 MB' },
+            { value: '512', desc: '512 MB' },
+            { value: '1024', desc: '1 GB' },
+            { value: '2048', desc: '2 GB' },
+        ],
+        'cpu': [
+            { value: '256', desc: '0.25 vCPU (ECS)' },
+            { value: '512', desc: '0.5 vCPU (ECS)' },
+            { value: '1024', desc: '1 vCPU (ECS)' },
+            { value: '2048', desc: '2 vCPU (ECS)' },
+            { value: '4096', desc: '4 vCPU (ECS)' },
+        ],
+        'replicas': [
+            { value: '1', desc: 'Single replica' },
+            { value: '2', desc: 'HA minimum' },
+            { value: '3', desc: 'Production HA' },
+            { value: '5', desc: 'High availability' },
+        ],
+        'desiredcount': [
+            { value: '1', desc: 'Single instance' },
+            { value: '2', desc: 'HA minimum' },
+            { value: '3', desc: 'Production HA' },
+        ],
+        'minsize': [
+            { value: '0', desc: 'Scale to zero' },
+            { value: '1', desc: 'Minimum 1' },
+            { value: '2', desc: 'HA minimum' },
+        ],
+        'maxsize': [
+            { value: '1', desc: 'No scaling' },
+            { value: '3', desc: 'Small scale' },
+            { value: '5', desc: 'Medium scale' },
+            { value: '10', desc: 'Large scale' },
+        ],
+        'ttl': [
+            { value: '60', desc: '1 minute' },
+            { value: '300', desc: '5 minutes' },
+            { value: '3600', desc: '1 hour' },
+            { value: '86400', desc: '1 day' },
+        ],
+    };
+    return numberSuggestions[propName] || null;
+}
+
+/**
+ * Add string suggestions based on property name
+ */
+function addStringSuggestions(completions: CompletionItem[], propName: string): void {
+    const suggestions = getStringSuggestionsForProp(propName);
+    if (suggestions) {
+        suggestions.forEach(s => {
+            completions.push({
+                label: s.value,
+                kind: CompletionItemKind.Value,
+                detail: s.desc,
+                insertText: s.value
+            });
+        });
+    } else {
+        completions.push({
+            label: '""',
+            kind: CompletionItemKind.Value,
+            detail: 'empty string',
+            insertText: '""'
+        });
+    }
+}
+
+/**
+ * Get string suggestions for a property name
+ */
+function getStringSuggestionsForProp(propName: string): { value: string; desc: string }[] | null {
+    const stringSuggestions: Record<string, { value: string; desc: string }[]> = {
+        'region': [
+            { value: '"us-east-1"', desc: 'AWS N. Virginia' },
+            { value: '"us-west-2"', desc: 'AWS Oregon' },
+            { value: '"eu-west-1"', desc: 'AWS Ireland' },
+            { value: '"eu-central-1"', desc: 'AWS Frankfurt' },
+            { value: '"ap-southeast-1"', desc: 'AWS Singapore' },
+        ],
+        'environment': [
+            { value: '"dev"', desc: 'Development' },
+            { value: '"staging"', desc: 'Staging' },
+            { value: '"prod"', desc: 'Production' },
+        ],
+        'env': [
+            { value: '"dev"', desc: 'Development' },
+            { value: '"staging"', desc: 'Staging' },
+            { value: '"prod"', desc: 'Production' },
+        ],
+        'protocol': [
+            { value: '"http"', desc: 'HTTP' },
+            { value: '"https"', desc: 'HTTPS' },
+            { value: '"tcp"', desc: 'TCP' },
+            { value: '"udp"', desc: 'UDP' },
+        ],
+        'host': [
+            { value: '"localhost"', desc: 'Localhost' },
+            { value: '"0.0.0.0"', desc: 'All interfaces' },
+        ],
+        'provider': [
+            { value: '"aws"', desc: 'Amazon Web Services' },
+            { value: '"gcp"', desc: 'Google Cloud Platform' },
+            { value: '"azure"', desc: 'Microsoft Azure' },
+        ],
+        'cidr': [
+            { value: '"10.0.0.0/16"', desc: 'VPC CIDR' },
+            { value: '"10.0.1.0/24"', desc: 'Subnet CIDR' },
+            { value: '"0.0.0.0/0"', desc: 'Any' },
+        ],
+        'instancetype': [
+            { value: '"t2.micro"', desc: 'Free tier' },
+            { value: '"t3.small"', desc: '2 vCPU, 2GB' },
+            { value: '"t3.medium"', desc: '2 vCPU, 4GB' },
+            { value: '"m5.large"', desc: '2 vCPU, 8GB' },
+        ],
+        'runtime': [
+            { value: '"nodejs18.x"', desc: 'Node.js 18' },
+            { value: '"nodejs20.x"', desc: 'Node.js 20' },
+            { value: '"python3.11"', desc: 'Python 3.11' },
+            { value: '"python3.12"', desc: 'Python 3.12' },
+        ],
+        'loglevel': [
+            { value: '"debug"', desc: 'Debug level' },
+            { value: '"info"', desc: 'Info level' },
+            { value: '"warn"', desc: 'Warning level' },
+            { value: '"error"', desc: 'Error level' },
+        ],
+        'name': [{ value: '""', desc: 'empty string' }],
+    };
+    return stringSuggestions[propName] || null;
+}

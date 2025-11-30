@@ -20,6 +20,20 @@ The IntelliJ plugin at `../kite-intellij-plugin` is the reference implementation
 5. **Prefer simple solutions** - Complexity should match the problem
 6. **When stuck, step back** - Look at similar working code
 
+## Code Quality Standards
+
+We follow these engineering practices:
+
+- **TDD (Test-Driven Development)** - Write tests first, then implementation
+- **CLEAN Code** - Readable, maintainable, and well-organized code
+- **SOLID Principles**:
+  - Single Responsibility - Each module/class has one reason to change
+  - Open/Closed - Open for extension, closed for modification
+  - Liskov Substitution - Subtypes must be substitutable for base types
+  - Interface Segregation - Many specific interfaces over one general interface
+  - Dependency Inversion - Depend on abstractions, not concretions
+- **DRY (Don't Repeat Yourself)** - Avoid code duplication, extract shared logic
+
 
 ## Kite Language Quick Reference
 
