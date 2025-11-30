@@ -18,6 +18,7 @@ import { extractSchemaPropertyTypes, extractComponentInputTypes, InlayHintContex
 import { addNumberSuggestions, addStringSuggestions, getNumberSuggestionsForProp, getStringSuggestionsForProp } from './devops-suggestions';
 import { getCursorContext, isInDecoratorContext, getDotAccessTarget } from '../../parser';
 import { escapeRegex } from '../utils/rename-utils';
+import { getSnippetCompletions } from './snippets';
 
 /**
  * Context interface for dependency injection into completion handler.
@@ -99,6 +100,12 @@ export function handleCompletion(
     // Add types only if NOT in value context (right side of =)
     if (!isValueContext) {
         addTypeCompletions(completions);
+    }
+
+    // Add snippet completions at top-level (not inside blocks or in value context)
+    if (!isValueContext && !enclosingBlock) {
+        const snippets = getSnippetCompletions('top-level');
+        completions.push(...snippets);
     }
 
     // Add declarations from current file (filtered based on context and scope)
@@ -287,6 +294,10 @@ function getComponentDefinitionCompletions(text: string, offset: number): Comple
         TYPES.forEach(t => {
             completions.push({ label: t, kind: CompletionItemKind.TypeParameter, detail: 'type' });
         });
+
+        // Add component body snippets
+        const snippets = getSnippetCompletions('component-body');
+        completions.push(...snippets);
     }
 
     return completions;
