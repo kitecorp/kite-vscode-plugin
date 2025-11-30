@@ -22,12 +22,12 @@ fun formatName(string prefix, string end) string {
   return prefix + "-" + end
 }
 var log = ""
-var level=shared.endpointsout
+var level=shared.endpointsoutput
 // Shared component
 component SharedLogger {
   input string logLevels = "INFO"
   output string endpoint = "https://logs.example.com"
-  output string endpointsout = logLevels
+  output string endpointsoutput = logLevels
 }
 
 component SharedLoggers {

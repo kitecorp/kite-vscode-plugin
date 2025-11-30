@@ -18,8 +18,6 @@ import {
     SignatureHelp,
     SignatureInformation,
     ParameterInformation,
-    Diagnostic,
-    DiagnosticSeverity,
     InlayHint,
     InlayHintKind,
     InlayHintParams,
@@ -48,41 +46,37 @@ import {
     findResourceInstantiations,
     findPropertyAssignments,
     findPropertyAccess,
-    canRenameSymbol,
-    isValidNewName,
 } from './rename-utils';
+import {
+    DeclarationType,
+    FunctionParameter,
+    Declaration,
+    ImportSuggestion,
+    DecoratorInfo,
+    DecoratorTarget,
+    BlockContext,
+    ImportInfo,
+    ArgRange,
+    FunctionCallInfo,
+    PropertyAccessContext,
+    PropertyResult,
+    OutputInfo,
+} from './types';
+import { KEYWORDS, TYPES, DECORATORS } from './constants';
+import {
+    offsetToPosition,
+    getWordAtPosition,
+    getCompletionKind,
+    findMatchingBrace,
+} from './utils/text-utils';
+import { validateDocument, ValidationContext } from './handlers/validation';
+import { handleDocumentSymbol } from './handlers/document-symbols';
 
 // Create a connection for the server using Node's IPC
 const connection = createConnection(ProposedFeatures.all);
 
 // Create a text document manager
 const documents: TextDocuments<TextDocument> = new TextDocuments(TextDocument);
-
-// Declaration types in Kite
-type DeclarationType = 'variable' | 'input' | 'output' | 'resource' | 'component' | 'schema' | 'function' | 'type' | 'for';
-
-// Represents a function parameter
-interface FunctionParameter {
-    type: string;
-    name: string;
-}
-
-// Represents a declaration found in a Kite file
-interface Declaration {
-    name: string;
-    type: DeclarationType;
-    typeName?: string;         // For var/input/output: the type (string, number, etc.)
-    schemaName?: string;       // For resource: the schema type
-    componentType?: string;    // For component: the type name
-    parameters?: FunctionParameter[];  // For functions: parameter list
-    returnType?: string;       // For functions: return type
-    range: Range;
-    nameRange: Range;          // Range of just the name identifier
-    uri: string;
-    documentation?: string;
-    scopeStart?: number;       // Start offset of the scope this declaration is in (undefined = file scope)
-    scopeEnd?: number;         // End offset of the scope
-}
 
 // Cache of declarations per document
 const declarationCache: Map<string, Declaration[]> = new Map();
@@ -91,12 +85,28 @@ const declarationCache: Map<string, Declaration[]> = new Map();
 let workspaceFolders: string[] = [];
 
 // Diagnostic data for code actions (stores import suggestions)
-interface ImportSuggestion {
-    symbolName: string;
-    filePath: string;
-    importPath: string;
-}
 const diagnosticData: Map<string, Map<string, ImportSuggestion>> = new Map(); // uri -> (diagnosticKey -> suggestion)
+
+// Create validation context (lazily references functions defined later in the file)
+function createValidationContext(): ValidationContext {
+    return {
+        getDeclarations: (uri: string) => declarationCache.get(uri),
+        getDiagnosticData: (uri: string) => {
+            if (!diagnosticData.has(uri)) {
+                diagnosticData.set(uri, new Map());
+            }
+            return diagnosticData.get(uri)!;
+        },
+        clearDiagnosticData: (uri: string) => diagnosticData.set(uri, new Map()),
+        findKiteFilesInWorkspace,
+        getFileContent,
+        extractImports,
+        isSymbolImported,
+        findSchemaDefinition,
+        findComponentDefinition,
+        findFunctionDefinition,
+    };
+}
 
 connection.onInitialize((params: InitializeParams): InitializeResult => {
     // Store workspace folders for cross-file resolution
@@ -140,174 +150,13 @@ documents.onDidChangeContent(change => {
     declarationCache.set(change.document.uri, declarations);
 
     // Validate document and publish diagnostics
-    const diagnostics = validateDocument(change.document);
+    const diagnostics = validateDocument(change.document, createValidationContext());
     connection.sendDiagnostics({ uri: change.document.uri, diagnostics });
 });
 
 documents.onDidClose(e => {
     declarationCache.delete(e.document.uri);
 });
-
-// Keywords for completion
-const KEYWORDS = [
-    'resource', 'component', 'schema', 'input', 'output',
-    'if', 'else', 'while', 'for', 'in', 'return',
-    'import', 'from', 'fun', 'var', 'type', 'init', 'this',
-    'true', 'false', 'null'
-];
-
-const TYPES = ['string', 'number', 'boolean', 'any', 'object', 'void'];
-
-// Built-in decorators with descriptions (from DECORATORS.md)
-type ArgType = 'none' | 'number' | 'string' | 'array' | 'object' | 'reference' | 'named';
-
-interface DecoratorInfo {
-    name: string;
-    category: 'validation' | 'resource' | 'metadata';
-    description: string;
-    argument?: string;     // Argument type/constraint (for display)
-    argType: ArgType;      // Expected argument type (for validation)
-    targets?: string;      // What it can be applied to
-    appliesTo?: string;    // What types it validates (for validation decorators)
-    example: string;
-    snippet?: string;      // Snippet with placeholder, e.g., "minValue($1)"
-    argHint?: string;      // Argument hint, e.g., "(n)" or "(regex)"
-    sortOrder: number;     // For sorting within category
-}
-
-const DECORATORS: DecoratorInfo[] = [
-    // Validation decorators (sortOrder 0-99)
-    {
-        name: 'minValue', category: 'validation',
-        description: 'Minimum value constraint for numbers',
-        argument: 'number (0 to 999999)', argType: 'number',
-        targets: 'input, output', appliesTo: 'number',
-        example: '@minValue(1)\ninput number port = 8080',
-        snippet: 'minValue($1)', argHint: '(n)', sortOrder: 0
-    },
-    {
-        name: 'maxValue', category: 'validation',
-        description: 'Maximum value constraint for numbers',
-        argument: 'number (0 to 999999)', argType: 'number',
-        targets: 'input, output', appliesTo: 'number',
-        example: '@maxValue(65535)\ninput number port = 8080',
-        snippet: 'maxValue($1)', argHint: '(n)', sortOrder: 1
-    },
-    {
-        name: 'minLength', category: 'validation',
-        description: 'Minimum length constraint for strings and arrays',
-        argument: 'number (0 to 999999)', argType: 'number',
-        targets: 'input, output', appliesTo: 'string, array',
-        example: '@minLength(3)\ninput string name',
-        snippet: 'minLength($1)', argHint: '(n)', sortOrder: 2
-    },
-    {
-        name: 'maxLength', category: 'validation',
-        description: 'Maximum length constraint for strings and arrays',
-        argument: 'number (0 to 999999)', argType: 'number',
-        targets: 'input, output', appliesTo: 'string, array',
-        example: '@maxLength(255)\ninput string name',
-        snippet: 'maxLength($1)', argHint: '(n)', sortOrder: 3
-    },
-    {
-        name: 'nonEmpty', category: 'validation',
-        description: 'Ensures strings or arrays are not empty',
-        argument: 'none', argType: 'none',
-        targets: 'input', appliesTo: 'string, array',
-        example: '@nonEmpty\ninput string name',
-        sortOrder: 4
-    },
-    {
-        name: 'validate', category: 'validation',
-        description: 'Custom validation with regex pattern or preset',
-        argument: 'Named: regex: string or preset: string', argType: 'named',
-        targets: 'input, output', appliesTo: 'string, array',
-        example: '@validate(regex: "^[a-z]+$")\ninput string name',
-        snippet: 'validate(regex: "$1")', argHint: '(regex: "pattern")', sortOrder: 5
-    },
-    {
-        name: 'allowed', category: 'validation',
-        description: 'Whitelist of allowed values',
-        argument: 'array of literals (1 to 256 elements)', argType: 'array',
-        targets: 'input', appliesTo: 'string, number, object, array',
-        example: '@allowed(["dev", "staging", "prod"])\ninput string environment = "dev"',
-        snippet: 'allowed([$1])', argHint: '([values])', sortOrder: 6
-    },
-    {
-        name: 'unique', category: 'validation',
-        description: 'Ensures array elements are unique',
-        argument: 'none', argType: 'none',
-        targets: 'input', appliesTo: 'array',
-        example: '@unique\ninput string[] tags = ["web", "api"]',
-        sortOrder: 7
-    },
-    // Resource decorators (sortOrder 100-199)
-    {
-        name: 'existing', category: 'resource',
-        description: 'Reference existing cloud resources by ARN, URL, or ID',
-        argument: 'string (ARN, URL, EC2 instance ID, KMS alias, log group)', argType: 'string',
-        targets: 'resource',
-        example: '@existing("arn:aws:s3:::my-bucket")\nresource S3.Bucket existing_bucket {}',
-        snippet: 'existing("$1")', argHint: '("reference")', sortOrder: 100
-    },
-    {
-        name: 'sensitive', category: 'resource',
-        description: 'Mark sensitive data (passwords, secrets, API keys)',
-        argument: 'none', argType: 'none',
-        targets: 'input, output',
-        example: '@sensitive\ninput string api_key',
-        sortOrder: 101
-    },
-    {
-        name: 'dependsOn', category: 'resource',
-        description: 'Explicit dependency declaration between resources/components',
-        argument: 'resource/component reference, or array of references', argType: 'reference',
-        targets: 'resource, component (instances)',
-        example: '@dependsOn(subnet)\nresource EC2.Instance server { ... }',
-        snippet: 'dependsOn($1)', argHint: '(resources)', sortOrder: 102
-    },
-    {
-        name: 'tags', category: 'resource',
-        description: 'Add cloud provider tags to resources',
-        argument: 'object, array of strings, or string', argType: 'object',
-        targets: 'resource, component (instances)',
-        example: '@tags({ Environment: "prod", Team: "platform" })\nresource S3.Bucket photos { name = "photos" }',
-        snippet: 'tags({ $1 })', argHint: '({key: value})', sortOrder: 103
-    },
-    {
-        name: 'provider', category: 'resource',
-        description: 'Target specific cloud providers for resource provisioning',
-        argument: 'string or array of strings', argType: 'string',
-        targets: 'resource, component (instances)',
-        example: '@provider("aws")\nresource S3.Bucket photos { name = "photos" }',
-        snippet: 'provider("$1")', argHint: '("provider")', sortOrder: 104
-    },
-    // Metadata decorators (sortOrder 200-299)
-    {
-        name: 'description', category: 'metadata',
-        description: 'Documentation for any declaration',
-        argument: 'string', argType: 'string',
-        targets: 'resource, component, input, output, var, schema, schema property, fun',
-        example: '@description("The port number for the web server")\ninput number port = 8080',
-        snippet: 'description("$1")', argHint: '("text")', sortOrder: 200
-    },
-    {
-        name: 'cloud', category: 'metadata',
-        description: 'Mark schema property as cloud-provided (value set by cloud provider)',
-        argument: 'none', argType: 'none',
-        targets: 'schema property',
-        example: 'schema Instance {\n    @cloud\n    string publicIp\n}',
-        sortOrder: 201
-    },
-    {
-        name: 'count', category: 'metadata',
-        description: 'Create N instances of a resource or component. Injects count variable (0-indexed)',
-        argument: 'number', argType: 'number',
-        targets: 'resource, component (instances)',
-        example: '@count(3)\nresource EC2.Instance server {\n    name = "server-$count"\n}',
-        snippet: 'count($1)', argHint: '(n)', sortOrder: 202
-    },
-];
 
 // Completion handler
 connection.onCompletion((params: TextDocumentPositionParams): CompletionItem[] => {
@@ -1215,8 +1064,6 @@ connection.onCompletion((params: TextDocumentPositionParams): CompletionItem[] =
 });
 
 // Helper: Detect decorator context for prioritization
-type DecoratorTarget = 'input' | 'output' | 'resource' | 'component' | 'schema' | 'schema property' | 'var' | 'fun' | null;
-
 function getDecoratorContext(text: string, offset: number): DecoratorTarget {
     // Look at next few lines to see what declaration follows
     let lookAhead = text.substring(offset, Math.min(text.length, offset + 300));
@@ -1300,14 +1147,6 @@ function isAfterEquals(text: string, offset: number): boolean {
 }
 
 // Helper: Find the enclosing resource/component block
-interface BlockContext {
-    name: string;
-    type: 'resource' | 'component';
-    typeName: string;  // Schema name for resources, component type for components
-    start: number;
-    end: number;
-}
-
 function findEnclosingBlock(text: string, offset: number): BlockContext | null {
     // Find all resource/component declarations
     // Pattern: resource SchemaName instanceName { or component TypeName instanceName {
@@ -1533,12 +1372,6 @@ function isInsideNestedStructure(text: string, blockStart: number, cursorOffset:
     }
 
     return depth > 0;
-}
-
-// Helper: Represents an import statement
-interface ImportInfo {
-    path: string;
-    symbols: string[];  // Empty array means wildcard import (import *)
 }
 
 // Helper: Extract imports from text
@@ -2683,8 +2516,9 @@ connection.onRenameRequest((params: RenameParams): WorkspaceEdit | null => {
     // Schedule a refresh of diagnostics for all open documents after the rename is applied
     // This ensures cross-file references are properly validated after the rename
     setTimeout(() => {
+        const validationCtx = createValidationContext();
         for (const doc of documents.all()) {
-            const diagnostics = validateDocument(doc);
+            const diagnostics = validateDocument(doc, validationCtx);
             connection.sendDiagnostics({ uri: doc.uri, diagnostics });
         }
     }, 100);
@@ -3077,11 +2911,6 @@ function inferTypeFromValue(text: string, startPos: number): string | null {
 }
 
 // Helper: Parse function call arguments
-interface ArgRange {
-    start: number;
-    end: number;
-}
-
 function parseArguments(text: string, startPos: number): ArgRange[] {
     const args: ArgRange[] = [];
     let pos = startPos;
@@ -3309,11 +3138,6 @@ function extractSchemaPropertyTypes(text: string, schemaName: string, currentDoc
 }
 
 // Helper: Find function call at cursor position and determine active parameter
-interface FunctionCallInfo {
-    functionName: string;
-    activeParameter: number;
-}
-
 function findFunctionCallAtPosition(text: string, offset: number): FunctionCallInfo | null {
     // Walk backwards to find the opening parenthesis of a function call
     let pos = offset - 1;
@@ -3375,11 +3199,6 @@ function findFunctionCallAtPosition(text: string, offset: number): FunctionCallI
 }
 
 // Helper: Check if cursor is on a property in a property access (e.g., server.tag.New.a)
-interface PropertyAccessContext {
-    chain: string[];      // Full chain: ['server', 'tag', 'New', 'a']
-    propertyName: string; // The property being accessed (last in chain)
-}
-
 function getPropertyAccessContext(text: string, offset: number, currentWord: string): PropertyAccessContext | null {
     // Find start of current word
     let wordStart = offset;
@@ -3481,12 +3300,6 @@ function findPropertyInChain(document: TextDocument, text: string, chain: string
 }
 
 // Helper: Find a property within a range of text and return its location and value range
-interface PropertyResult {
-    location: Location;
-    valueStart?: number;  // Start of the value (for nested objects)
-    valueEnd?: number;    // End of the value
-}
-
 function findPropertyInRange(document: TextDocument, text: string, rangeStart: number, rangeEnd: number, propertyName: string): PropertyResult | null {
     const searchText = text.substring(rangeStart, rangeEnd);
 
@@ -3541,19 +3354,6 @@ function findPropertyInRange(document: TextDocument, text: string, rangeStart: n
     return null;
 }
 
-// Helper: Find the matching closing brace
-function findMatchingBrace(text: string, openBracePos: number): number {
-    let braceDepth = 1;
-    let pos = openBracePos + 1;
-
-    while (pos < text.length && braceDepth > 0) {
-        if (text[pos] === '{') braceDepth++;
-        else if (text[pos] === '}') braceDepth--;
-        pos++;
-    }
-
-    return pos;
-}
 
 // Helper: Scan document for declarations
 function scanDocument(document: TextDocument): Declaration[] {
@@ -3827,11 +3627,6 @@ function scanDocument(document: TextDocument): Declaration[] {
 }
 
 // Helper: Extract outputs from a component type definition
-interface OutputInfo {
-    name: string;
-    type: string;
-}
-
 function extractComponentOutputs(text: string, componentTypeName: string): OutputInfo[] {
     const outputs: OutputInfo[] = [];
 
@@ -3922,54 +3717,6 @@ function extractPropertiesFromBody(text: string, declarationName: string): strin
     }
 
     return properties;
-}
-
-// Helper: Get word at position
-// Helper: Convert offset to Position in a text string
-function offsetToPosition(text: string, offset: number): Position {
-    const lines = text.substring(0, offset).split('\n');
-    return Position.create(lines.length - 1, lines[lines.length - 1].length);
-}
-
-function getWordAtPosition(document: TextDocument, position: Position): string | null {
-    const text = document.getText();
-    const offset = document.offsetAt(position);
-
-    // Handle case where cursor might be at the very end of a word
-    let adjustedOffset = offset;
-    if (adjustedOffset > 0 && !/\w/.test(text[adjustedOffset] || '') && /\w/.test(text[adjustedOffset - 1])) {
-        adjustedOffset--;
-    }
-
-    // Find word boundaries
-    let start = adjustedOffset;
-    let end = adjustedOffset;
-
-    while (start > 0 && /\w/.test(text[start - 1])) {
-        start--;
-    }
-    while (end < text.length && /\w/.test(text[end])) {
-        end++;
-    }
-
-    if (start === end) return null;
-    return text.substring(start, end);
-}
-
-// Helper: Get completion item kind for declaration type
-function getCompletionKind(type: DeclarationType): CompletionItemKind {
-    switch (type) {
-        case 'variable': return CompletionItemKind.Variable;
-        case 'input': return CompletionItemKind.Field;
-        case 'output': return CompletionItemKind.Field;
-        case 'resource': return CompletionItemKind.Class;
-        case 'component': return CompletionItemKind.Module;
-        case 'schema': return CompletionItemKind.Interface;
-        case 'function': return CompletionItemKind.Function;
-        case 'type': return CompletionItemKind.TypeParameter;
-        case 'for': return CompletionItemKind.Variable;
-        default: return CompletionItemKind.Text;
-    }
 }
 
 // Code Action handler - provides quick fixes
@@ -4079,861 +3826,8 @@ connection.onCodeAction((params: CodeActionParams): CodeAction[] => {
 connection.onDocumentSymbol((params: DocumentSymbolParams): DocumentSymbol[] => {
     const document = documents.get(params.textDocument.uri);
     if (!document) return [];
-
-    const text = document.getText();
-    const symbols: DocumentSymbol[] = [];
-
-    // Helper to create a DocumentSymbol
-    function createSymbol(
-        name: string,
-        kind: SymbolKind,
-        range: Range,
-        selectionRange: Range,
-        detail?: string,
-        children?: DocumentSymbol[]
-    ): DocumentSymbol {
-        return {
-            name,
-            kind,
-            range,
-            selectionRange,
-            detail,
-            children
-        };
-    }
-
-    // Find schemas: schema Name {
-    const schemaRegex = /\bschema\s+(\w+)\s*\{/g;
-    let match;
-    while ((match = schemaRegex.exec(text)) !== null) {
-        const name = match[1];
-        const startPos = document.positionAt(match.index);
-        const nameStart = document.positionAt(match.index + match[0].indexOf(name));
-        const nameEnd = document.positionAt(match.index + match[0].indexOf(name) + name.length);
-
-        // Find the closing brace
-        const braceStart = match.index + match[0].length - 1;
-        let braceDepth = 1;
-        let pos = braceStart + 1;
-        while (pos < text.length && braceDepth > 0) {
-            if (text[pos] === '{') braceDepth++;
-            else if (text[pos] === '}') braceDepth--;
-            pos++;
-        }
-        const endPos = document.positionAt(pos);
-
-        // Find properties inside schema
-        const bodyText = text.substring(braceStart + 1, pos - 1);
-        const bodyOffset = braceStart + 1;
-        const children: DocumentSymbol[] = [];
-
-        const propRegex = /^\s*(\w+(?:\[\])?)\s+(\w+)/gm;
-        let propMatch;
-        while ((propMatch = propRegex.exec(bodyText)) !== null) {
-            const propType = propMatch[1];
-            const propName = propMatch[2];
-            const propStart = document.positionAt(bodyOffset + propMatch.index);
-            const propNameStart = document.positionAt(bodyOffset + propMatch.index + propMatch[0].indexOf(propName));
-            const propNameEnd = document.positionAt(bodyOffset + propMatch.index + propMatch[0].indexOf(propName) + propName.length);
-            const propEnd = propNameEnd;
-
-            children.push(createSymbol(
-                propName,
-                SymbolKind.Property,
-                Range.create(propStart, propEnd),
-                Range.create(propNameStart, propNameEnd),
-                propType
-            ));
-        }
-
-        symbols.push(createSymbol(
-            name,
-            SymbolKind.Struct,
-            Range.create(startPos, endPos),
-            Range.create(nameStart, nameEnd),
-            'schema',
-            children.length > 0 ? children : undefined
-        ));
-    }
-
-    // Find component definitions: component TypeName { (without instance name)
-    const compDefRegex = /\bcomponent\s+(\w+)\s*\{/g;
-    while ((match = compDefRegex.exec(text)) !== null) {
-        // Check if definition (not instance)
-        const betweenKeywordAndBrace = text.substring(match.index + 10, match.index + match[0].length - 1).trim();
-        const parts = betweenKeywordAndBrace.split(/\s+/).filter(s => s);
-        if (parts.length !== 1) continue; // Instance, skip
-
-        const name = match[1];
-        const startPos = document.positionAt(match.index);
-        const nameStart = document.positionAt(match.index + match[0].indexOf(name));
-        const nameEnd = document.positionAt(match.index + match[0].indexOf(name) + name.length);
-
-        const braceStart = match.index + match[0].length - 1;
-        let braceDepth = 1;
-        let pos = braceStart + 1;
-        while (pos < text.length && braceDepth > 0) {
-            if (text[pos] === '{') braceDepth++;
-            else if (text[pos] === '}') braceDepth--;
-            pos++;
-        }
-        const endPos = document.positionAt(pos);
-
-        // Find inputs/outputs inside component
-        const bodyText = text.substring(braceStart + 1, pos - 1);
-        const bodyOffset = braceStart + 1;
-        const children: DocumentSymbol[] = [];
-
-        const ioRegex = /\b(input|output)\s+(\w+(?:\[\])?)\s+(\w+)/g;
-        let ioMatch;
-        while ((ioMatch = ioRegex.exec(bodyText)) !== null) {
-            const ioKind = ioMatch[1];
-            const ioType = ioMatch[2];
-            const ioName = ioMatch[3];
-            const ioStart = document.positionAt(bodyOffset + ioMatch.index);
-            const ioNameStart = document.positionAt(bodyOffset + ioMatch.index + ioMatch[0].lastIndexOf(ioName));
-            const ioNameEnd = document.positionAt(bodyOffset + ioMatch.index + ioMatch[0].lastIndexOf(ioName) + ioName.length);
-
-            children.push(createSymbol(
-                ioName,
-                ioKind === 'input' ? SymbolKind.Property : SymbolKind.Event,
-                Range.create(ioStart, ioNameEnd),
-                Range.create(ioNameStart, ioNameEnd),
-                `${ioKind}: ${ioType}`
-            ));
-        }
-
-        symbols.push(createSymbol(
-            name,
-            SymbolKind.Class,
-            Range.create(startPos, endPos),
-            Range.create(nameStart, nameEnd),
-            'component',
-            children.length > 0 ? children : undefined
-        ));
-    }
-
-    // Find resources: resource SchemaName instanceName {
-    const resourceRegex = /\bresource\s+([\w.]+)\s+(\w+)\s*\{/g;
-    while ((match = resourceRegex.exec(text)) !== null) {
-        const schemaName = match[1];
-        const instanceName = match[2];
-        const startPos = document.positionAt(match.index);
-        const nameStart = document.positionAt(match.index + match[0].lastIndexOf(instanceName));
-        const nameEnd = document.positionAt(match.index + match[0].lastIndexOf(instanceName) + instanceName.length);
-
-        const braceStart = match.index + match[0].length - 1;
-        let braceDepth = 1;
-        let pos = braceStart + 1;
-        while (pos < text.length && braceDepth > 0) {
-            if (text[pos] === '{') braceDepth++;
-            else if (text[pos] === '}') braceDepth--;
-            pos++;
-        }
-        const endPos = document.positionAt(pos);
-
-        symbols.push(createSymbol(
-            instanceName,
-            SymbolKind.Object,
-            Range.create(startPos, endPos),
-            Range.create(nameStart, nameEnd),
-            `resource: ${schemaName}`
-        ));
-    }
-
-    // Find component instances: component TypeName instanceName {
-    const compInstRegex = /\bcomponent\s+(\w+)\s+(\w+)\s*\{/g;
-    while ((match = compInstRegex.exec(text)) !== null) {
-        const typeName = match[1];
-        const instanceName = match[2];
-        const startPos = document.positionAt(match.index);
-        const nameStart = document.positionAt(match.index + match[0].lastIndexOf(instanceName));
-        const nameEnd = document.positionAt(match.index + match[0].lastIndexOf(instanceName) + instanceName.length);
-
-        const braceStart = match.index + match[0].length - 1;
-        let braceDepth = 1;
-        let pos = braceStart + 1;
-        while (pos < text.length && braceDepth > 0) {
-            if (text[pos] === '{') braceDepth++;
-            else if (text[pos] === '}') braceDepth--;
-            pos++;
-        }
-        const endPos = document.positionAt(pos);
-
-        symbols.push(createSymbol(
-            instanceName,
-            SymbolKind.Object,
-            Range.create(startPos, endPos),
-            Range.create(nameStart, nameEnd),
-            `component: ${typeName}`
-        ));
-    }
-
-    // Find functions: fun name(params) returnType {
-    const funcRegex = /\bfun\s+(\w+)\s*\(([^)]*)\)\s*(\w+)?\s*\{/g;
-    while ((match = funcRegex.exec(text)) !== null) {
-        const name = match[1];
-        const params = match[2];
-        const returnType = match[3] || 'void';
-        const startPos = document.positionAt(match.index);
-        const nameStart = document.positionAt(match.index + match[0].indexOf(name));
-        const nameEnd = document.positionAt(match.index + match[0].indexOf(name) + name.length);
-
-        const braceStart = match.index + match[0].length - 1;
-        let braceDepth = 1;
-        let pos = braceStart + 1;
-        while (pos < text.length && braceDepth > 0) {
-            if (text[pos] === '{') braceDepth++;
-            else if (text[pos] === '}') braceDepth--;
-            pos++;
-        }
-        const endPos = document.positionAt(pos);
-
-        symbols.push(createSymbol(
-            name,
-            SymbolKind.Function,
-            Range.create(startPos, endPos),
-            Range.create(nameStart, nameEnd),
-            `(${params}) → ${returnType}`
-        ));
-    }
-
-    // Find type aliases: type Name = ...
-    const typeRegex = /\btype\s+(\w+)\s*=/g;
-    while ((match = typeRegex.exec(text)) !== null) {
-        const name = match[1];
-        const startPos = document.positionAt(match.index);
-        const nameStart = document.positionAt(match.index + match[0].indexOf(name));
-        const nameEnd = document.positionAt(match.index + match[0].indexOf(name) + name.length);
-
-        // Find end of line
-        let endIdx = text.indexOf('\n', match.index);
-        if (endIdx === -1) endIdx = text.length;
-        const endPos = document.positionAt(endIdx);
-
-        symbols.push(createSymbol(
-            name,
-            SymbolKind.TypeParameter,
-            Range.create(startPos, endPos),
-            Range.create(nameStart, nameEnd),
-            'type alias'
-        ));
-    }
-
-    // Find top-level variables: var [type] name =
-    const varRegex = /^var\s+(?:(\w+)\s+)?(\w+)\s*=/gm;
-    while ((match = varRegex.exec(text)) !== null) {
-        const varType = match[1] || 'any';
-        const name = match[2];
-        const startPos = document.positionAt(match.index);
-        const nameStart = document.positionAt(match.index + match[0].indexOf(name));
-        const nameEnd = document.positionAt(match.index + match[0].indexOf(name) + name.length);
-
-        // Find end of line
-        let endIdx = text.indexOf('\n', match.index);
-        if (endIdx === -1) endIdx = text.length;
-        const endPos = document.positionAt(endIdx);
-
-        symbols.push(createSymbol(
-            name,
-            SymbolKind.Variable,
-            Range.create(startPos, endPos),
-            Range.create(nameStart, nameEnd),
-            varType
-        ));
-    }
-
-    // Find inputs (top-level): input type name
-    const inputRegex = /^input\s+(\w+(?:\[\])?)\s+(\w+)/gm;
-    while ((match = inputRegex.exec(text)) !== null) {
-        const inputType = match[1];
-        const name = match[2];
-        const startPos = document.positionAt(match.index);
-        const nameStart = document.positionAt(match.index + match[0].lastIndexOf(name));
-        const nameEnd = document.positionAt(match.index + match[0].lastIndexOf(name) + name.length);
-
-        let endIdx = text.indexOf('\n', match.index);
-        if (endIdx === -1) endIdx = text.length;
-        const endPos = document.positionAt(endIdx);
-
-        symbols.push(createSymbol(
-            name,
-            SymbolKind.Property,
-            Range.create(startPos, endPos),
-            Range.create(nameStart, nameEnd),
-            `input: ${inputType}`
-        ));
-    }
-
-    // Find outputs (top-level): output type name
-    const outputRegex = /^output\s+(\w+(?:\[\])?)\s+(\w+)/gm;
-    while ((match = outputRegex.exec(text)) !== null) {
-        const outputType = match[1];
-        const name = match[2];
-        const startPos = document.positionAt(match.index);
-        const nameStart = document.positionAt(match.index + match[0].lastIndexOf(name));
-        const nameEnd = document.positionAt(match.index + match[0].lastIndexOf(name) + name.length);
-
-        let endIdx = text.indexOf('\n', match.index);
-        if (endIdx === -1) endIdx = text.length;
-        const endPos = document.positionAt(endIdx);
-
-        symbols.push(createSymbol(
-            name,
-            SymbolKind.Event,
-            Range.create(startPos, endPos),
-            Range.create(nameStart, nameEnd),
-            `output: ${outputType}`
-        ));
-    }
-
-    return symbols;
+    return handleDocumentSymbol(document);
 });
-
-// Validate document and return diagnostics
-function validateDocument(document: TextDocument): Diagnostic[] {
-    const diagnostics: Diagnostic[] = [];
-    const text = document.getText();
-
-    // Find all decorator usages: @decoratorName or @decoratorName(args)
-    const decoratorRegex = /@(\w+)(\s*\(([^)]*)\))?/g;
-    let match;
-
-    while ((match = decoratorRegex.exec(text)) !== null) {
-        const decoratorName = match[1];
-        const hasParens = match[2] !== undefined;
-        const argsStr = match[3]?.trim() || '';
-
-        // Find the decorator definition
-        const decoratorDef = DECORATORS.find(d => d.name === decoratorName);
-
-        if (!decoratorDef) {
-            // Unknown decorator - could add a warning but skip for now
-            continue;
-        }
-
-        const startPos = document.positionAt(match.index);
-        const endPos = document.positionAt(match.index + match[0].length);
-        const range = Range.create(startPos, endPos);
-
-        // Validate based on expected argument type
-        const expectedType = decoratorDef.argType;
-
-        if (expectedType === 'none') {
-            // Should not have arguments
-            if (hasParens && argsStr) {
-                diagnostics.push({
-                    severity: DiagnosticSeverity.Error,
-                    range,
-                    message: `@${decoratorName} does not take arguments`,
-                    source: 'kite'
-                });
-            }
-        } else if (expectedType === 'number') {
-            if (!hasParens || !argsStr) {
-                diagnostics.push({
-                    severity: DiagnosticSeverity.Error,
-                    range,
-                    message: `@${decoratorName} requires a number argument`,
-                    source: 'kite'
-                });
-            } else if (!/^\d+$/.test(argsStr) && !/^\w+$/.test(argsStr)) {
-                // Allow numbers or variable references
-                if (/^".*"$/.test(argsStr) || /^'.*'$/.test(argsStr)) {
-                    diagnostics.push({
-                        severity: DiagnosticSeverity.Error,
-                        range,
-                        message: `@${decoratorName} expects a number, got string`,
-                        source: 'kite'
-                    });
-                } else if (/^\[/.test(argsStr)) {
-                    diagnostics.push({
-                        severity: DiagnosticSeverity.Error,
-                        range,
-                        message: `@${decoratorName} expects a number, got array`,
-                        source: 'kite'
-                    });
-                } else if (/^\{/.test(argsStr)) {
-                    diagnostics.push({
-                        severity: DiagnosticSeverity.Error,
-                        range,
-                        message: `@${decoratorName} expects a number, got object`,
-                        source: 'kite'
-                    });
-                }
-            }
-        } else if (expectedType === 'string') {
-            if (!hasParens || !argsStr) {
-                diagnostics.push({
-                    severity: DiagnosticSeverity.Error,
-                    range,
-                    message: `@${decoratorName} requires a string argument`,
-                    source: 'kite'
-                });
-            } else if (!/^".*"$/.test(argsStr) && !/^'.*'$/.test(argsStr) && !/^\w+$/.test(argsStr)) {
-                // Allow string literals or variable references
-                if (/^\d+$/.test(argsStr)) {
-                    diagnostics.push({
-                        severity: DiagnosticSeverity.Error,
-                        range,
-                        message: `@${decoratorName} expects a string, got number`,
-                        source: 'kite'
-                    });
-                } else if (/^\[/.test(argsStr)) {
-                    // Allow arrays for @provider(["aws", "azure"])
-                    if (decoratorName !== 'provider') {
-                        diagnostics.push({
-                            severity: DiagnosticSeverity.Error,
-                            range,
-                            message: `@${decoratorName} expects a string, got array`,
-                            source: 'kite'
-                        });
-                    }
-                } else if (/^\{/.test(argsStr)) {
-                    diagnostics.push({
-                        severity: DiagnosticSeverity.Error,
-                        range,
-                        message: `@${decoratorName} expects a string, got object`,
-                        source: 'kite'
-                    });
-                }
-            }
-        } else if (expectedType === 'array') {
-            if (!hasParens || !argsStr) {
-                diagnostics.push({
-                    severity: DiagnosticSeverity.Error,
-                    range,
-                    message: `@${decoratorName} requires an array argument`,
-                    source: 'kite'
-                });
-            } else if (!/^\[/.test(argsStr) && !/^\w+$/.test(argsStr)) {
-                // Must start with [ or be a variable reference
-                if (/^".*"$/.test(argsStr) || /^'.*'$/.test(argsStr)) {
-                    diagnostics.push({
-                        severity: DiagnosticSeverity.Error,
-                        range,
-                        message: `@${decoratorName} expects an array, got string`,
-                        source: 'kite'
-                    });
-                } else if (/^\d+$/.test(argsStr)) {
-                    diagnostics.push({
-                        severity: DiagnosticSeverity.Error,
-                        range,
-                        message: `@${decoratorName} expects an array, got number`,
-                        source: 'kite'
-                    });
-                } else if (/^\{/.test(argsStr)) {
-                    diagnostics.push({
-                        severity: DiagnosticSeverity.Error,
-                        range,
-                        message: `@${decoratorName} expects an array, got object`,
-                        source: 'kite'
-                    });
-                }
-            }
-        } else if (expectedType === 'object') {
-            if (!hasParens || !argsStr) {
-                diagnostics.push({
-                    severity: DiagnosticSeverity.Error,
-                    range,
-                    message: `@${decoratorName} requires an argument`,
-                    source: 'kite'
-                });
-            }
-            // @tags accepts object, array, or string - so we allow all for it
-        } else if (expectedType === 'named') {
-            // Named arguments like @validate(regex: "pattern")
-            if (!hasParens || !argsStr) {
-                diagnostics.push({
-                    severity: DiagnosticSeverity.Error,
-                    range,
-                    message: `@${decoratorName} requires named arguments (e.g., regex: "pattern")`,
-                    source: 'kite'
-                });
-            } else if (!/\w+\s*:/.test(argsStr)) {
-                // Must have named argument format
-                diagnostics.push({
-                    severity: DiagnosticSeverity.Error,
-                    range,
-                    message: `@${decoratorName} requires named arguments (e.g., regex: "pattern")`,
-                    source: 'kite'
-                });
-            }
-        }
-        // 'reference' type is flexible - accepts identifiers or arrays
-    }
-
-    // Validate resource schema types
-    const currentFilePath = URI.parse(document.uri).fsPath;
-    const currentDir = path.dirname(currentFilePath);
-    const imports = extractImports(text);
-
-    // Clear previous diagnostic data for this document
-    diagnosticData.set(document.uri, new Map());
-    const docDiagnosticData = diagnosticData.get(document.uri)!;
-
-    // Helper to check if position is inside a comment
-    function isInsideComment(pos: number): boolean {
-        // Check for single-line comment
-        const lineStart = text.lastIndexOf('\n', pos - 1) + 1;
-        const lineBeforePos = text.substring(lineStart, pos);
-        if (lineBeforePos.includes('//')) {
-            return true;
-        }
-
-        // Check for multi-line comment
-        const textBefore = text.substring(0, pos);
-        const lastBlockCommentStart = textBefore.lastIndexOf('/*');
-        if (lastBlockCommentStart !== -1) {
-            const lastBlockCommentEnd = textBefore.lastIndexOf('*/');
-            if (lastBlockCommentEnd < lastBlockCommentStart) {
-                return true; // Inside block comment
-            }
-        }
-        return false;
-    }
-
-    // Check resource declarations: resource SchemaName instanceName {
-    const resourceRegex = /\bresource\s+([\w.]+)\s+(\w+)\s*\{/g;
-    let resourceMatch;
-    while ((resourceMatch = resourceRegex.exec(text)) !== null) {
-        // Skip if inside a comment
-        if (isInsideComment(resourceMatch.index)) continue;
-
-        const schemaName = resourceMatch[1];
-        const instanceName = resourceMatch[2];
-        // Find the actual position of the schema name in the match
-        const matchText = resourceMatch[0];
-        const schemaOffsetInMatch = matchText.indexOf(schemaName);
-        const schemaStart = resourceMatch.index + schemaOffsetInMatch;
-        const schemaEnd = schemaStart + schemaName.length;
-
-        // Check if schema exists in current file
-        const schemaInCurrentFile = findSchemaDefinition(text, schemaName, document.uri);
-        if (schemaInCurrentFile) continue;
-
-        // Check if schema is imported
-        let foundInFile: string | null = null;
-        const kiteFiles = findKiteFilesInWorkspace();
-        for (const filePath of kiteFiles) {
-            if (filePath === currentFilePath) continue;
-            const fileContent = getFileContent(filePath, document.uri);
-            if (fileContent) {
-                const loc = findSchemaDefinition(fileContent, schemaName, filePath);
-                if (loc) {
-                    foundInFile = filePath;
-                    break;
-                }
-            }
-        }
-
-        const startPos = document.positionAt(schemaStart);
-        const endPos = document.positionAt(schemaEnd);
-        const range = Range.create(startPos, endPos);
-
-        if (foundInFile) {
-            // Schema exists but might not be imported
-            if (!isSymbolImported(imports, schemaName, foundInFile, currentFilePath)) {
-                // Calculate import path
-                let importPath = path.relative(currentDir, foundInFile);
-                importPath = importPath.replace(/\\/g, '/');
-
-                const diagnosticKey = `${startPos.line}:${startPos.character}:${schemaName}`;
-                docDiagnosticData.set(diagnosticKey, {
-                    symbolName: schemaName,
-                    filePath: foundInFile,
-                    importPath
-                });
-
-                diagnostics.push({
-                    severity: DiagnosticSeverity.Error,
-                    range,
-                    message: `Schema '${schemaName}' is not imported. Found in '${path.basename(foundInFile)}'.`,
-                    source: 'kite',
-                    data: diagnosticKey
-                });
-            }
-        } else {
-            // Schema not found anywhere
-            diagnostics.push({
-                severity: DiagnosticSeverity.Error,
-                range,
-                message: `Cannot resolve schema '${schemaName}'`,
-                source: 'kite'
-            });
-        }
-    }
-
-    // Check component instantiations: component TypeName instanceName {
-    // Must have TWO identifiers (type and instance name) - definitions only have one
-    const componentInstRegex = /\bcomponent\s+(\w+)\s+(\w+)\s*\{/g;
-    let componentMatch;
-    while ((componentMatch = componentInstRegex.exec(text)) !== null) {
-        // Skip if inside a comment
-        if (isInsideComment(componentMatch.index)) continue;
-
-        const componentType = componentMatch[1];
-        const instanceName = componentMatch[2];
-        // Find the actual position of the type name in the match
-        const matchText = componentMatch[0];
-        const typeOffsetInMatch = matchText.indexOf(componentType);
-        const typeStart = componentMatch.index + typeOffsetInMatch;
-        const typeEnd = typeStart + componentType.length;
-
-        // Check if component exists in current file
-        const componentInCurrentFile = findComponentDefinition(text, componentType, document.uri);
-        if (componentInCurrentFile) continue;
-
-        // Check if component is in other files
-        let foundInFile: string | null = null;
-        const kiteFiles = findKiteFilesInWorkspace();
-        for (const filePath of kiteFiles) {
-            if (filePath === currentFilePath) continue;
-            const fileContent = getFileContent(filePath, document.uri);
-            if (fileContent) {
-                const loc = findComponentDefinition(fileContent, componentType, filePath);
-                if (loc) {
-                    foundInFile = filePath;
-                    break;
-                }
-            }
-        }
-
-        const startPos = document.positionAt(typeStart);
-        const endPos = document.positionAt(typeEnd);
-        const range = Range.create(startPos, endPos);
-
-        if (foundInFile) {
-            // Component exists but might not be imported
-            if (!isSymbolImported(imports, componentType, foundInFile, currentFilePath)) {
-                // Calculate import path
-                let importPath = path.relative(currentDir, foundInFile);
-                importPath = importPath.replace(/\\/g, '/');
-
-                const diagnosticKey = `${startPos.line}:${startPos.character}:${componentType}`;
-                docDiagnosticData.set(diagnosticKey, {
-                    symbolName: componentType,
-                    filePath: foundInFile,
-                    importPath
-                });
-
-                diagnostics.push({
-                    severity: DiagnosticSeverity.Error,
-                    range,
-                    message: `Component '${componentType}' is not imported. Found in '${path.basename(foundInFile)}'.`,
-                    source: 'kite',
-                    data: diagnosticKey
-                });
-            }
-        } else {
-            // Component not found anywhere
-            diagnostics.push({
-                severity: DiagnosticSeverity.Error,
-                range,
-                message: `Cannot resolve component '${componentType}'`,
-                source: 'kite'
-            });
-        }
-    }
-
-    // Check function calls: functionName(
-    // We need to find function calls that are NOT definitions and NOT in declarations cache
-    const functionCallRegex = /\b([a-z]\w*)\s*\(/g;
-    let funcMatch;
-    const localDeclarations = declarationCache.get(document.uri) || [];
-    const localFunctionNames = new Set(localDeclarations.filter(d => d.type === 'function').map(d => d.name));
-    // Also get all other local names to exclude (inputs, outputs, variables, etc.)
-    const localNames = new Set(localDeclarations.map(d => d.name));
-
-    // Built-in functions to ignore
-    const builtinFunctions = new Set(['println', 'print', 'len', 'toString', 'toNumber', 'typeof']);
-
-    while ((funcMatch = functionCallRegex.exec(text)) !== null) {
-        // Skip if inside a comment
-        if (isInsideComment(funcMatch.index)) continue;
-
-        const funcName = funcMatch[1];
-
-        // Skip if it's a builtin function
-        if (builtinFunctions.has(funcName)) continue;
-
-        // Skip if it's a local declaration (function, variable, input, output, etc.)
-        if (localNames.has(funcName)) continue;
-
-        // Skip if it's a keyword that might be followed by (
-        if (['if', 'while', 'for', 'fun', 'return'].includes(funcName)) continue;
-
-        // Skip function definitions: fun funcName(
-        const beforeMatch = text.substring(Math.max(0, funcMatch.index - 20), funcMatch.index);
-        if (/\bfun\s+$/.test(beforeMatch)) continue;
-
-        // Skip decorators: @decoratorName(
-        if (/@\s*$/.test(beforeMatch)) continue;
-
-        // Find the position
-        const funcStart = funcMatch.index;
-        const funcEnd = funcStart + funcName.length;
-
-        // Check if function exists in current file
-        const funcInCurrentFile = findFunctionDefinition(text, funcName, document.uri);
-        if (funcInCurrentFile) continue;
-
-        // Check if function is in other files
-        let foundInFile: string | null = null;
-        const kiteFiles = findKiteFilesInWorkspace();
-        for (const filePath of kiteFiles) {
-            if (filePath === currentFilePath) continue;
-            const fileContent = getFileContent(filePath, document.uri);
-            if (fileContent) {
-                const loc = findFunctionDefinition(fileContent, funcName, filePath);
-                if (loc) {
-                    foundInFile = filePath;
-                    break;
-                }
-            }
-        }
-
-        const startPos = document.positionAt(funcStart);
-        const endPos = document.positionAt(funcEnd);
-        const range = Range.create(startPos, endPos);
-
-        if (foundInFile) {
-            // Function exists but might not be imported
-            if (!isSymbolImported(imports, funcName, foundInFile, currentFilePath)) {
-                // Calculate import path
-                let importPath = path.relative(currentDir, foundInFile);
-                importPath = importPath.replace(/\\/g, '/');
-
-                const diagnosticKey = `${startPos.line}:${startPos.character}:${funcName}`;
-                docDiagnosticData.set(diagnosticKey, {
-                    symbolName: funcName,
-                    filePath: foundInFile,
-                    importPath
-                });
-
-                diagnostics.push({
-                    severity: DiagnosticSeverity.Error,
-                    range,
-                    message: `Function '${funcName}' is not imported. Found in '${path.basename(foundInFile)}'.`,
-                    source: 'kite',
-                    data: diagnosticKey
-                });
-            }
-        } else {
-            // Function not found anywhere - could be undefined or a method call
-            // Only show error if it looks like a standalone function call
-            diagnostics.push({
-                severity: DiagnosticSeverity.Error,
-                range,
-                message: `Cannot resolve function '${funcName}'`,
-                source: 'kite'
-            });
-        }
-    }
-
-    // Validate unique names within component definitions
-    // Find all component definitions: component TypeName { (without instance name)
-    const compDefRegex = /\bcomponent\s+(\w+)\s*\{/g;
-    let compDefMatch;
-    while ((compDefMatch = compDefRegex.exec(text)) !== null) {
-        // Check if this is a definition (not instantiation) by looking for instance name
-        const fullMatch = compDefMatch[0];
-        const afterComponent = fullMatch.substring(10).trim(); // after "component "
-        const parts = afterComponent.split(/\s+/);
-
-        // Definition has: TypeName { -> parts = ["TypeName", "{"]
-        // Instantiation has: TypeName instanceName { -> parts = ["TypeName", "instanceName", "{"]
-        if (parts.length !== 2 || parts[1] !== '{') {
-            continue; // This is an instantiation, skip
-        }
-
-        const componentName = compDefMatch[1];
-        const braceStart = compDefMatch.index + compDefMatch[0].length - 1;
-
-        // Find matching closing brace
-        let braceDepth = 1;
-        let pos = braceStart + 1;
-        while (pos < text.length && braceDepth > 0) {
-            if (text[pos] === '{') braceDepth++;
-            else if (text[pos] === '}') braceDepth--;
-            pos++;
-        }
-        const braceEnd = pos;
-        const bodyText = text.substring(braceStart + 1, braceEnd - 1);
-        const bodyOffset = braceStart + 1;
-
-        // Track all names within this component with their positions
-        interface NameDecl {
-            name: string;
-            type: string;
-            offset: number;
-        }
-        const nameDeclarations: NameDecl[] = [];
-
-        // Find inputs: input type name
-        const inputRegex = /\binput\s+\w+(?:\[\])?\s+(\w+)/g;
-        let inputMatch;
-        while ((inputMatch = inputRegex.exec(bodyText)) !== null) {
-            const nameOffset = bodyOffset + inputMatch.index + inputMatch[0].lastIndexOf(inputMatch[1]);
-            nameDeclarations.push({ name: inputMatch[1], type: 'input', offset: nameOffset });
-        }
-
-        // Find outputs: output type name
-        const outputRegex = /\boutput\s+\w+(?:\[\])?\s+(\w+)/g;
-        let outputMatch;
-        while ((outputMatch = outputRegex.exec(bodyText)) !== null) {
-            const nameOffset = bodyOffset + outputMatch.index + outputMatch[0].lastIndexOf(outputMatch[1]);
-            nameDeclarations.push({ name: outputMatch[1], type: 'output', offset: nameOffset });
-        }
-
-        // Find variables: var [type] name =
-        const varRegex = /\bvar\s+(?:\w+\s+)?(\w+)\s*=/g;
-        let varMatch;
-        while ((varMatch = varRegex.exec(bodyText)) !== null) {
-            const nameOffset = bodyOffset + varMatch.index + varMatch[0].indexOf(varMatch[1]);
-            nameDeclarations.push({ name: varMatch[1], type: 'variable', offset: nameOffset });
-        }
-
-        // Find resources: resource Schema name {
-        const resRegex = /\bresource\s+[\w.]+\s+(\w+)\s*\{/g;
-        let resMatch;
-        while ((resMatch = resRegex.exec(bodyText)) !== null) {
-            const nameOffset = bodyOffset + resMatch.index + resMatch[0].lastIndexOf(resMatch[1]);
-            nameDeclarations.push({ name: resMatch[1], type: 'resource', offset: nameOffset });
-        }
-
-        // Find nested component instances: component Type name {
-        const nestedCompRegex = /\bcomponent\s+\w+\s+(\w+)\s*\{/g;
-        let nestedCompMatch;
-        while ((nestedCompMatch = nestedCompRegex.exec(bodyText)) !== null) {
-            const nameOffset = bodyOffset + nestedCompMatch.index + nestedCompMatch[0].lastIndexOf(nestedCompMatch[1]);
-            nameDeclarations.push({ name: nestedCompMatch[1], type: 'component', offset: nameOffset });
-        }
-
-        // Check for duplicates
-        const seenNames = new Map<string, NameDecl>();
-        for (const decl of nameDeclarations) {
-            const existing = seenNames.get(decl.name);
-            if (existing) {
-                // Duplicate found - report error on the second occurrence
-                const startPos = document.positionAt(decl.offset);
-                const endPos = document.positionAt(decl.offset + decl.name.length);
-                const range = Range.create(startPos, endPos);
-
-                diagnostics.push({
-                    severity: DiagnosticSeverity.Error,
-                    range,
-                    message: `Duplicate name '${decl.name}' in component '${componentName}'. Already declared as ${existing.type}.`,
-                    source: 'kite'
-                });
-            } else {
-                seenNames.set(decl.name, decl);
-            }
-        }
-    }
-
-    return diagnostics;
-}
 
 // Start the server
 documents.listen(connection);
