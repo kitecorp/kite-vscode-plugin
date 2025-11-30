@@ -132,19 +132,11 @@ export const DECORATORS: DecoratorInfo[] = [
         snippet: 'description("$1")', argHint: '("text")', sortOrder: 200
     },
     {
-        name: 'cloud', category: 'metadata',
-        description: 'Mark schema property as cloud-provided (value set by cloud provider)',
-        argument: 'none', argType: 'none',
-        targets: 'schema property',
-        example: 'schema Instance {\n    @cloud\n    string publicIp\n}',
-        sortOrder: 201
-    },
-    {
         name: 'count', category: 'metadata',
         description: 'Create N instances of a resource or component. Injects count variable (0-indexed)',
         argument: 'number', argType: 'number',
         targets: 'resource, component (instances)',
         example: '@count(3)\nresource EC2.Instance server {\n    name = "server-$count"\n}',
-        snippet: 'count($1)', argHint: '(n)', sortOrder: 202
+        snippet: 'count($1)', argHint: '(n)', sortOrder: 201
     },
 ];

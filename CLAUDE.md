@@ -11,6 +11,18 @@ The IntelliJ plugin at `../kite-intellij-plugin` is the reference implementation
 - Feature behavior expectations
 - Test files in `../kite-intellij-plugin/examples/`
 
+## Language Documentation
+
+The authoritative Kite language documentation is in the `../kite` project:
+
+| Document | Path | Description |
+|----------|------|-------------|
+| Decorators | `../kite/lang/docs/DECORATORS.md` | All 15 built-in decorators with targets and examples |
+| Syntax | `../kite/lang/docs/SYNTAX.md` | Language syntax reference |
+| Grammar | `grammar/*.g4` | ANTLR grammar (source of truth for parsing) |
+
+**Important:** Always check `../kite/lang/docs/DECORATORS.md` for the current list of decorators. The VS Code plugin's `constants.ts` must match this documentation.
+
 ## Development Principles
 
 1. **Apply existing patterns first** - Look for similar working code before creating new solutions
@@ -127,7 +139,7 @@ component WebServer api {
 }
 
 // Decorators (annotations)
-@cloud(["aws", "gcp"])
+@provider(["aws", "gcp"])
 @tags({Environment: "production"})
 resource VM.Instance server { }
 
@@ -469,7 +481,7 @@ Open `examples/simple.kite` or `examples/component.kite` in the test VS Code win
 - **Types** (`string`, `number`, `boolean`, `any`) - highlighted in blue
 - **Strings** - highlighted in green (with interpolation `${var}`)
 - **Comments** (`//` and `/* */`) - grey/italic
-- **Decorators** (`@cloud`) - highlighted
+- **Decorators** (`@description`, `@tags`, `@count`, etc.) - highlighted
 - **Numbers** - highlighted
 
 ### Package for Distribution

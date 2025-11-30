@@ -86,6 +86,76 @@ describe('handleCompletion', () => {
 
             expect(completions.length).toBeGreaterThan(0);
         });
+
+        it('should filter decorators for input context', () => {
+            const text = `component MyComp {
+    @|
+    input string name
+}`;
+            const offset = text.indexOf('|');
+            const doc = createDocument(text.replace('|', ''));
+            const position = positionFromOffset(text.replace('|', ''), offset);
+            const completions = handleCompletion(doc, position, createContext());
+
+            const labels = completions.map(c => c.label);
+            // Validation decorators apply to input
+            expect(labels.some(l => l.startsWith('minValue'))).toBe(true);
+            expect(labels.some(l => l.startsWith('maxValue'))).toBe(true);
+            expect(labels.some(l => l.startsWith('nonEmpty'))).toBe(true);
+            expect(labels.some(l => l.startsWith('sensitive'))).toBe(true);
+            // Resource-only decorators should NOT appear
+            expect(labels.some(l => l.startsWith('existing'))).toBe(false);
+            expect(labels.some(l => l.startsWith('tags'))).toBe(false);
+        });
+
+        it('should filter decorators for resource context', () => {
+            const text = `@|
+resource S3.Bucket mybucket {}`;
+            const offset = text.indexOf('|');
+            const doc = createDocument(text.replace('|', ''));
+            const position = positionFromOffset(text.replace('|', ''), offset);
+            const completions = handleCompletion(doc, position, createContext());
+
+            const labels = completions.map(c => c.label);
+            // Resource decorators
+            expect(labels.some(l => l.startsWith('existing'))).toBe(true);
+            expect(labels.some(l => l.startsWith('tags'))).toBe(true);
+            expect(labels.some(l => l.startsWith('provider'))).toBe(true);
+            expect(labels.some(l => l.startsWith('dependsOn'))).toBe(true);
+            expect(labels.some(l => l.startsWith('count'))).toBe(true);
+            // Input-only decorators should NOT appear
+            expect(labels.some(l => l.startsWith('nonEmpty'))).toBe(false);
+            expect(labels.some(l => l.startsWith('unique'))).toBe(false);
+        });
+
+        it('should show description decorator for all contexts', () => {
+            // Test for input context
+            const inputText = `@|
+input string name`;
+            let offset = inputText.indexOf('|');
+            let doc = createDocument(inputText.replace('|', ''));
+            let position = positionFromOffset(inputText.replace('|', ''), offset);
+            let completions = handleCompletion(doc, position, createContext());
+            expect(completions.map(c => c.label).some(l => l.startsWith('description'))).toBe(true);
+
+            // Test for resource context
+            const resourceText = `@|
+resource S3.Bucket mybucket {}`;
+            offset = resourceText.indexOf('|');
+            doc = createDocument(resourceText.replace('|', ''));
+            position = positionFromOffset(resourceText.replace('|', ''), offset);
+            completions = handleCompletion(doc, position, createContext());
+            expect(completions.map(c => c.label).some(l => l.startsWith('description'))).toBe(true);
+
+            // Test for schema context
+            const schemaText = `@|
+schema Config {}`;
+            offset = schemaText.indexOf('|');
+            doc = createDocument(schemaText.replace('|', ''));
+            position = positionFromOffset(schemaText.replace('|', ''), offset);
+            completions = handleCompletion(doc, position, createContext());
+            expect(completions.map(c => c.label).some(l => l.startsWith('description'))).toBe(true);
+        });
     });
 
     describe('schema body completions', () => {
@@ -561,6 +631,197 @@ resource Config myConfig {
 
         // Inside nested structure, should return empty (not schema properties)
         expect(completions).toHaveLength(0);
+    });
+});
+
+describe('cross-file completions', () => {
+    it('should provide schema properties from another file in resource body', () => {
+        const currentFile = `resource ServerConfig server {
+    |
+}`;
+        const schemaFile = `schema ServerConfig {
+    string host
+    number port
+    boolean ssl = true
+}`;
+        const offset = currentFile.indexOf('|');
+        const cleanText = currentFile.replace('|', '');
+        const doc = createDocument(cleanText, 'file:///current.kite');
+        const position = positionFromOffset(cleanText, offset);
+
+        const blockStart = cleanText.indexOf('resource ServerConfig server {') + 'resource ServerConfig server {'.length - 1;
+        const blockEnd = cleanText.lastIndexOf('}');
+
+        const ctx: CompletionContext = {
+            getDeclarations: () => [],
+            findKiteFilesInWorkspace: () => ['/path/to/schema.kite'],
+            getFileContent: (filePath: string) => {
+                if (filePath === '/path/to/schema.kite') {
+                    return schemaFile;
+                }
+                return cleanText;
+            },
+            findEnclosingBlock: () => ({
+                type: 'resource',
+                name: 'server',
+                typeName: 'ServerConfig',
+                start: blockStart,
+                end: blockEnd,
+            }),
+        };
+
+        const completions = handleCompletion(doc, position, ctx);
+        const labels = completions.map(c => c.label);
+
+        expect(labels).toContain('host');
+        expect(labels).toContain('port');
+        expect(labels).toContain('ssl');
+    });
+
+    it('should provide component inputs from another file in component instantiation', () => {
+        const currentFile = `component WebServer api {
+    |
+}`;
+        const componentFile = `component WebServer {
+    input string name = "default"
+    input number replicas = 1
+    input boolean enabled = true
+    output string endpoint
+}`;
+        const offset = currentFile.indexOf('|');
+        const cleanText = currentFile.replace('|', '');
+        const doc = createDocument(cleanText, 'file:///current.kite');
+        const position = positionFromOffset(cleanText, offset);
+
+        const blockStart = cleanText.indexOf('component WebServer api {') + 'component WebServer api {'.length - 1;
+        const blockEnd = cleanText.lastIndexOf('}');
+
+        const ctx: CompletionContext = {
+            getDeclarations: () => [],
+            findKiteFilesInWorkspace: () => ['/path/to/component.kite'],
+            getFileContent: (filePath: string) => {
+                if (filePath === '/path/to/component.kite') {
+                    return componentFile;
+                }
+                return cleanText;
+            },
+            findEnclosingBlock: () => ({
+                type: 'component',
+                name: 'api',
+                typeName: 'WebServer',
+                start: blockStart,
+                end: blockEnd,
+            }),
+        };
+
+        const completions = handleCompletion(doc, position, ctx);
+        const labels = completions.map(c => c.label);
+
+        // Should show inputs, not outputs
+        expect(labels).toContain('name');
+        expect(labels).toContain('replicas');
+        expect(labels).toContain('enabled');
+        expect(labels).not.toContain('endpoint');
+    });
+
+    it('should provide outputs from cross-file component for dot access', () => {
+        const currentFile = `component WebServer api {
+    name = "api"
+}
+
+var url = api.|`;
+        const componentFile = `component WebServer {
+    input string name
+    output string endpoint = "http://example.com"
+    output number statusCode = 200
+}`;
+        const offset = currentFile.indexOf('|');
+        const cleanText = currentFile.replace('|', '');
+        const doc = createDocument(cleanText, 'file:///current.kite');
+        const position = positionFromOffset(cleanText, offset);
+
+        const declarations: Declaration[] = [
+            {
+                name: 'api',
+                type: 'component',
+                componentType: 'WebServer',
+                range: Range.create(0, 0, 2, 1),
+                nameRange: Range.create(0, 20, 0, 23),
+                uri: 'file:///current.kite',
+            },
+        ];
+
+        const ctx: CompletionContext = {
+            getDeclarations: () => declarations,
+            findKiteFilesInWorkspace: () => ['/path/to/component.kite'],
+            getFileContent: (filePath: string) => {
+                if (filePath === '/path/to/component.kite') {
+                    return componentFile;
+                }
+                return cleanText;
+            },
+            findEnclosingBlock: () => null,
+        };
+
+        const completions = handleCompletion(doc, position, ctx);
+        const labels = completions.map(c => c.label);
+
+        // Should show outputs for dot access
+        expect(labels).toContain('endpoint');
+        expect(labels).toContain('statusCode');
+        // Should NOT show inputs for dot access
+        expect(labels).not.toContain('name');
+    });
+
+    it('should provide schema properties from cross-file for resource dot access', () => {
+        const currentFile = `resource ServerConfig server {
+    host = "localhost"
+}
+
+var h = server.|`;
+        const schemaFile = `schema ServerConfig {
+    string host
+    number port
+    boolean ssl
+}`;
+        const offset = currentFile.indexOf('|');
+        const cleanText = currentFile.replace('|', '');
+        const doc = createDocument(cleanText, 'file:///current.kite');
+        const position = positionFromOffset(cleanText, offset);
+
+        const declarations: Declaration[] = [
+            {
+                name: 'server',
+                type: 'resource',
+                schemaName: 'ServerConfig',
+                range: Range.create(0, 0, 2, 1),
+                nameRange: Range.create(0, 22, 0, 28),
+                uri: 'file:///current.kite',
+            },
+        ];
+
+        const ctx: CompletionContext = {
+            getDeclarations: () => declarations,
+            findKiteFilesInWorkspace: () => ['/path/to/schema.kite'],
+            getFileContent: (filePath: string) => {
+                if (filePath === '/path/to/schema.kite') {
+                    return schemaFile;
+                }
+                return cleanText;
+            },
+            findEnclosingBlock: () => null,
+        };
+
+        const completions = handleCompletion(doc, position, ctx);
+        const labels = completions.map(c => c.label);
+
+        expect(labels).toContain('host');
+        expect(labels).toContain('port');
+        expect(labels).toContain('ssl');
+
+        // host is set, should be marked as such
+        const hostCompletion = completions.find(c => c.label === 'host');
+        expect(hostCompletion?.detail).toContain('(set)');
     });
 });
 
