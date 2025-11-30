@@ -250,102 +250,38 @@ export function findAllReferences(
                     const fileUri = URI.file(filePath).toString();
                     const doc = ctx.getDocument(fileUri);
 
-                    // Try AST-based lookup first
+                    // Use AST-based lookup
                     const parseResult = parseKite(fileContent);
-                    if (parseResult.tree) {
-                        const inputLoc = findComponentInputAST(parseResult.tree, componentTypeName, word);
-                        if (inputLoc) {
-                            // Found via AST
-                            const fieldStartPos = doc
-                                ? doc.positionAt(inputLoc.nameStart)
-                                : offsetToPosition(fileContent, inputLoc.nameStart);
-                            const fieldEndPos = doc
-                                ? doc.positionAt(inputLoc.nameEnd)
-                                : offsetToPosition(fileContent, inputLoc.nameEnd);
+                    if (!parseResult.tree) continue;
 
-                            locations.push(Location.create(fileUri, Range.create(fieldStartPos, fieldEndPos)));
+                    const inputLoc = findComponentInputAST(parseResult.tree, componentTypeName, word);
+                    if (!inputLoc) continue;
 
-                            // Find usages within the component definition body
-                            const compDef = findComponentDefByName(parseResult.tree, componentTypeName);
-                            if (compDef) {
-                                const blockExpr = compDef.blockExpression();
-                                if (blockExpr) {
-                                    const bodyStart = (blockExpr.start?.start ?? 0) + 1;
-                                    const bodyEnd = (blockExpr.stop?.stop ?? 0);
-                                    const bodyText = fileContent.substring(bodyStart, bodyEnd);
+                    // Found the input/output declaration
+                    const fieldStartPos = doc
+                        ? doc.positionAt(inputLoc.nameStart)
+                        : offsetToPosition(fileContent, inputLoc.nameStart);
+                    const fieldEndPos = doc
+                        ? doc.positionAt(inputLoc.nameEnd)
+                        : offsetToPosition(fileContent, inputLoc.nameEnd);
 
-                                    // Find usages within the component definition
-                                    const usageRegex = new RegExp(`\\b${escapeRegex(word)}\\b`, 'g');
-                                    let usageMatch;
-                                    while ((usageMatch = usageRegex.exec(bodyText)) !== null) {
-                                        const usageOffset = bodyStart + usageMatch.index;
-                                        if (usageOffset === inputLoc.nameStart) continue; // Skip the declaration itself
+                    locations.push(Location.create(fileUri, Range.create(fieldStartPos, fieldEndPos)));
 
-                                        if (isInComment(fileContent, usageOffset)) continue;
-
-                                        const usageStartPos = doc
-                                            ? doc.positionAt(usageOffset)
-                                            : offsetToPosition(fileContent, usageOffset);
-                                        const usageEndPos = doc
-                                            ? doc.positionAt(usageOffset + word.length)
-                                            : offsetToPosition(fileContent, usageOffset + word.length);
-
-                                        locations.push(Location.create(fileUri, Range.create(usageStartPos, usageEndPos)));
-                                    }
-
-                                    // Find all property references in component instantiations
-                                    const propRefs = findComponentPropertyReferences(componentTypeName, word, currentDocUri, ctx);
-                                    locations.push(...propRefs);
-
-                                    return locations;
-                                }
-                            }
-                        }
-                    }
-
-                    // Fallback to regex for partial/invalid files
-                    const compDefRegex = new RegExp(`\\bcomponent\\s+${escapeRegex(componentTypeName)}\\s*\\{`);
-                    const compDefMatch = compDefRegex.exec(fileContent);
-
-                    if (compDefMatch) {
-                        // Found the component definition - find the input/output
-                        const braceStart = compDefMatch.index + compDefMatch[0].length - 1;
-                        let braceDepth = 1;
-                        let pos = braceStart + 1;
-
-                        while (pos < fileContent.length && braceDepth > 0) {
-                            if (fileContent[pos] === '{') braceDepth++;
-                            else if (fileContent[pos] === '}') braceDepth--;
-                            pos++;
-                        }
-
-                        const bodyStart = braceStart + 1;
-                        const bodyEnd = pos - 1;
-                        const bodyText = fileContent.substring(bodyStart, bodyEnd);
-
-                        // Find input/output with this name
-                        const fieldRegex = new RegExp(`(?:^|\\n)\\s*(?:input|output)\\s+\\w+(?:\\[\\])?\\s+(${escapeRegex(word)})(?:\\s*=|\\s*$)`, 'm');
-                        const fieldMatch = fieldRegex.exec(bodyText);
-
-                        if (fieldMatch) {
-                            // Found the field - now do a full rename from the definition
-                            const fieldOffset = bodyStart + fieldMatch.index + fieldMatch[0].indexOf(word);
-
-                            const fieldStartPos = doc
-                                ? doc.positionAt(fieldOffset)
-                                : offsetToPosition(fileContent, fieldOffset);
-                            const fieldEndPos = doc
-                                ? doc.positionAt(fieldOffset + word.length)
-                                : offsetToPosition(fileContent, fieldOffset + word.length);
-
-                            locations.push(Location.create(fileUri, Range.create(fieldStartPos, fieldEndPos)));
+                    // Find usages within the component definition body
+                    const compDef = findComponentDefByName(parseResult.tree, componentTypeName);
+                    if (compDef) {
+                        const blockExpr = compDef.blockExpression();
+                        if (blockExpr) {
+                            const bodyStart = (blockExpr.start?.start ?? 0) + 1;
+                            const bodyEnd = (blockExpr.stop?.stop ?? 0);
+                            const bodyText = fileContent.substring(bodyStart, bodyEnd);
 
                             // Find usages within the component definition
                             const usageRegex = new RegExp(`\\b${escapeRegex(word)}\\b`, 'g');
                             let usageMatch;
                             while ((usageMatch = usageRegex.exec(bodyText)) !== null) {
                                 const usageOffset = bodyStart + usageMatch.index;
-                                if (usageOffset === fieldOffset) continue; // Skip the declaration itself
+                                if (usageOffset === inputLoc.nameStart) continue; // Skip the declaration itself
 
                                 if (isInComment(fileContent, usageOffset)) continue;
 

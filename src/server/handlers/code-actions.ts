@@ -109,19 +109,6 @@ export function handleCodeAction(
                 if (lastImportLine >= 0) {
                     insertLine = lastImportLine + 1;
                 }
-            } else {
-                // Fallback to regex for finding last import
-                const importRegex = /^import\s+.*$/gm;
-                let lastImportMatch;
-                let match;
-                while ((match = importRegex.exec(text)) !== null) {
-                    lastImportMatch = match;
-                }
-
-                if (lastImportMatch) {
-                    const beforeLastImport = text.substring(0, lastImportMatch.index + lastImportMatch[0].length);
-                    insertLine = beforeLastImport.split('\n').length;
-                }
             }
 
             const importStatement = `import ${suggestion.symbolName} from "${suggestion.importPath}"`;

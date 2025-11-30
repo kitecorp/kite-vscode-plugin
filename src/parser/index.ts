@@ -26,30 +26,36 @@ export {
 // AST-based scanner
 export { scanDocumentAST } from './ast-scanner';
 
-// AST context utilities
+// AST context utilities (re-exported from focused modules via ast-context)
 export {
+    // Cursor context
     getCursorContext,
     isInDecoratorContext,
     getDotAccessTarget,
-    extractSchemaPropertiesAST,
-    extractComponentInputsAST,
-    extractComponentOutputsAST,
+    CursorContext,
+    CursorContextType,
+    // Definition lookup
+    findDefinitionAST,
+    DeclarationType,
     findSchemaByName,
     findComponentDefByName,
-    extractImportsAST,
-    findLastImportLineAST,
-    findImportByPathAST,
     findSchemaDefinitionAST,
     findComponentDefinitionAST,
     findFunctionDefinitionAST,
     findTypeDefinitionAST,
     findSchemaPropertyAST,
     findComponentInputAST,
-    CursorContext,
-    CursorContextType,
+    DefinitionLocation,
+    // Import utilities
+    extractImportsAST,
+    findLastImportLineAST,
+    findImportByPathAST,
+    ImportInfo,
+    // Property extraction
+    extractSchemaPropertiesAST,
+    extractComponentInputsAST,
+    extractComponentOutputsAST,
     SchemaProperty,
     ComponentInput,
     ComponentOutput,
-    ImportInfo,
-    DefinitionLocation,
 } from './ast-context';

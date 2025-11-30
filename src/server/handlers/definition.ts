@@ -382,237 +382,88 @@ function findTypeDefinition(
 }
 
 /**
- * Find schema definition location in text
- * Uses AST-based parsing for accuracy with regex fallback.
+ * Find schema definition location in text using AST parsing.
  */
 export function findSchemaDefinition(text: string, schemaName: string, filePathOrUri: string): Location | null {
     const uri = filePathOrUri.startsWith('file://') ? filePathOrUri : URI.file(filePathOrUri).toString();
-
-    // Try AST-based lookup first
     const result = parseKite(text);
-    if (result.tree) {
-        const defLoc = findSchemaDefinitionAST(result.tree, schemaName);
-        if (defLoc) {
-            return Location.create(uri, Range.create(
-                Position.create(defLoc.line, defLoc.column),
-                Position.create(defLoc.line, defLoc.column + schemaName.length)
-            ));
-        }
-    }
+    if (!result.tree) return null;
 
-    // Fallback to regex for partial/invalid files
-    const regex = new RegExp(`\\bschema\\s+(${escapeRegex(schemaName)})\\s*\\{`, 'g');
-    const match = regex.exec(text);
+    const defLoc = findSchemaDefinitionAST(result.tree, schemaName);
+    if (!defLoc) return null;
 
-    if (match) {
-        const nameStart = match.index + match[0].indexOf(schemaName);
-        const nameEnd = nameStart + schemaName.length;
-
-        const startPos = offsetToPosition(text, nameStart);
-        const endPos = offsetToPosition(text, nameEnd);
-
-        return Location.create(uri, Range.create(startPos, endPos));
-    }
-
-    return null;
+    return Location.create(uri, Range.create(
+        Position.create(defLoc.line, defLoc.column),
+        Position.create(defLoc.line, defLoc.column + schemaName.length)
+    ));
 }
 
 /**
- * Find function definition location in text
- * Uses AST-based parsing for accuracy with regex fallback.
+ * Find function definition location in text using AST parsing.
  */
 export function findFunctionDefinition(text: string, functionName: string, filePathOrUri: string): Location | null {
     const uri = filePathOrUri.startsWith('file://') ? filePathOrUri : URI.file(filePathOrUri).toString();
-
-    // Try AST-based lookup first
     const result = parseKite(text);
-    if (result.tree) {
-        const defLoc = findFunctionDefinitionAST(result.tree, functionName);
-        if (defLoc) {
-            return Location.create(uri, Range.create(
-                Position.create(defLoc.line, defLoc.column),
-                Position.create(defLoc.line, defLoc.column + functionName.length)
-            ));
-        }
-    }
+    if (!result.tree) return null;
 
-    // Fallback to regex for partial/invalid files
-    const regex = new RegExp(`\\bfun\\s+(${escapeRegex(functionName)})\\s*\\(`, 'g');
-    const match = regex.exec(text);
+    const defLoc = findFunctionDefinitionAST(result.tree, functionName);
+    if (!defLoc) return null;
 
-    if (match) {
-        const nameStart = match.index + match[0].indexOf(functionName);
-        const nameEnd = nameStart + functionName.length;
-
-        const startPos = offsetToPosition(text, nameStart);
-        const endPos = offsetToPosition(text, nameEnd);
-
-        return Location.create(uri, Range.create(startPos, endPos));
-    }
-
-    return null;
+    return Location.create(uri, Range.create(
+        Position.create(defLoc.line, defLoc.column),
+        Position.create(defLoc.line, defLoc.column + functionName.length)
+    ));
 }
 
 /**
- * Find component definition location in text
- * Uses AST-based parsing for accuracy with regex fallback.
+ * Find component definition location in text using AST parsing.
  */
 export function findComponentDefinition(text: string, componentName: string, filePathOrUri: string): Location | null {
     const uri = filePathOrUri.startsWith('file://') ? filePathOrUri : URI.file(filePathOrUri).toString();
-
-    // Try AST-based lookup first
     const result = parseKite(text);
-    if (result.tree) {
-        const defLoc = findComponentDefinitionAST(result.tree, componentName);
-        if (defLoc) {
-            return Location.create(uri, Range.create(
-                Position.create(defLoc.line, defLoc.column),
-                Position.create(defLoc.line, defLoc.column + componentName.length)
-            ));
-        }
-    }
+    if (!result.tree) return null;
 
-    // Fallback to regex for partial/invalid files
-    const regex = new RegExp(`\\bcomponent\\s+(${escapeRegex(componentName)})\\s*\\{`, 'g');
-    let match;
+    const defLoc = findComponentDefinitionAST(result.tree, componentName);
+    if (!defLoc) return null;
 
-    while ((match = regex.exec(text)) !== null) {
-        // Verify this is a definition (no instance name between type and {)
-        const fullMatch = match[0];
-        const afterComponent = fullMatch.substring(10); // after "component "
-        const parts = afterComponent.trim().split(/\s+/);
-
-        if (parts.length === 2 && parts[1] === '{') {
-            const nameStart = match.index + match[0].indexOf(componentName);
-            const nameEnd = nameStart + componentName.length;
-
-            const startPos = offsetToPosition(text, nameStart);
-            const endPos = offsetToPosition(text, nameEnd);
-
-            return Location.create(uri, Range.create(startPos, endPos));
-        }
-    }
-
-    return null;
+    return Location.create(uri, Range.create(
+        Position.create(defLoc.line, defLoc.column),
+        Position.create(defLoc.line, defLoc.column + componentName.length)
+    ));
 }
 
 /**
- * Find schema property location in text
- * Uses AST-based parsing for accuracy with regex fallback.
+ * Find schema property location in text using AST parsing.
  */
 function findSchemaPropertyLocation(text: string, schemaName: string, propertyName: string, filePathOrUri: string): Location | null {
     const uri = filePathOrUri.startsWith('file://') ? filePathOrUri : URI.file(filePathOrUri).toString();
-
-    // Try AST-based lookup first
     const result = parseKite(text);
-    if (result.tree) {
-        const propLoc = findSchemaPropertyAST(result.tree, schemaName, propertyName);
-        if (propLoc) {
-            return Location.create(uri, Range.create(
-                Position.create(propLoc.line, propLoc.column),
-                Position.create(propLoc.line, propLoc.column + propertyName.length)
-            ));
-        }
-    }
+    if (!result.tree) return null;
 
-    // Fallback to regex for partial/invalid files
-    // Handle dotted schema names like "VM.Instance" - just use the last part for matching
-    const schemaBaseName = schemaName.includes('.') ? schemaName.split('.').pop()! : schemaName;
+    const propLoc = findSchemaPropertyAST(result.tree, schemaName, propertyName);
+    if (!propLoc) return null;
 
-    const defRegex = new RegExp(`\\bschema\\s+${escapeRegex(schemaBaseName)}\\s*\\{`, 'g');
-    let match;
-
-    while ((match = defRegex.exec(text)) !== null) {
-        const braceStart = match.index + match[0].length - 1;
-        let braceDepth = 1;
-        let pos = braceStart + 1;
-
-        while (pos < text.length && braceDepth > 0) {
-            if (text[pos] === '{') braceDepth++;
-            else if (text[pos] === '}') braceDepth--;
-            pos++;
-        }
-
-        const bodyStartOffset = braceStart + 1;
-        const bodyText = text.substring(bodyStartOffset, pos - 1);
-
-        const propRegex = new RegExp(`^\\s*(\\w+(?:\\[\\])?)\\s+(${escapeRegex(propertyName)})(?:\\s*=.*)?$`, 'gm');
-        let propMatch;
-
-        while ((propMatch = propRegex.exec(bodyText)) !== null) {
-            const propNameOffset = bodyStartOffset + propMatch.index + propMatch[0].indexOf(propertyName);
-            const propNameEndOffset = propNameOffset + propertyName.length;
-
-            const startPos = offsetToPosition(text, propNameOffset);
-            const endPos = offsetToPosition(text, propNameEndOffset);
-
-            return Location.create(uri, Range.create(startPos, endPos));
-        }
-    }
-
-    return null;
+    return Location.create(uri, Range.create(
+        Position.create(propLoc.line, propLoc.column),
+        Position.create(propLoc.line, propLoc.column + propertyName.length)
+    ));
 }
 
 /**
- * Find component input location in text
- * Uses AST-based parsing for accuracy with regex fallback.
+ * Find component input location in text using AST parsing.
  */
 function findComponentInputLocation(text: string, componentTypeName: string, inputName: string, filePathOrUri: string): Location | null {
     const uri = filePathOrUri.startsWith('file://') ? filePathOrUri : URI.file(filePathOrUri).toString();
-
-    // Try AST-based lookup first
     const result = parseKite(text);
-    if (result.tree) {
-        const inputLoc = findComponentInputAST(result.tree, componentTypeName, inputName);
-        if (inputLoc) {
-            return Location.create(uri, Range.create(
-                Position.create(inputLoc.line, inputLoc.column),
-                Position.create(inputLoc.line, inputLoc.column + inputName.length)
-            ));
-        }
-    }
+    if (!result.tree) return null;
 
-    // Fallback to regex for partial/invalid files
-    const defRegex = new RegExp(`\\bcomponent\\s+${escapeRegex(componentTypeName)}\\s*\\{`, 'g');
-    let match;
+    const inputLoc = findComponentInputAST(result.tree, componentTypeName, inputName);
+    if (!inputLoc) return null;
 
-    while ((match = defRegex.exec(text)) !== null) {
-        // Check if this is a definition (not instantiation)
-        const betweenKeywordAndBrace = text.substring(match.index + 10, match.index + match[0].length - 1).trim();
-        const identifiers = betweenKeywordAndBrace.split(/\s+/).filter(s => s && s !== componentTypeName);
-
-        if (identifiers.length > 0) {
-            continue;
-        }
-
-        const braceStart = match.index + match[0].length - 1;
-        let braceDepth = 1;
-        let pos = braceStart + 1;
-
-        while (pos < text.length && braceDepth > 0) {
-            if (text[pos] === '{') braceDepth++;
-            else if (text[pos] === '}') braceDepth--;
-            pos++;
-        }
-
-        const bodyStartOffset = braceStart + 1;
-        const bodyText = text.substring(bodyStartOffset, pos - 1);
-
-        const inputRegex = new RegExp(`\\binput\\s+(\\w+(?:\\[\\])?)\\s+(${escapeRegex(inputName)})`, 'g');
-        let inputMatch;
-
-        while ((inputMatch = inputRegex.exec(bodyText)) !== null) {
-            const inputNameOffset = bodyStartOffset + inputMatch.index + inputMatch[0].lastIndexOf(inputName);
-            const inputNameEndOffset = inputNameOffset + inputName.length;
-
-            const startPos = offsetToPosition(text, inputNameOffset);
-            const endPos = offsetToPosition(text, inputNameEndOffset);
-
-            return Location.create(uri, Range.create(startPos, endPos));
-        }
-    }
-
-    return null;
+    return Location.create(uri, Range.create(
+        Position.create(inputLoc.line, inputLoc.column),
+        Position.create(inputLoc.line, inputLoc.column + inputName.length)
+    ));
 }
 
 /**

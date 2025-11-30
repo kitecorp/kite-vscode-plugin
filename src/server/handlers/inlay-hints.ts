@@ -388,59 +388,20 @@ function parseArguments(text: string, startPos: number): ArgRange[] {
 
 /**
  * Extract input types from a component type definition (single text)
- * Uses AST-based parsing for accuracy.
+ * Uses AST-based parsing.
  */
 function extractComponentInputTypesFromText(text: string, componentTypeName: string): Record<string, string> {
     const inputTypes: Record<string, string> = {};
-
-    // Use AST-based extraction
     const result = parseKite(text);
-    if (result.tree) {
-        const compDef = findComponentDefByName(result.tree, componentTypeName);
-        if (compDef) {
-            const inputs = extractComponentInputsAST(compDef);
-            for (const input of inputs) {
-                inputTypes[input.name] = input.typeName;
-            }
-            return inputTypes;
-        }
+    if (!result.tree) return inputTypes;
+
+    const compDef = findComponentDefByName(result.tree, componentTypeName);
+    if (!compDef) return inputTypes;
+
+    const inputs = extractComponentInputsAST(compDef);
+    for (const input of inputs) {
+        inputTypes[input.name] = input.typeName;
     }
-
-    // Fallback to regex for partial/invalid files
-    const defRegex = new RegExp(`\\bcomponent\\s+${escapeRegex(componentTypeName)}\\s*\\{`, 'g');
-    let match;
-
-    while ((match = defRegex.exec(text)) !== null) {
-        const betweenKeywordAndBrace = text.substring(match.index + 10, match.index + match[0].length - 1).trim();
-        const identifiers = betweenKeywordAndBrace.split(/\s+/).filter(s => s && s !== componentTypeName);
-
-        if (identifiers.length > 0) {
-            continue;
-        }
-
-        const braceStart = match.index + match[0].length - 1;
-        let braceDepth = 1;
-        let pos = braceStart + 1;
-
-        while (pos < text.length && braceDepth > 0) {
-            if (text[pos] === '{') braceDepth++;
-            else if (text[pos] === '}') braceDepth--;
-            pos++;
-        }
-
-        const bodyText = text.substring(braceStart + 1, pos - 1);
-
-        const inputRegex = /\binput\s+(\w+(?:\[\])?)\s+(\w+)/g;
-        let inputMatch;
-        while ((inputMatch = inputRegex.exec(bodyText)) !== null) {
-            inputTypes[inputMatch[2]] = inputMatch[1];
-        }
-
-        if (Object.keys(inputTypes).length > 0) {
-            break;
-        }
-    }
-
     return inputTypes;
 }
 
@@ -476,7 +437,7 @@ export function extractComponentInputTypes(
 
 /**
  * Extract property types from a schema definition (single text)
- * Uses AST-based parsing for accuracy.
+ * Uses AST-based parsing.
  */
 function extractSchemaPropertyTypesFromText(text: string, schemaName: string): Record<string, string> {
     const propertyTypes: Record<string, string> = {};
@@ -484,62 +445,16 @@ function extractSchemaPropertyTypesFromText(text: string, schemaName: string): R
     // Handle dotted schema names like "VM.Instance" - just use the last part for matching
     const schemaBaseName = schemaName.includes('.') ? schemaName.split('.').pop()! : schemaName;
 
-    // Use AST-based extraction
     const result = parseKite(text);
-    if (result.tree) {
-        const schema = findSchemaByName(result.tree, schemaBaseName);
-        if (schema) {
-            const props = extractSchemaPropertiesAST(schema);
-            for (const prop of props) {
-                propertyTypes[prop.name] = prop.typeName;
-            }
-            return propertyTypes;
-        }
+    if (!result.tree) return propertyTypes;
+
+    const schema = findSchemaByName(result.tree, schemaBaseName);
+    if (!schema) return propertyTypes;
+
+    const props = extractSchemaPropertiesAST(schema);
+    for (const prop of props) {
+        propertyTypes[prop.name] = prop.typeName;
     }
-
-    // Fallback to regex for partial/invalid files
-    const defRegex = new RegExp(`\\bschema\\s+${escapeRegex(schemaBaseName)}\\s*\\{`, 'g');
-    let match;
-
-    while ((match = defRegex.exec(text)) !== null) {
-        const braceStart = match.index + match[0].length - 1;
-        let braceDepth = 1;
-        let pos = braceStart + 1;
-
-        while (pos < text.length && braceDepth > 0) {
-            if (text[pos] === '{') braceDepth++;
-            else if (text[pos] === '}') braceDepth--;
-            pos++;
-        }
-
-        const bodyText = text.substring(braceStart + 1, pos - 1);
-
-        // Find property declarations: type name [= value]
-        // Schema properties are: type propertyName
-        const lines = bodyText.split('\n');
-        for (const line of lines) {
-            const trimmed = line.trim();
-            // Skip empty lines and comments
-            if (!trimmed || trimmed.startsWith('//') || trimmed.startsWith('@')) {
-                continue;
-            }
-
-            // Match: type propertyName [= defaultValue]
-            // Types can be: string, number, boolean, any, object, CustomType, or arrays like string[]
-            const propMatch = trimmed.match(/^(\w+(?:\[\])?)\s+(\w+)(?:\s*=.*)?$/);
-            if (propMatch) {
-                const propType = propMatch[1];
-                const propName = propMatch[2];
-                propertyTypes[propName] = propType;
-            }
-        }
-
-        // Found the schema, no need to continue
-        if (Object.keys(propertyTypes).length > 0) {
-            break;
-        }
-    }
-
     return propertyTypes;
 }
 

@@ -84,7 +84,7 @@ export function handleCompletion(
 
     // If inside a resource/component body and NOT after '=', show only schema/input properties
     if (enclosingBlock && !isValueContext) {
-        const result = getBlockBodyCompletions(text, offset, enclosingBlock, uri, ctx);
+        const result = getBlockBodyCompletions(text, offset, enclosingBlock, cursorCtx.alreadySetProperties, uri, ctx);
         if (result !== null) {
             return result;
         }
@@ -324,6 +324,7 @@ function getBlockBodyCompletions(
     text: string,
     offset: number,
     enclosingBlock: BlockContext,
+    alreadySet: Set<string>,
     uri: string,
     ctx: CompletionContext
 ): CompletionItem[] | null {
@@ -344,7 +345,6 @@ function getBlockBodyCompletions(
     }
 
     const completions: CompletionItem[] = [];
-    const alreadySet = findAlreadySetProperties(text, enclosingBlock.start, offset);
     const inlayCtx: InlayHintContext = {
         findKiteFilesInWorkspace: ctx.findKiteFilesInWorkspace,
         getFileContent: ctx.getFileContent
@@ -607,78 +607,6 @@ export function isAfterEquals(text: string, offset: number): boolean {
 
     const afterEquals = lineBeforeCursor.substring(beforeEquals + 1).trim();
     return afterEquals === '' || /^[\w"'\[\{]/.test(afterEquals) === false;
-}
-
-/**
- * Check if cursor is inside a schema body
- */
-export function isInsideSchemaBody(text: string, offset: number): boolean {
-    const beforeCursor = text.substring(0, offset);
-    const schemaMatch = beforeCursor.match(/\bschema\s+\w+\s*\{[^}]*$/);
-    if (!schemaMatch) return false;
-
-    const braceIndex = schemaMatch.index! + schemaMatch[0].indexOf('{');
-    let depth = 1;
-    for (let i = braceIndex + 1; i < offset; i++) {
-        if (text[i] === '{') depth++;
-        else if (text[i] === '}') depth--;
-    }
-
-    return depth > 0;
-}
-
-/**
- * Check if cursor is inside a component definition body
- */
-export function isInsideComponentDefinition(text: string, offset: number): boolean {
-    const beforeCursor = text.substring(0, offset);
-    const componentMatch = beforeCursor.match(/\bcomponent\s+(\w+)\s*\{[^}]*$/);
-    if (!componentMatch) return false;
-
-    const braceIndex = componentMatch.index! + componentMatch[0].indexOf('{');
-    let depth = 1;
-    for (let i = braceIndex + 1; i < offset; i++) {
-        if (text[i] === '{') depth++;
-        else if (text[i] === '}') depth--;
-    }
-
-    if (depth <= 0) return false;
-
-    const lineStart = text.lastIndexOf('\n', offset - 1) + 1;
-    const lineText = text.substring(lineStart, offset);
-
-    if (/^\s*(?:input|output)\s+/.test(lineText)) return true;
-    if (/^\s*(?:input|output)\s+\w+(?:\[\])?\s+\w+\s*=\s*$/.test(lineText)) return true;
-    if (/^\s*(?:input|output|var|resource|component)?\s*$/.test(lineText)) return true;
-
-    return false;
-}
-
-/**
- * Find properties already set in a block
- */
-export function findAlreadySetProperties(text: string, blockStart: number, currentOffset: number): Set<string> {
-    const already = new Set<string>();
-    const bodyText = text.substring(blockStart, currentOffset);
-
-    let depth = 0;
-    let lineStart = 0;
-
-    for (let i = 0; i < bodyText.length; i++) {
-        if (bodyText[i] === '{') depth++;
-        else if (bodyText[i] === '}') depth--;
-        else if (bodyText[i] === '\n') lineStart = i + 1;
-
-        if (depth === 1 && bodyText[i] === '=') {
-            const linePart = bodyText.substring(lineStart, i);
-            const propMatch = linePart.match(/^\s*(\w+)\s*$/);
-            if (propMatch) {
-                already.add(propMatch[1]);
-            }
-        }
-    }
-
-    return already;
 }
 
 /**
