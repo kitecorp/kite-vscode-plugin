@@ -231,7 +231,7 @@ Key tokens from the ANTLR lexer (`../kite-intellij-plugin/src/main/antlr/cloud/k
 | Feature | IntelliJ File | LSP Method | Status |
 |---------|--------------|------------|--------|
 | Code Formatting | `KiteBlock.java` | `textDocument/formatting` | ✅ |
-| Type Checking | `KiteTypeCheckingAnnotator.java` | `textDocument/publishDiagnostics` | ⬜ |
+| Type Checking | `KiteTypeCheckingAnnotator.java` | `textDocument/publishDiagnostics` | ✅ |
 
 ## Project Structure
 

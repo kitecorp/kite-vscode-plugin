@@ -13,6 +13,7 @@ import { URI } from 'vscode-uri';
 import * as path from 'path';
 import { Declaration, ImportSuggestion, ImportInfo, BaseContext } from '../types';
 import { DECORATORS } from '../constants';
+import { checkTypeMismatches } from './type-checking';
 
 /**
  * Context containing dependencies needed for validation
@@ -574,6 +575,10 @@ export function validateDocument(document: TextDocument, ctx: ValidationContext)
             }
         }
     }
+
+    // Check for type mismatches
+    const typeDiagnostics = checkTypeMismatches(document);
+    diagnostics.push(...typeDiagnostics);
 
     return diagnostics;
 }
