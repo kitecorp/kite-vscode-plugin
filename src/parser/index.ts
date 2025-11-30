@@ -25,3 +25,24 @@ export {
 
 // AST-based scanner
 export { scanDocumentAST } from './ast-scanner';
+
+// AST context utilities
+export {
+    getCursorContext,
+    isInDecoratorContext,
+    getDotAccessTarget,
+    extractSchemaPropertiesAST,
+    extractComponentInputsAST,
+    extractComponentOutputsAST,
+    findSchemaByName,
+    findComponentDefByName,
+    extractImportsAST,
+    findLastImportLineAST,
+    findImportByPathAST,
+    CursorContext,
+    CursorContextType,
+    SchemaProperty,
+    ComponentInput,
+    ComponentOutput,
+    ImportInfo,
+} from './ast-context';

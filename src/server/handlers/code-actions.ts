@@ -1,6 +1,7 @@
 /**
  * Code Actions handler for the Kite language server.
  * Provides quick fixes like "Add import".
+ * Uses AST-based parsing for import detection where possible.
  */
 
 import {
@@ -15,6 +16,11 @@ import {
 import { TextDocument } from 'vscode-languageserver-textdocument';
 import { ImportSuggestion } from '../types';
 import { escapeRegex } from '../utils/rename-utils';
+import {
+    parseKite,
+    findImportByPathAST,
+    findLastImportLineAST,
+} from '../../parser';
 
 /**
  * Handle code action request
@@ -27,6 +33,9 @@ export function handleCodeAction(
     const actions: CodeAction[] = [];
     const text = document.getText();
 
+    // Parse document for AST-based import detection
+    const parseResult = parseKite(text);
+
     for (const diagnostic of params.context.diagnostics) {
         if (diagnostic.source !== 'kite') continue;
         if (!diagnostic.data) continue;
@@ -34,14 +43,24 @@ export function handleCodeAction(
         const suggestion = diagnosticData.get(diagnostic.data as string);
         if (!suggestion) continue;
 
-        // Check if there's already an import from this file
+        // Check if there's already an import from this file using AST
+        let existingImport = parseResult.tree
+            ? findImportByPathAST(parseResult.tree, suggestion.importPath)
+            : null;
+
+        // If AST found a wildcard import, no action needed
+        if (existingImport?.isWildcard) {
+            continue;
+        }
+
+        let edit: WorkspaceEdit;
+
+        // Fallback to regex for non-wildcard imports (which AST doesn't support)
         const existingImportRegex = new RegExp(
             `^(import\\s+)([\\w\\s,]+)(\\s+from\\s+["']${escapeRegex(suggestion.importPath)}["'])`,
             'gm'
         );
         const existingMatch = existingImportRegex.exec(text);
-
-        let edit: WorkspaceEdit;
 
         if (existingMatch) {
             // Add to existing import
@@ -82,18 +101,27 @@ export function handleCodeAction(
                 }
             };
         } else {
-            // Add new import line
-            const importRegex = /^import\s+.*$/gm;
-            let lastImportMatch;
-            let match;
-            while ((match = importRegex.exec(text)) !== null) {
-                lastImportMatch = match;
-            }
-
+            // Add new import line - use AST to find last import position
             let insertLine = 0;
-            if (lastImportMatch) {
-                const beforeLastImport = text.substring(0, lastImportMatch.index + lastImportMatch[0].length);
-                insertLine = beforeLastImport.split('\n').length;
+
+            if (parseResult.tree) {
+                const lastImportLine = findLastImportLineAST(parseResult.tree);
+                if (lastImportLine >= 0) {
+                    insertLine = lastImportLine + 1;
+                }
+            } else {
+                // Fallback to regex for finding last import
+                const importRegex = /^import\s+.*$/gm;
+                let lastImportMatch;
+                let match;
+                while ((match = importRegex.exec(text)) !== null) {
+                    lastImportMatch = match;
+                }
+
+                if (lastImportMatch) {
+                    const beforeLastImport = text.substring(0, lastImportMatch.index + lastImportMatch[0].length);
+                    insertLine = beforeLastImport.split('\n').length;
+                }
             }
 
             const importStatement = `import ${suggestion.symbolName} from "${suggestion.importPath}"`;

@@ -16,6 +16,7 @@ import { KEYWORDS, TYPES, DECORATORS } from '../constants';
 import { getCompletionKind } from '../utils/text-utils';
 import { extractSchemaPropertyTypes, extractComponentInputTypes, InlayHintContext } from './inlay-hints';
 import { addNumberSuggestions, addStringSuggestions, getNumberSuggestionsForProp, getStringSuggestionsForProp } from './devops-suggestions';
+import { getCursorContext, isInDecoratorContext, getDotAccessTarget } from '../../parser';
 
 /**
  * Context interface for dependency injection into completion handler.
@@ -36,35 +37,50 @@ export function handleCompletion(
     const completions: CompletionItem[] = [];
     const text = document.getText();
     const offset = document.offsetAt(position);
-    const beforeCursor = text.substring(Math.max(0, offset - 100), offset);
     const uri = document.uri;
 
-    // Check if we're after @ (decorator context)
-    if (beforeCursor.match(/@\s*\w*$/)) {
+    // Get AST-based cursor context
+    const cursorCtx = getCursorContext(text, offset);
+
+    // Check if we're after @ (decorator context) - use AST utility
+    if (isInDecoratorContext(text, offset)) {
         return getDecoratorCompletions(text, offset);
     }
 
-    // Check if we're after a dot (property access)
-    const dotMatch = beforeCursor.match(/(\w+)\.\s*$/);
-    if (dotMatch) {
-        return getPropertyAccessCompletions(dotMatch[1], text, uri, ctx);
+    // Check if we're after a dot (property access) - use AST utility
+    const dotTarget = getDotAccessTarget(text, offset);
+    if (dotTarget) {
+        return getPropertyAccessCompletions(dotTarget, text, uri, ctx);
     }
 
     // Check if we're inside a schema body - only show types, not variables/functions/etc
-    if (isInsideSchemaBody(text, offset)) {
+    if (cursorCtx.type === 'schema-body') {
         return getSchemaBodyCompletions(text, offset);
     }
 
     // Check if we're inside a component definition body
-    if (isInsideComponentDefinition(text, offset)) {
+    if (cursorCtx.type === 'component-def-body') {
         return getComponentDefinitionCompletions(text, offset);
     }
 
     // Find enclosing block context (resource or component we're inside)
-    const enclosingBlock = ctx.findEnclosingBlock(text, offset);
+    // Use AST context if available, fall back to regex-based detection
+    let enclosingBlock: BlockContext | null = null;
+    if (cursorCtx.enclosingDeclaration &&
+        (cursorCtx.type === 'resource-body' || cursorCtx.type === 'component-inst-body')) {
+        enclosingBlock = {
+            type: cursorCtx.type === 'resource-body' ? 'resource' : 'component',
+            name: cursorCtx.enclosingDeclaration.name,
+            typeName: cursorCtx.enclosingDeclaration.typeName || '',
+            start: cursorCtx.enclosingDeclaration.bodyStart,
+            end: cursorCtx.enclosingDeclaration.bodyEnd,
+        };
+    } else {
+        enclosingBlock = ctx.findEnclosingBlock(text, offset);
+    }
 
-    // Check if we're after '=' (value context - types should not be shown)
-    const isValueContext = isAfterEquals(text, offset);
+    // Use AST-based value context detection
+    const isValueContext = cursorCtx.isValueContext;
 
     // If inside a resource/component body and NOT after '=', show only schema/input properties
     if (enclosingBlock && !isValueContext) {

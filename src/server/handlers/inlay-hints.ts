@@ -1,6 +1,7 @@
 /**
  * Inlay Hints handler for the Kite language server.
  * Provides inline type hints and parameter names.
+ * Uses AST-based parsing where beneficial for accuracy.
  */
 
 import {
@@ -12,6 +13,13 @@ import {
 import { TextDocument } from 'vscode-languageserver-textdocument';
 import { Declaration, FunctionParameter, ArgRange, BaseContext } from '../types';
 import { escapeRegex } from '../utils/rename-utils';
+import {
+    parseKite,
+    findSchemaByName,
+    findComponentDefByName,
+    extractSchemaPropertiesAST,
+    extractComponentInputsAST,
+} from '../../parser';
 
 /**
  * Context for inlay hints - provides access to cross-file functions
@@ -380,28 +388,36 @@ function parseArguments(text: string, startPos: number): ArgRange[] {
 
 /**
  * Extract input types from a component type definition (single text)
+ * Uses AST-based parsing for accuracy.
  */
 function extractComponentInputTypesFromText(text: string, componentTypeName: string): Record<string, string> {
     const inputTypes: Record<string, string> = {};
 
-    // Find component type definition: component TypeName { (without instance name)
-    // We need to distinguish between definition (one identifier) and instantiation (two identifiers)
+    // Use AST-based extraction
+    const result = parseKite(text);
+    if (result.tree) {
+        const compDef = findComponentDefByName(result.tree, componentTypeName);
+        if (compDef) {
+            const inputs = extractComponentInputsAST(compDef);
+            for (const input of inputs) {
+                inputTypes[input.name] = input.typeName;
+            }
+            return inputTypes;
+        }
+    }
+
+    // Fallback to regex for partial/invalid files
     const defRegex = new RegExp(`\\bcomponent\\s+${escapeRegex(componentTypeName)}\\s*\\{`, 'g');
     let match;
 
     while ((match = defRegex.exec(text)) !== null) {
-        // Check if this is a definition (not instantiation) by looking backwards
-        // Instantiation: component Type instance {
-        // Definition: component Type {
         const betweenKeywordAndBrace = text.substring(match.index + 10, match.index + match[0].length - 1).trim();
         const identifiers = betweenKeywordAndBrace.split(/\s+/).filter(s => s && s !== componentTypeName);
 
         if (identifiers.length > 0) {
-            // Has extra identifier(s), this is an instantiation, skip
             continue;
         }
 
-        // This is a component definition - extract inputs
         const braceStart = match.index + match[0].length - 1;
         let braceDepth = 1;
         let pos = braceStart + 1;
@@ -414,16 +430,12 @@ function extractComponentInputTypesFromText(text: string, componentTypeName: str
 
         const bodyText = text.substring(braceStart + 1, pos - 1);
 
-        // Find input declarations: input type name [= value]
         const inputRegex = /\binput\s+(\w+(?:\[\])?)\s+(\w+)/g;
         let inputMatch;
         while ((inputMatch = inputRegex.exec(bodyText)) !== null) {
-            const inputType = inputMatch[1];
-            const inputName = inputMatch[2];
-            inputTypes[inputName] = inputType;
+            inputTypes[inputMatch[2]] = inputMatch[1];
         }
 
-        // Found the definition, no need to continue
         if (Object.keys(inputTypes).length > 0) {
             break;
         }
@@ -464,6 +476,7 @@ export function extractComponentInputTypes(
 
 /**
  * Extract property types from a schema definition (single text)
+ * Uses AST-based parsing for accuracy.
  */
 function extractSchemaPropertyTypesFromText(text: string, schemaName: string): Record<string, string> {
     const propertyTypes: Record<string, string> = {};
@@ -471,7 +484,20 @@ function extractSchemaPropertyTypesFromText(text: string, schemaName: string): R
     // Handle dotted schema names like "VM.Instance" - just use the last part for matching
     const schemaBaseName = schemaName.includes('.') ? schemaName.split('.').pop()! : schemaName;
 
-    // Find schema definition: schema SchemaName {
+    // Use AST-based extraction
+    const result = parseKite(text);
+    if (result.tree) {
+        const schema = findSchemaByName(result.tree, schemaBaseName);
+        if (schema) {
+            const props = extractSchemaPropertiesAST(schema);
+            for (const prop of props) {
+                propertyTypes[prop.name] = prop.typeName;
+            }
+            return propertyTypes;
+        }
+    }
+
+    // Fallback to regex for partial/invalid files
     const defRegex = new RegExp(`\\bschema\\s+${escapeRegex(schemaBaseName)}\\s*\\{`, 'g');
     let match;
 
