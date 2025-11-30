@@ -596,16 +596,26 @@ function decoratorAppliesToTarget(dec: DecoratorInfo, target: DecoratorTarget): 
 }
 
 /**
- * Check if cursor is after '=' sign
+ * Check if cursor is after '=' sign (assignment, not comparison)
  */
 export function isAfterEquals(text: string, offset: number): boolean {
     const lineStart = text.lastIndexOf('\n', offset - 1) + 1;
     const lineBeforeCursor = text.substring(lineStart, offset);
 
-    const beforeEquals = lineBeforeCursor.indexOf('=');
-    if (beforeEquals === -1) return false;
+    const equalsIndex = lineBeforeCursor.indexOf('=');
+    if (equalsIndex === -1) return false;
 
-    const afterEquals = lineBeforeCursor.substring(beforeEquals + 1).trim();
+    // Check it's not ==, !=, <=, or >=
+    const charBefore = lineBeforeCursor[equalsIndex - 1];
+    const charAfter = lineBeforeCursor[equalsIndex + 1];
+    if (charBefore === '=' || charBefore === '!' || charBefore === '<' || charBefore === '>') {
+        return false;
+    }
+    if (charAfter === '=') {
+        return false;
+    }
+
+    const afterEquals = lineBeforeCursor.substring(equalsIndex + 1).trim();
     return afterEquals === '' || /^[\w"'\[\{]/.test(afterEquals) === false;
 }
 
