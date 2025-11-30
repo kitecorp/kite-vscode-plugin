@@ -31,6 +31,8 @@ import {
     DocumentSymbol,
     SymbolKind,
     DocumentSymbolParams,
+    RenameParams,
+    PrepareRenameParams,
 } from 'vscode-languageserver/node';
 
 import { TextDocument } from 'vscode-languageserver-textdocument';
@@ -112,7 +114,10 @@ connection.onInitialize((params: InitializeParams): InitializeResult => {
             codeActionProvider: {
                 codeActionKinds: ['quickfix']
             },
-            documentSymbolProvider: true
+            documentSymbolProvider: true,
+            renameProvider: {
+                prepareProvider: true
+            }
         }
     };
 });
@@ -1453,11 +1458,23 @@ function getFileContent(filePath: string, currentDocUri?: string): string | null
         }
     }
 
-    // Check if document is open
+    // Check if document is open by URI
     const uri = URI.file(filePath).toString();
     const openDoc = documents.get(uri);
     if (openDoc) {
         return openDoc.getText();
+    }
+
+    // Also check all open documents by path (handles case-sensitivity and encoding differences)
+    for (const doc of documents.all()) {
+        try {
+            const docPath = URI.parse(doc.uri).fsPath;
+            if (docPath === filePath) {
+                return doc.getText();
+            }
+        } catch {
+            // Ignore URI parsing errors
+        }
     }
 
     // Read from file system
@@ -2115,6 +2132,170 @@ connection.onDefinition((params: TextDocumentPositionParams): Definition | null 
     return null;
 });
 
+// Helper to check if position is inside a comment
+function isInComment(text: string, pos: number): boolean {
+    const lineStart = text.lastIndexOf('\n', pos - 1) + 1;
+    const lineBeforePos = text.substring(lineStart, pos);
+    if (lineBeforePos.includes('//')) return true;
+
+    const textBefore = text.substring(0, pos);
+    const lastBlockStart = textBefore.lastIndexOf('/*');
+    if (lastBlockStart !== -1) {
+        const lastBlockEnd = textBefore.lastIndexOf('*/');
+        if (lastBlockEnd < lastBlockStart) return true;
+    }
+    return false;
+}
+
+// Helper: Find all references to a symbol across the workspace (scope-aware)
+// If cursorOffset is provided, finds the declaration at that position and respects its scope
+function findAllReferences(word: string, currentDocUri: string, cursorOffset?: number): Location[] {
+    const locations: Location[] = [];
+    const currentFilePath = URI.parse(currentDocUri).fsPath;
+
+    // Get current document text
+    const currentDoc = documents.get(currentDocUri);
+    const currentText = currentDoc ? currentDoc.getText() : getFileContent(currentFilePath, currentDocUri);
+
+    if (!currentText) {
+        return locations;
+    }
+
+    // Determine scope constraints based on the declaration
+    let scopeStart: number | undefined;
+    let scopeEnd: number | undefined;
+    let isLocalScope = false;
+    let searchOtherFiles = true;
+
+    // If we have a cursor position, find the declaration and its scope
+    if (cursorOffset !== undefined) {
+        const declarations = declarationCache.get(currentDocUri) || [];
+
+        // First, check if the cursor is ON a declaration
+        let declaration = declarations.find(d =>
+            d.name === word &&
+            cursorOffset >= currentDoc!.offsetAt(d.nameRange.start) &&
+            cursorOffset <= currentDoc!.offsetAt(d.nameRange.end)
+        );
+
+        // If not on a declaration, find which declaration this reference belongs to
+        if (!declaration) {
+            // Find all declarations with this name that are visible at the cursor position
+            const visibleDecls = declarations.filter(d => {
+                if (d.name !== word) return false;
+
+                // If declaration has a scope, cursor must be within it
+                if (d.scopeStart !== undefined && d.scopeEnd !== undefined) {
+                    return cursorOffset >= d.scopeStart && cursorOffset <= d.scopeEnd;
+                }
+
+                // File-scoped declaration is always visible
+                return true;
+            });
+
+            // Prefer the most local (innermost) declaration
+            if (visibleDecls.length > 0) {
+                declaration = visibleDecls.reduce((best, current) => {
+                    // Scoped declarations are more local than file-scoped ones
+                    if (current.scopeStart !== undefined && best.scopeStart === undefined) {
+                        return current;
+                    }
+                    if (current.scopeStart === undefined && best.scopeStart !== undefined) {
+                        return best;
+                    }
+                    // Both scoped: prefer the one with the smaller scope (more local)
+                    if (current.scopeStart !== undefined && best.scopeStart !== undefined) {
+                        const currentSize = current.scopeEnd! - current.scopeStart;
+                        const bestSize = best.scopeEnd! - best.scopeStart!;
+                        return currentSize < bestSize ? current : best;
+                    }
+                    return best;
+                });
+            }
+        }
+
+        // If we found a declaration, use its scope
+        if (declaration) {
+            if (declaration.scopeStart !== undefined && declaration.scopeEnd !== undefined) {
+                // Local variable/parameter - only search within scope, don't search other files
+                scopeStart = declaration.scopeStart;
+                scopeEnd = declaration.scopeEnd;
+                isLocalScope = true;
+                searchOtherFiles = false;
+
+                // Always include the declaration itself (important for parameters which are
+                // declared before the function body scope starts)
+                locations.push(Location.create(currentDocUri, declaration.nameRange));
+            } else {
+                // File-scoped or global declaration
+                // For functions, schemas, components, resources, types - search all files
+                // For file-scoped variables - only search current file
+                if (declaration.type === 'variable') {
+                    searchOtherFiles = false;
+                }
+            }
+        }
+    }
+
+    // Track declaration location to avoid duplicates
+    const declarationKey = locations.length > 0
+        ? `${locations[0].range.start.line}:${locations[0].range.start.character}`
+        : null;
+
+    // Search current file
+    const regex = new RegExp(`\\b${escapeRegex(word)}\\b`, 'g');
+    let match;
+    while ((match = regex.exec(currentText)) !== null) {
+        if (isInComment(currentText, match.index)) continue;
+
+        // If we have scope constraints, check if the match is within scope
+        if (isLocalScope && scopeStart !== undefined && scopeEnd !== undefined) {
+            if (match.index < scopeStart || match.index > scopeEnd) {
+                continue;
+            }
+        }
+
+        const startPos = currentDoc
+            ? currentDoc.positionAt(match.index)
+            : offsetToPosition(currentText, match.index);
+        const endPos = currentDoc
+            ? currentDoc.positionAt(match.index + word.length)
+            : offsetToPosition(currentText, match.index + word.length);
+
+        // Skip if this is the declaration we already added
+        const matchKey = `${startPos.line}:${startPos.character}`;
+        if (matchKey === declarationKey) {
+            continue;
+        }
+
+        locations.push(Location.create(currentDocUri, Range.create(startPos, endPos)));
+    }
+
+    // Search other files in workspace (only for non-local symbols)
+    if (searchOtherFiles) {
+        const kiteFiles = findKiteFilesInWorkspace();
+        for (const filePath of kiteFiles) {
+            if (filePath === currentFilePath) continue;
+
+            const fileContent = getFileContent(filePath, currentDocUri);
+            if (fileContent) {
+                const fileUri = URI.file(filePath).toString();
+                const fileRegex = new RegExp(`\\b${escapeRegex(word)}\\b`, 'g');
+                let fileMatch;
+                while ((fileMatch = fileRegex.exec(fileContent)) !== null) {
+                    if (isInComment(fileContent, fileMatch.index)) continue;
+
+                    const startPos = offsetToPosition(fileContent, fileMatch.index);
+                    const endPos = offsetToPosition(fileContent, fileMatch.index + word.length);
+                    locations.push(Location.create(fileUri, Range.create(startPos, endPos)));
+                }
+            }
+        }
+    }
+
+    return locations;
+}
+
 // Find References handler
 connection.onReferences((params): Location[] => {
     const document = documents.get(params.textDocument.uri);
@@ -2123,57 +2304,125 @@ connection.onReferences((params): Location[] => {
     const word = getWordAtPosition(document, params.position);
     if (!word) return [];
 
-    const locations: Location[] = [];
-    const currentFilePath = URI.parse(params.textDocument.uri).fsPath;
+    const cursorOffset = document.offsetAt(params.position);
+    return findAllReferences(word, params.textDocument.uri, cursorOffset);
+});
 
-    // Helper to check if position is inside a comment
-    function isInComment(text: string, pos: number): boolean {
-        const lineStart = text.lastIndexOf('\n', pos - 1) + 1;
-        const lineBeforePos = text.substring(lineStart, pos);
-        if (lineBeforePos.includes('//')) return true;
+// Prepare Rename handler - validates if symbol can be renamed and returns the range
+connection.onPrepareRename((params: PrepareRenameParams): Range | { range: Range; placeholder: string } | null => {
+    const document = documents.get(params.textDocument.uri);
+    if (!document) return null;
 
-        const textBefore = text.substring(0, pos);
-        const lastBlockStart = textBefore.lastIndexOf('/*');
-        if (lastBlockStart !== -1) {
-            const lastBlockEnd = textBefore.lastIndexOf('*/');
-            if (lastBlockEnd < lastBlockStart) return true;
-        }
-        return false;
+    const word = getWordAtPosition(document, params.position);
+    if (!word) return null;
+
+    // Don't allow renaming keywords
+    if (KEYWORDS.includes(word)) {
+        return null;
     }
 
-    // Search current file
+    // Don't allow renaming built-in types
+    if (TYPES.includes(word)) {
+        return null;
+    }
+
+    // Don't allow renaming decorator names (check if cursor is after @)
     const text = document.getText();
-    const regex = new RegExp(`\\b${escapeRegex(word)}\\b`, 'g');
-    let match;
-    while ((match = regex.exec(text)) !== null) {
-        if (isInComment(text, match.index)) continue;
+    const offset = document.offsetAt(params.position);
 
-        const startPos = document.positionAt(match.index);
-        const endPos = document.positionAt(match.index + word.length);
-        locations.push(Location.create(params.textDocument.uri, Range.create(startPos, endPos)));
+    // Find word boundaries to get the exact range
+    let start = offset;
+    let end = offset;
+    while (start > 0 && /\w/.test(text[start - 1])) {
+        start--;
+    }
+    while (end < text.length && /\w/.test(text[end])) {
+        end++;
     }
 
-    // Search other files in workspace
-    const kiteFiles = findKiteFilesInWorkspace();
-    for (const filePath of kiteFiles) {
-        if (filePath === currentFilePath) continue;
+    // Check if this is a decorator name (preceded by @)
+    if (start > 0 && text[start - 1] === '@') {
+        return null;
+    }
 
-        const fileContent = getFileContent(filePath, params.textDocument.uri);
-        if (fileContent) {
-            const fileUri = URI.file(filePath).toString();
-            const fileRegex = new RegExp(`\\b${escapeRegex(word)}\\b`, 'g');
-            let fileMatch;
-            while ((fileMatch = fileRegex.exec(fileContent)) !== null) {
-                if (isInComment(fileContent, fileMatch.index)) continue;
+    // Check if this is inside a string (basic check)
+    const lineStart = text.lastIndexOf('\n', start - 1) + 1;
+    const lineText = text.substring(lineStart, start);
+    const doubleQuotes = (lineText.match(/"/g) || []).length;
+    const singleQuotes = (lineText.match(/'/g) || []).length;
+    if (doubleQuotes % 2 !== 0 || singleQuotes % 2 !== 0) {
+        return null;
+    }
 
-                const startPos = offsetToPosition(fileContent, fileMatch.index);
-                const endPos = offsetToPosition(fileContent, fileMatch.index + word.length);
-                locations.push(Location.create(fileUri, Range.create(startPos, endPos)));
-            }
+    // Check if in a comment
+    if (isInComment(text, start)) {
+        return null;
+    }
+
+    // Return the range and placeholder
+    const startPos = document.positionAt(start);
+    const endPos = document.positionAt(end);
+
+    return {
+        range: Range.create(startPos, endPos),
+        placeholder: word
+    };
+});
+
+// Rename handler
+connection.onRenameRequest((params: RenameParams): WorkspaceEdit | null => {
+    const document = documents.get(params.textDocument.uri);
+    if (!document) return null;
+
+    const word = getWordAtPosition(document, params.position);
+    if (!word) return null;
+
+    // Validate the new name
+    const newName = params.newName.trim();
+
+    // Check that new name is a valid identifier
+    if (!/^[a-zA-Z_][a-zA-Z0-9_]*$/.test(newName)) {
+        return null;
+    }
+
+    // Don't allow renaming to a keyword
+    if (KEYWORDS.includes(newName)) {
+        return null;
+    }
+
+    // Don't allow renaming to a built-in type
+    if (TYPES.includes(newName)) {
+        return null;
+    }
+
+    // Find all references (scope-aware)
+    const cursorOffset = document.offsetAt(params.position);
+    const locations = findAllReferences(word, params.textDocument.uri, cursorOffset);
+
+    if (locations.length === 0) {
+        return null;
+    }
+
+    // Group edits by document URI
+    const changes: { [uri: string]: TextEdit[] } = {};
+
+    for (const location of locations) {
+        if (!changes[location.uri]) {
+            changes[location.uri] = [];
         }
+        changes[location.uri].push(TextEdit.replace(location.range, newName));
     }
 
-    return locations;
+    // Schedule a refresh of diagnostics for all open documents after the rename is applied
+    // This ensures cross-file references are properly validated after the rename
+    setTimeout(() => {
+        for (const doc of documents.all()) {
+            const diagnostics = validateDocument(doc);
+            connection.sendDiagnostics({ uri: doc.uri, diagnostics });
+        }
+    }, 100);
+
+    return { changes };
 });
 
 // Hover handler

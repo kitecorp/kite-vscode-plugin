@@ -19,7 +19,7 @@ output string names = "my-output"
 
 // Shared function
 fun formatName(string prefix, string name) string {
-  return prefix + "-" + name
+  return prefix + "-" + names
 }
 
 // Shared component
