@@ -1,0 +1,6 @@
+import * from "schema.kite"
+
+resource Configs server {
+    host = "localhost"
+    port = 8080
+}

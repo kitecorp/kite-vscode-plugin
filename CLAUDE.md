@@ -24,7 +24,7 @@ The IntelliJ plugin at `../kite-intellij-plugin` is the reference implementation
 
 We follow these engineering practices:
 
-- **TDD (Test-Driven Development)** - Write tests first, then implementation
+- **TDD (Test-Driven Development)** - Write tests first, then implementation (see below)
 - **CLEAN Code** - Readable, maintainable, and well-organized code
 - **SOLID Principles**:
   - Single Responsibility - Each module/class has one reason to change
@@ -33,6 +33,48 @@ We follow these engineering practices:
   - Interface Segregation - Many specific interfaces over one general interface
   - Dependency Inversion - Depend on abstractions, not concretions
 - **DRY (Don't Repeat Yourself)** - Avoid code duplication, extract shared logic
+
+## Test-Driven Development (TDD)
+
+When developing new features, follow the TDD cycle:
+
+1. **Red** - Write a failing test first
+   - Define expected behavior before implementation
+   - Test should fail because the feature doesn't exist yet
+
+2. **Green** - Write minimal code to pass the test
+   - Focus only on making the test pass
+   - Don't over-engineer or add extra features
+
+3. **Refactor** - Clean up the code
+   - Improve structure while keeping tests green
+   - Remove duplication, improve naming
+
+### TDD Workflow Example
+
+```bash
+# 1. Create test file first (if new handler)
+# src/server/handlers/my-feature.test.ts
+
+# 2. Write failing tests
+npm test  # Should fail
+
+# 3. Implement the feature
+# src/server/handlers/my-feature.ts
+
+# 4. Run tests until green
+npm test  # Should pass
+
+# 5. Refactor and verify tests still pass
+npm test
+```
+
+### Test File Conventions
+
+- Test files live next to source: `foo.ts` → `foo.test.ts`
+- Use Vitest: `describe`, `it`, `expect`
+- Mock TextDocument for handler tests
+- Run tests with `npm test`
 
 
 ## Kite Language Quick Reference
