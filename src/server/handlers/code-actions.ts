@@ -14,7 +14,7 @@ import {
 } from 'vscode-languageserver/node';
 import { TextDocument } from 'vscode-languageserver-textdocument';
 import { ImportSuggestion } from '../types';
-import { escapeRegex } from '../rename-utils';
+import { escapeRegex } from '../utils/rename-utils';
 
 /**
  * Handle code action request

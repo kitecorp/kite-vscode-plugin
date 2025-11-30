@@ -103,3 +103,16 @@ export interface OutputInfo {
     name: string;
     type: string;
 }
+
+/**
+ * Base context interface with common dependencies used by most handlers.
+ * Handler-specific contexts can extend this interface.
+ */
+export interface BaseContext {
+    /** Get declarations from cache for a URI */
+    getDeclarations: (uri: string) => Declaration[] | undefined;
+    /** Find all .kite files in workspace */
+    findKiteFilesInWorkspace: () => string[];
+    /** Get file content by path (from open document or file system) */
+    getFileContent: (filePath: string, currentDocUri?: string) => string | null;
+}

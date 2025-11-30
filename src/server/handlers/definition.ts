@@ -12,20 +12,17 @@ import {
 } from 'vscode-languageserver/node';
 import { TextDocument } from 'vscode-languageserver-textdocument';
 import { URI } from 'vscode-uri';
-import { Declaration, BlockContext, ImportInfo, PropertyAccessContext, PropertyResult } from '../types';
-import { escapeRegex } from '../rename-utils';
+import { Declaration, BlockContext, ImportInfo, PropertyAccessContext, PropertyResult, BaseContext } from '../types';
+import { escapeRegex } from '../utils/rename-utils';
 import { getWordAtPosition, findMatchingBrace } from '../utils/text-utils';
 
 /**
  * Context for definition handler - provides access to shared functions
  */
-export interface DefinitionContext {
-    findKiteFilesInWorkspace: () => string[];
-    getFileContent: (filePath: string, currentDocUri?: string) => string | null;
+export interface DefinitionContext extends BaseContext {
     extractImports: (text: string) => ImportInfo[];
     isSymbolImported: (imports: ImportInfo[], symbolName: string, filePath: string, currentFilePath: string) => boolean;
     findEnclosingBlock: (text: string, offset: number) => BlockContext | null;
-    getDeclarations: (uri: string) => Declaration[] | undefined;
 }
 
 /**

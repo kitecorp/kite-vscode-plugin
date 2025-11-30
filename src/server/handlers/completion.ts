@@ -11,7 +11,7 @@ import {
 } from 'vscode-languageserver/node';
 import { TextDocument } from 'vscode-languageserver-textdocument';
 import { Position } from 'vscode-languageserver/node';
-import { Declaration, DecoratorInfo, DecoratorTarget, BlockContext, OutputInfo } from '../types';
+import { Declaration, DecoratorInfo, DecoratorTarget, BlockContext, OutputInfo, BaseContext } from '../types';
 import { KEYWORDS, TYPES, DECORATORS } from '../constants';
 import { getCompletionKind } from '../utils/text-utils';
 import { extractSchemaPropertyTypes, extractComponentInputTypes, InlayHintContext } from './inlay-hints';
@@ -19,13 +19,7 @@ import { extractSchemaPropertyTypes, extractComponentInputTypes, InlayHintContex
 /**
  * Context interface for dependency injection into completion handler.
  */
-export interface CompletionContext {
-    /** Get declarations for a document */
-    getDeclarations: (uri: string) => Declaration[] | undefined;
-    /** Find all .kite files in the workspace */
-    findKiteFilesInWorkspace: () => string[];
-    /** Get file content by path */
-    getFileContent: (filePath: string, currentDocUri?: string) => string | null;
+export interface CompletionContext extends BaseContext {
     /** Find enclosing block (resource or component) */
     findEnclosingBlock: (text: string, offset: number) => BlockContext | null;
 }

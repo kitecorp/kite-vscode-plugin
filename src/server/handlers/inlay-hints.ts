@@ -10,16 +10,13 @@ import {
     Position,
 } from 'vscode-languageserver/node';
 import { TextDocument } from 'vscode-languageserver-textdocument';
-import { Declaration, FunctionParameter, ArgRange } from '../types';
-import { escapeRegex } from '../rename-utils';
+import { Declaration, FunctionParameter, ArgRange, BaseContext } from '../types';
+import { escapeRegex } from '../utils/rename-utils';
 
 /**
  * Context for inlay hints - provides access to cross-file functions
  */
-export interface InlayHintContext {
-    findKiteFilesInWorkspace: () => string[];
-    getFileContent: (filePath: string, currentDocUri?: string) => string | null | undefined;
-}
+export interface InlayHintContext extends Pick<BaseContext, 'findKiteFilesInWorkspace' | 'getFileContent'> {}
 
 /**
  * Handle inlay hints request

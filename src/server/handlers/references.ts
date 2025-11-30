@@ -18,23 +18,17 @@ import {
     findResourceInstantiations,
     findPropertyAssignments,
     findPropertyAccess,
-} from '../rename-utils';
-import { Declaration } from '../types';
+} from '../utils/rename-utils';
+import { Declaration, BaseContext } from '../types';
 import { offsetToPosition } from '../utils/text-utils';
 
 /**
  * Context interface for dependency injection into references handler.
  * This allows the handler to access server-scoped resources without direct coupling.
  */
-export interface ReferencesContext {
+export interface ReferencesContext extends BaseContext {
     /** Get document by URI */
     getDocument: (uri: string) => TextDocument | undefined;
-    /** Get declarations for a document */
-    getDeclarations: (uri: string) => Declaration[] | undefined;
-    /** Find all .kite files in the workspace */
-    findKiteFilesInWorkspace: () => string[];
-    /** Get file content by path */
-    getFileContent: (filePath: string, currentDocUri?: string) => string | null;
 }
 
 /**

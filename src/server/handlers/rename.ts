@@ -10,23 +10,18 @@ import {
     Position,
 } from 'vscode-languageserver/node';
 import { TextDocument } from 'vscode-languageserver-textdocument';
-import { isInComment } from '../rename-utils';
+import { isInComment } from '../utils/rename-utils';
 import { KEYWORDS, TYPES } from '../constants';
 import { getWordAtPosition } from '../utils/text-utils';
 import { findAllReferences, ReferencesContext } from './references';
+import { BaseContext } from '../types';
 
 /**
  * Context interface for dependency injection into rename handler.
  */
-export interface RenameContext {
+export interface RenameContext extends BaseContext {
     /** Get document by URI */
     getDocument: (uri: string) => TextDocument | undefined;
-    /** Get declarations for a document */
-    getDeclarations: (uri: string) => import('../types').Declaration[] | undefined;
-    /** Find all .kite files in the workspace */
-    findKiteFilesInWorkspace: () => string[];
-    /** Get file content by path */
-    getFileContent: (filePath: string, currentDocUri?: string) => string | null;
     /** Callback to refresh diagnostics after rename */
     refreshDiagnostics: () => void;
 }

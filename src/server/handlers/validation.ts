@@ -11,23 +11,17 @@ import {
 import { TextDocument } from 'vscode-languageserver-textdocument';
 import { URI } from 'vscode-uri';
 import * as path from 'path';
-import { Declaration, ImportSuggestion, ImportInfo } from '../types';
+import { Declaration, ImportSuggestion, ImportInfo, BaseContext } from '../types';
 import { DECORATORS } from '../constants';
 
 /**
  * Context containing dependencies needed for validation
  */
-export interface ValidationContext {
-    /** Get declarations from cache for a URI */
-    getDeclarations: (uri: string) => Declaration[] | undefined;
+export interface ValidationContext extends BaseContext {
     /** Get or create diagnostic data map for a URI */
     getDiagnosticData: (uri: string) => Map<string, ImportSuggestion>;
     /** Clear diagnostic data for a URI */
     clearDiagnosticData: (uri: string) => void;
-    /** Find all .kite files in workspace */
-    findKiteFilesInWorkspace: () => string[];
-    /** Get file content by path */
-    getFileContent: (filePath: string, currentDocUri?: string) => string | null;
     /** Extract imports from text */
     extractImports: (text: string) => ImportInfo[];
     /** Check if symbol is imported */
