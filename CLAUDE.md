@@ -180,33 +180,113 @@ Key tokens from the ANTLR lexer (`../kite-intellij-plugin/src/main/antlr/cloud/k
 | Document Symbols | `KiteStructureViewElement.java` | `textDocument/documentSymbol` | ✅ |
 | Inlay Hints | `KiteInlayHintsProvider.java` | `textDocument/inlayHint` | ✅ |
 
+### Completed: Refactoring
+| Feature | IntelliJ File | LSP Method | Status |
+|---------|--------------|------------|--------|
+| Rename Symbol | - | `textDocument/rename` | ✅ |
+
 ### Priority 1: Remaining Features
 | Feature | IntelliJ File | LSP Method | Status |
 |---------|--------------|------------|--------|
 | Code Formatting | `KiteBlock.java` | `textDocument/formatting` | ⬜ |
-| Rename Symbol | - | `textDocument/rename` | ⬜ |
 | Type Checking | `KiteTypeCheckingAnnotator.java` | `textDocument/publishDiagnostics` | ⬜ |
 
 ## Project Structure
 
 ```
 kite-vscode-plugin/
+├── CLAUDE.md                    # Development guide (this file)
 ├── package.json                 # Extension manifest
 ├── tsconfig.json               # TypeScript config
+├── language-configuration.json  # Brackets, comments, folding
+├── grammar/                     # ANTLR grammar files (source of truth)
+│   ├── KiteLexer.g4            # Lexer rules (tokens)
+│   └── KiteParser.g4           # Parser rules (AST)
+├── scripts/
+│   └── fix-lexer.js            # Post-processes generated lexer for TypeScript
 ├── src/
-│   ├── extension.ts            # Extension entry point
-│   ├── client/
-│   │   └── client.ts           # Language client
+│   ├── extension.ts            # Extension entry point (client activation)
+│   ├── parser/                 # ANTLR-generated parser
+│   │   ├── index.ts            # Parser exports
+│   │   ├── parse-utils.ts      # Parsing utilities
+│   │   └── grammar/            # Generated files (npm run generate-parser)
+│   │       ├── KiteLexer.ts    # Generated lexer
+│   │       ├── KiteParser.ts   # Generated parser
+│   │       └── KiteParserVisitor.ts  # Visitor interface
 │   └── server/
 │       ├── server.ts           # Language server main
-│       ├── parser/             # Parser (ANTLR or custom)
-│       ├── analyzer/           # Semantic analysis
-│       └── providers/          # LSP providers
+│       ├── scanner.ts          # Document scanner for declarations
+│       ├── types.ts            # Shared type definitions
+│       ├── constants.ts        # Language constants (keywords, decorators)
+│       ├── handlers/           # LSP request handlers
+│       │   ├── completion.ts   # Code completion
+│       │   ├── devops-suggestions.ts  # DevOps-aware value suggestions
+│       │   ├── definition.ts   # Go to definition
+│       │   ├── references.ts   # Find references
+│       │   ├── rename.ts       # Rename symbol
+│       │   ├── hover.ts        # Hover documentation
+│       │   ├── validation.ts   # Diagnostics & validation
+│       │   ├── code-actions.ts # Quick fixes
+│       │   ├── document-symbols.ts  # Outline view
+│       │   ├── signature-help.ts    # Parameter hints
+│       │   └── inlay-hints.ts       # Inline type hints
+│       └── utils/              # Utility functions
+│           ├── text-utils.ts   # Text, file & block utilities
+│           ├── import-utils.ts # Import parsing
+│           └── rename-utils.ts # Rename/reference utilities
 ├── syntaxes/
-│   └── kite.tmLanguage.json    # TextMate grammar
-├── language-configuration.json  # Brackets, comments
-└── examples/                   # Test files (copy from IntelliJ)
+│   └── kite.tmLanguage.json    # TextMate grammar (syntax highlighting)
+└── examples/                   # Test files
 ```
+
+## ANTLR Parser
+
+The grammar files (`grammar/*.g4`) are the **source of truth** for the Kite language syntax. These are shared with the IntelliJ plugin and use Java syntax for action blocks.
+
+### Prerequisites
+
+- ANTLR 4.13+ installed (`brew install antlr` on macOS)
+- Node.js for post-processing script
+
+### Regenerating the Parser
+
+When grammar files change, regenerate the TypeScript parser:
+
+```bash
+npm run generate-parser
+```
+
+This:
+1. Generates TypeScript from `grammar/*.g4` files
+2. Runs `scripts/fix-lexer.js` to convert Java action code to TypeScript
+3. Outputs files to `src/parser/grammar/`
+
+Generated files are gitignored - regenerate after cloning.
+
+### Using the Parser
+
+```typescript
+import { parseKite, tokenize, KiteLexer } from '../parser';
+
+// Parse source code to AST
+const result = parseKite(sourceCode);
+if (result.errors.length === 0) {
+    // result.tree is the AST root (ProgramContext)
+}
+
+// Tokenize source code
+const tokens = tokenize(sourceCode);
+
+// Check token types
+if (tokens[0].type === KiteLexer.VAR) { ... }
+```
+
+### Grammar Notes
+
+- Grammar files use **Java syntax** for action blocks (compatible with IntelliJ plugin)
+- `scripts/fix-lexer.js` post-processes the generated TypeScript
+- String interpolation uses mode switching (STRING_MODE)
+- The lexer tracks `interpolationDepth` for nested `${...}` expressions
 
 ## Implementation Notes
 
@@ -267,6 +347,46 @@ Skip "Cannot resolve symbol" warnings for:
 ### `any` Keyword
 
 The `any` keyword is a **type keyword**, not an identifier. Handle it specially in type positions alongside `string`, `number`, `boolean`, etc.
+
+## Architecture Patterns
+
+### Dependency Injection via Context
+
+Handlers use dependency injection through context interfaces. All contexts extend `BaseContext`:
+
+```typescript
+// types.ts
+export interface BaseContext {
+    getDeclarations: (uri: string) => Declaration[] | undefined;
+    findKiteFilesInWorkspace: () => string[];
+    getFileContent: (filePath: string, currentDocUri?: string) => string | null;
+}
+
+// Handler-specific contexts extend BaseContext
+export interface CompletionContext extends BaseContext {
+    findEnclosingBlock: (text: string, offset: number) => BlockContext | null;
+}
+```
+
+### Handler Pattern
+
+Each LSP feature has a dedicated handler file:
+- Receives document + position + context
+- Returns LSP-compliant response
+- No direct access to server state (injected via context)
+
+### Scanner vs ANTLR
+
+Currently using regex-based parsing in `scanner.ts`. ANTLR grammar files exist in `/grammar/` but are not integrated. Benefits of ANTLR:
+- More robust parsing
+- Better error recovery
+- Matches IntelliJ implementation
+
+To integrate ANTLR (future work):
+```bash
+npm install antlr4ts
+npx antlr4ts -visitor grammar/KiteLexer.g4 grammar/KiteParser.g4
+```
 
 ## Quick Start - Running the Extension
 
@@ -347,121 +467,28 @@ npm run lint       # Lint TypeScript code
 }
 ```
 
-## ANTLR Option
-
-To reuse the ANTLR grammar from IntelliJ:
-
-```bash
-# Install ANTLR TypeScript target
-npm install antlr4ts antlr4ts-cli
-
-# Generate parser (copy .g4 files first)
-npx antlr4ts -visitor -no-listener KiteLexer.g4 KiteParser.g4
-```
-
-Grammar files location: `../kite-intellij-plugin/src/main/antlr/cloud/kitelang/intellij/parser/`
-
 ## Test Files
 
-Copy example files from IntelliJ plugin:
-```bash
-cp -r ../kite-intellij-plugin/examples ./examples
-```
-
-Key test scenarios:
-- `examples/simple.kite` - Basic syntax
-- `examples/common.kite` - Shared definitions
+Key test scenarios in `examples/`:
+- `simple.kite` - Basic syntax
+- `common.kite` - Shared definitions
 - Cross-file imports and references
 - String interpolation (`${var}` and `$var`)
 - Array types (`string[]`, `number[]`)
 - Schema/resource type checking
 
-## Project Structure
-kite-vscode-plugin/
-├── CLAUDE.md                    # Comprehensive development guide
-├── package.json                 # Extension manifest
-├── tsconfig.json               # TypeScript configuration
-├── language-configuration.json  # Brackets, comments, folding
-├── .gitignore                  # Git ignore rules
-├── .vscodeignore               # VS Code packaging ignore
-├── src/
-│   └── extension.ts            # Extension entry point
-├── syntaxes/
-│   └── kite.tmLanguage.json    # TextMate grammar for syntax highlighting
-└── examples/                   # Test files (copied from IntelliJ)
+## Reference Implementation
 
-## Intellij plugin
-The original implementation which we need to migrate to vs code plugin
-../kite-intellij-plugin/
+The IntelliJ plugin at `../kite-intellij-plugin` is the reference. Key mappings:
 
-## VS Code Extension Development
-
-### Overview
-
-To port the Kite plugin to VS Code, you'll need to create a Language Server Protocol (LSP) based extension. VS Code
-extensions use TypeScript/JavaScript and communicate with a Language Server for advanced features.
-
-### Architecture Options
-
-**Option 1: TextMate Grammar Only (Basic)**
-
-- Quick to implement
-- Provides: Syntax highlighting, bracket matching, basic code folding
-- No semantic features (go to definition, completion, etc.)
-
-**Option 2: Full LSP Implementation (Recommended)**
-
-- Provides all features including semantic analysis
-- Reuse ANTLR grammar: Generate TypeScript parser from same `.g4` files
-- Can use existing IntelliJ logic as reference
-
-### Project Structure
-
-```
-kite-vscode/
-├── package.json           # Extension manifest
-├── tsconfig.json          # TypeScript config
-├── src/
-│   ├── extension.ts       # Extension entry point
-│   └── server/
-│       ├── server.ts      # Language server main
-│       ├── parser/        # ANTLR-generated TypeScript parser
-│       └── providers/     # LSP providers (completion, hover, etc.)
-├── syntaxes/
-│   └── kite.tmLanguage.json  # TextMate grammar for highlighting
-└── language-configuration.json  # Brackets, comments config
-```
-
-### Key Files to Create
-
-1. **package.json** - Extension manifest with:
-    - Language contribution (`.kite` files)
-    - Grammar contribution
-    - Commands and configuration
-
-2. **syntaxes/kite.tmLanguage.json** - TextMate grammar:
-    - Convert ANTLR lexer tokens to TextMate scopes
-    - Map to VS Code semantic token types
-
-3. **Language Server** (using `vscode-languageserver`):
-    - `textDocument/completion` - Autocompletion
-    - `textDocument/hover` - Quick documentation
-    - `textDocument/definition` - Go to definition
-    - `textDocument/references` - Find usages
-    - `textDocument/formatting` - Code formatting
-    - `textDocument/publishDiagnostics` - Errors/warnings
-
-### Feature Mapping: IntelliJ → VS Code LSP
-
-| IntelliJ Feature             | VS Code/LSP Equivalent             |
+| IntelliJ Feature             | VS Code Handler                    |
 |------------------------------|------------------------------------|
-| `KiteSyntaxHighlighter`      | TextMate grammar + Semantic tokens |
-| `KiteCompletionContributor`  | `textDocument/completion`          |
-| `KiteDocumentationProvider`  | `textDocument/hover`               |
-| `KiteGotoDeclarationHandler` | `textDocument/definition`          |
-| `KiteReferenceContributor`   | `textDocument/references`          |
-| `KiteParameterInfoHandler`   | `textDocument/signatureHelp`       |
-| `KiteInlayHintsProvider`     | `textDocument/inlayHint`           |
-| `KiteTypeCheckingAnnotator`  | `textDocument/publishDiagnostics`  |
-| `KiteBlock` (formatter)      | `textDocument/formatting`          |
-| `KiteStructureViewElement`   | `textDocument/documentSymbol`      |
+| `KiteCompletionContributor`  | `handlers/completion.ts`           |
+| `KiteDocumentationProvider`  | `handlers/hover.ts`                |
+| `KiteGotoDeclarationHandler` | `handlers/definition.ts`           |
+| `KiteReferenceContributor`   | `handlers/references.ts`           |
+| `KiteParameterInfoHandler`   | `handlers/signature-help.ts`       |
+| `KiteInlayHintsProvider`     | `handlers/inlay-hints.ts`          |
+| `KiteTypeCheckingAnnotator`  | `handlers/validation.ts`           |
+| `KiteStructureViewElement`   | `handlers/document-symbols.ts`     |
+- Always reffer to the grammar files *.g4 as those are the references for our programming language

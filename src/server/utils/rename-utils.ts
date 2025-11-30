@@ -3,6 +3,8 @@
  * These functions are extracted for testability.
  */
 
+import { KEYWORDS, TYPES } from '../constants';
+
 export interface ScopeBlock {
     start: number;
     end: number;
@@ -337,21 +339,6 @@ export function findPropertyAccess(
 
     return locations;
 }
-
-/**
- * Check if a word is a Kite keyword
- */
-export const KEYWORDS = [
-    'resource', 'component', 'schema', 'input', 'output',
-    'if', 'else', 'while', 'for', 'in', 'return',
-    'import', 'from', 'fun', 'var', 'type', 'init', 'this',
-    'true', 'false', 'null'
-];
-
-/**
- * Check if a word is a built-in type
- */
-export const TYPES = ['string', 'number', 'boolean', 'any', 'object', 'void'];
 
 /**
  * Validate if a symbol can be renamed

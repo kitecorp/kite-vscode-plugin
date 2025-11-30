@@ -15,9 +15,8 @@ import {
     findPropertyAccess,
     canRenameSymbol,
     isValidNewName,
-    KEYWORDS,
-    TYPES
 } from './rename-utils';
+import { KEYWORDS, TYPES } from '../constants';
 
 describe('escapeRegex', () => {
     it('should escape special regex characters', () => {

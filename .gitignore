@@ -3,3 +3,6 @@ node_modules/
 .vscode-test/
 *.vsix
 .DS_Store
+
+# Generated ANTLR parser files (regenerate with: npm run generate-parser)
+src/parser/grammar/
