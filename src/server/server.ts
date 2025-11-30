@@ -39,6 +39,18 @@ import { TextDocument } from 'vscode-languageserver-textdocument';
 import * as fs from 'fs';
 import * as path from 'path';
 import { URI } from 'vscode-uri';
+import {
+    escapeRegex,
+    isInComment,
+    findComponentTypeForScope,
+    getSchemaContextAtPosition,
+    findComponentInstantiations,
+    findResourceInstantiations,
+    findPropertyAssignments,
+    findPropertyAccess,
+    canRenameSymbol,
+    isValidNewName,
+} from './rename-utils';
 
 // Create a connection for the server using Node's IPC
 const connection = createConnection(ProposedFeatures.all);
@@ -2132,46 +2144,6 @@ connection.onDefinition((params: TextDocumentPositionParams): Definition | null 
     return null;
 });
 
-// Helper to check if position is inside a comment
-function isInComment(text: string, pos: number): boolean {
-    const lineStart = text.lastIndexOf('\n', pos - 1) + 1;
-    const lineBeforePos = text.substring(lineStart, pos);
-    if (lineBeforePos.includes('//')) return true;
-
-    const textBefore = text.substring(0, pos);
-    const lastBlockStart = textBefore.lastIndexOf('/*');
-    if (lastBlockStart !== -1) {
-        const lastBlockEnd = textBefore.lastIndexOf('*/');
-        if (lastBlockEnd < lastBlockStart) return true;
-    }
-    return false;
-}
-
-// Helper: Find the component type name that contains a given scope
-function findComponentTypeForScope(text: string, scopeStart: number): string | null {
-    // Look backwards from scopeStart to find the component definition
-    // Pattern: component TypeName {
-    const beforeScope = text.substring(0, scopeStart + 1);
-    const compDefRegex = /\bcomponent\s+(\w+)\s*\{$/;
-    const match = beforeScope.match(compDefRegex);
-    if (match) {
-        return match[1];
-    }
-
-    // Try a more lenient search - find the last component definition before this position
-    const allCompDefs = [...beforeScope.matchAll(/\bcomponent\s+(\w+)\s*\{/g)];
-    if (allCompDefs.length > 0) {
-        const lastMatch = allCompDefs[allCompDefs.length - 1];
-        // Verify this component's brace is at scopeStart
-        const bracePos = lastMatch.index! + lastMatch[0].length - 1;
-        if (bracePos === scopeStart) {
-            return lastMatch[1];
-        }
-    }
-
-    return null;
-}
-
 // Helper: Find property assignments and property access references in component instantiations
 function findComponentPropertyReferences(
     componentTypeName: string,
@@ -2181,7 +2153,6 @@ function findComponentPropertyReferences(
     const locations: Location[] = [];
     const currentFilePath = URI.parse(currentDocUri).fsPath;
 
-    // Search all kite files
     const kiteFiles = findKiteFilesInWorkspace();
 
     for (const filePath of kiteFiles) {
@@ -2191,72 +2162,81 @@ function findComponentPropertyReferences(
         const fileUri = filePath === currentFilePath ? currentDocUri : URI.file(filePath).toString();
         const doc = documents.get(fileUri);
 
-        // Collect all instance names of this component type
-        const instanceNames: string[] = [];
+        // Find all instantiations using utility function
+        const instantiations = findComponentInstantiations(fileContent, componentTypeName);
 
-        // Find all instantiations of this component type: component TypeName instanceName {
-        const instRegex = new RegExp(`\\bcomponent\\s+${escapeRegex(componentTypeName)}\\s+(\\w+)\\s*\\{`, 'g');
-        let instMatch;
-
-        while ((instMatch = instRegex.exec(fileContent)) !== null) {
-            const instanceName = instMatch[1];
-            instanceNames.push(instanceName);
-
-            // Find the matching closing brace
-            const braceStart = instMatch.index + instMatch[0].length - 1;
-            let braceDepth = 1;
-            let pos = braceStart + 1;
-
-            while (pos < fileContent.length && braceDepth > 0) {
-                if (fileContent[pos] === '{') braceDepth++;
-                else if (fileContent[pos] === '}') braceDepth--;
-                pos++;
+        for (const inst of instantiations) {
+            // Find property assignments using utility function
+            const assignments = findPropertyAssignments(fileContent, inst.bodyStart, inst.bodyEnd, propertyName);
+            for (const assign of assignments) {
+                const startPos = doc
+                    ? doc.positionAt(assign.startOffset)
+                    : offsetToPosition(fileContent, assign.startOffset);
+                const endPos = doc
+                    ? doc.positionAt(assign.endOffset)
+                    : offsetToPosition(fileContent, assign.endOffset);
+                locations.push(Location.create(fileUri, Range.create(startPos, endPos)));
             }
 
-            const bodyStart = braceStart + 1;
-            const bodyEnd = pos - 1;
-            const bodyText = fileContent.substring(bodyStart, bodyEnd);
-
-            // Find property assignments: propertyName = value
-            // Need to match at the start of a line or after whitespace, followed by = (not ==)
-            const propRegex = new RegExp(`(?:^|\\n)\\s*(${escapeRegex(propertyName)})\\s*=(?!=)`, 'g');
-            let propMatch;
-
-            while ((propMatch = propRegex.exec(bodyText)) !== null) {
-                const propNameStart = bodyStart + propMatch.index + propMatch[0].indexOf(propertyName);
-                const propNameEnd = propNameStart + propertyName.length;
-
+            // Find property access using utility function
+            const accesses = findPropertyAccess(fileContent, inst.instanceName, propertyName);
+            for (const access of accesses) {
                 const startPos = doc
-                    ? doc.positionAt(propNameStart)
-                    : offsetToPosition(fileContent, propNameStart);
+                    ? doc.positionAt(access.startOffset)
+                    : offsetToPosition(fileContent, access.startOffset);
                 const endPos = doc
-                    ? doc.positionAt(propNameEnd)
-                    : offsetToPosition(fileContent, propNameEnd);
-
+                    ? doc.positionAt(access.endOffset)
+                    : offsetToPosition(fileContent, access.endOffset);
                 locations.push(Location.create(fileUri, Range.create(startPos, endPos)));
             }
         }
+    }
 
-        // Find property access references: instanceName.propertyName
-        // This handles cases like: shared.endpoints, api.url, etc.
-        for (const instanceName of instanceNames) {
-            const accessRegex = new RegExp(`\\b${escapeRegex(instanceName)}\\.(${escapeRegex(propertyName)})\\b`, 'g');
-            let accessMatch;
+    return locations;
+}
 
-            while ((accessMatch = accessRegex.exec(fileContent)) !== null) {
-                if (isInComment(fileContent, accessMatch.index)) continue;
+// Helper: Find property assignments and property access in resource instantiations for a schema
+function findSchemaPropertyReferences(
+    schemaName: string,
+    propertyName: string,
+    currentDocUri: string
+): Location[] {
+    const locations: Location[] = [];
+    const currentFilePath = URI.parse(currentDocUri).fsPath;
+    const kiteFiles = findKiteFilesInWorkspace();
 
-                // The property name starts after "instanceName."
-                const propNameStart = accessMatch.index + instanceName.length + 1;
-                const propNameEnd = propNameStart + propertyName.length;
+    for (const filePath of kiteFiles) {
+        const fileContent = getFileContent(filePath, currentDocUri);
+        if (!fileContent) continue;
 
+        const fileUri = filePath === currentFilePath ? currentDocUri : URI.file(filePath).toString();
+        const doc = documents.get(fileUri);
+
+        // Use utility to find all resource instantiations of this schema type
+        const resources = findResourceInstantiations(fileContent, schemaName);
+
+        for (const res of resources) {
+            // Find property assignments using utility
+            const assignments = findPropertyAssignments(fileContent, res.bodyStart, res.bodyEnd, propertyName);
+            for (const assign of assignments) {
                 const startPos = doc
-                    ? doc.positionAt(propNameStart)
-                    : offsetToPosition(fileContent, propNameStart);
+                    ? doc.positionAt(assign.startOffset)
+                    : offsetToPosition(fileContent, assign.startOffset);
                 const endPos = doc
-                    ? doc.positionAt(propNameEnd)
-                    : offsetToPosition(fileContent, propNameEnd);
+                    ? doc.positionAt(assign.endOffset)
+                    : offsetToPosition(fileContent, assign.endOffset);
+                locations.push(Location.create(fileUri, Range.create(startPos, endPos)));
+            }
 
+            // Find property access references using utility
+            const accesses = findPropertyAccess(fileContent, res.instanceName, propertyName);
+            for (const access of accesses) {
+                const startPos = doc
+                    ? doc.positionAt(access.startOffset)
+                    : offsetToPosition(fileContent, access.startOffset);
+                const endPos = doc
+                    ? doc.positionAt(access.endOffset)
+                    : offsetToPosition(fileContent, access.endOffset);
                 locations.push(Location.create(fileUri, Range.create(startPos, endPos)));
             }
         }
@@ -2277,6 +2257,146 @@ function findAllReferences(word: string, currentDocUri: string, cursorOffset?: n
 
     if (!currentText) {
         return locations;
+    }
+
+    // Check if we're renaming a schema property
+    if (cursorOffset !== undefined) {
+        const schemaContext = getSchemaContextAtPosition(currentText, cursorOffset);
+        if (schemaContext) {
+            // We're inside a schema definition - check if cursor is on a property name
+            const bodyText = currentText.substring(schemaContext.scopeStart + 1, schemaContext.scopeEnd - 1);
+            const bodyOffset = cursorOffset - schemaContext.scopeStart - 1;
+
+            // Check if we're on a property name: type propertyName
+            // Find the line containing the cursor
+            const beforeCursor = bodyText.substring(0, bodyOffset);
+            const lineStart = beforeCursor.lastIndexOf('\n') + 1;
+            const lineEnd = bodyText.indexOf('\n', bodyOffset);
+            const line = bodyText.substring(lineStart, lineEnd === -1 ? bodyText.length : lineEnd);
+
+            // Match property definition: type propertyName [= default]
+            const propDefMatch = line.match(/^\s*(\w+(?:\[\])?)\s+(\w+)(?:\s*=.*)?$/);
+            if (propDefMatch && propDefMatch[2] === word) {
+                // This is a schema property - find the property definition location
+                const propNameIndex = line.indexOf(word, line.indexOf(propDefMatch[1]) + propDefMatch[1].length);
+                const propOffset = schemaContext.scopeStart + 1 + lineStart + propNameIndex;
+
+                const propStartPos = currentDoc
+                    ? currentDoc.positionAt(propOffset)
+                    : offsetToPosition(currentText, propOffset);
+                const propEndPos = currentDoc
+                    ? currentDoc.positionAt(propOffset + word.length)
+                    : offsetToPosition(currentText, propOffset + word.length);
+
+                locations.push(Location.create(currentDocUri, Range.create(propStartPos, propEndPos)));
+
+                // Find all resource instantiations that use this schema
+                const propRefs = findSchemaPropertyReferences(schemaContext.schemaName, word, currentDocUri);
+                locations.push(...propRefs);
+
+                return locations;
+            }
+        }
+    }
+
+    // Check if we're on a property access like instance.property
+    if (cursorOffset !== undefined) {
+        // Look for pattern: identifier.word where word is what we're renaming
+        const beforeCursor = currentText.substring(Math.max(0, cursorOffset - 100), cursorOffset);
+        const afterWord = currentText.substring(cursorOffset, Math.min(currentText.length, cursorOffset + word.length + 10));
+
+        // Check if there's a dot before the word
+        const dotMatch = beforeCursor.match(/(\w+)\.\s*$/);
+        if (dotMatch && afterWord.startsWith(word)) {
+            const instanceName = dotMatch[1];
+
+            // Find the component instance declaration
+            const declarations = declarationCache.get(currentDocUri) || [];
+            const instanceDecl = declarations.find(d =>
+                d.name === instanceName &&
+                d.type === 'component' &&
+                d.componentType
+            );
+
+            if (instanceDecl && instanceDecl.componentType) {
+                // This is a property access on a component instance
+                // Find the input/output declaration in the component definition
+                const componentTypeName = instanceDecl.componentType;
+
+                // Search for the component definition and find the input/output
+                const kiteFiles = findKiteFilesInWorkspace();
+                for (const filePath of kiteFiles) {
+                    const fileContent = getFileContent(filePath, currentDocUri);
+                    if (!fileContent) continue;
+
+                    // Find component definition
+                    const compDefRegex = new RegExp(`\\bcomponent\\s+${escapeRegex(componentTypeName)}\\s*\\{`);
+                    const compDefMatch = compDefRegex.exec(fileContent);
+
+                    if (compDefMatch) {
+                        // Found the component definition - find the input/output
+                        const braceStart = compDefMatch.index + compDefMatch[0].length - 1;
+                        let braceDepth = 1;
+                        let pos = braceStart + 1;
+
+                        while (pos < fileContent.length && braceDepth > 0) {
+                            if (fileContent[pos] === '{') braceDepth++;
+                            else if (fileContent[pos] === '}') braceDepth--;
+                            pos++;
+                        }
+
+                        const bodyStart = braceStart + 1;
+                        const bodyEnd = pos - 1;
+                        const bodyText = fileContent.substring(bodyStart, bodyEnd);
+
+                        // Find input/output with this name
+                        const fieldRegex = new RegExp(`(?:^|\\n)\\s*(?:input|output)\\s+\\w+(?:\\[\\])?\\s+(${escapeRegex(word)})(?:\\s*=|\\s*$)`, 'm');
+                        const fieldMatch = fieldRegex.exec(bodyText);
+
+                        if (fieldMatch) {
+                            // Found the field - now do a full rename from the definition
+                            const fieldOffset = bodyStart + fieldMatch.index + fieldMatch[0].indexOf(word);
+                            const fileUri = URI.file(filePath).toString();
+                            const doc = documents.get(fileUri);
+
+                            const fieldStartPos = doc
+                                ? doc.positionAt(fieldOffset)
+                                : offsetToPosition(fileContent, fieldOffset);
+                            const fieldEndPos = doc
+                                ? doc.positionAt(fieldOffset + word.length)
+                                : offsetToPosition(fileContent, fieldOffset + word.length);
+
+                            locations.push(Location.create(fileUri, Range.create(fieldStartPos, fieldEndPos)));
+
+                            // Find usages within the component definition
+                            const usageRegex = new RegExp(`\\b${escapeRegex(word)}\\b`, 'g');
+                            let usageMatch;
+                            while ((usageMatch = usageRegex.exec(bodyText)) !== null) {
+                                const usageOffset = bodyStart + usageMatch.index;
+                                if (usageOffset === fieldOffset) continue; // Skip the declaration itself
+
+                                if (isInComment(fileContent, usageOffset)) continue;
+
+                                const usageStartPos = doc
+                                    ? doc.positionAt(usageOffset)
+                                    : offsetToPosition(fileContent, usageOffset);
+                                const usageEndPos = doc
+                                    ? doc.positionAt(usageOffset + word.length)
+                                    : offsetToPosition(fileContent, usageOffset + word.length);
+
+                                locations.push(Location.create(fileUri, Range.create(usageStartPos, usageEndPos)));
+                            }
+
+                            // Find all property references in component instantiations
+                            const propRefs = findComponentPropertyReferences(componentTypeName, word, currentDocUri);
+                            locations.push(...propRefs);
+
+                            return locations;
+                        }
+                    }
+                }
+            }
+        }
     }
 
     // Determine scope constraints based on the declaration
@@ -3850,11 +3970,6 @@ function getCompletionKind(type: DeclarationType): CompletionItemKind {
         case 'for': return CompletionItemKind.Variable;
         default: return CompletionItemKind.Text;
     }
-}
-
-// Helper: Escape regex special characters
-function escapeRegex(str: string): string {
-    return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
 // Code Action handler - provides quick fixes

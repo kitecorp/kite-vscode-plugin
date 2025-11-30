@@ -40,8 +40,13 @@
     "languages": [
       {
         "id": "kite",
-        "aliases": ["Kite", "kite"],
-        "extensions": [".kite"],
+        "aliases": [
+          "Kite",
+          "kite"
+        ],
+        "extensions": [
+          ".kite"
+        ],
         "configuration": "./language-configuration.json",
         "icon": {
           "light": "./icons/kite-light.png",
@@ -62,7 +67,9 @@
     "compile": "tsc -p ./",
     "watch": "tsc -watch -p ./",
     "pretest": "npm run compile",
-    "test": "node ./out/test/runTest.js",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage",
     "lint": "eslint src --ext ts",
     "package": "vsce package",
     "generate-parser": "antlr4ts -visitor -no-listener grammar/*.g4 -o src/parser"
@@ -72,9 +79,11 @@
     "@types/vscode": "^1.85.0",
     "@typescript-eslint/eslint-plugin": "^6.0.0",
     "@typescript-eslint/parser": "^6.0.0",
+    "@vitest/coverage-v8": "^4.0.14",
+    "@vscode/vsce": "^2.22.0",
     "eslint": "^8.0.0",
     "typescript": "^5.3.0",
-    "@vscode/vsce": "^2.22.0"
+    "vitest": "^4.0.14"
   },
   "dependencies": {
     "vscode-languageclient": "^9.0.1",

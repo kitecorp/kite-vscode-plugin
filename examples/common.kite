@@ -30,6 +30,12 @@ component SharedLogger {
   output string endpointsout = logLevels
 }
 
+component SharedLoggers {
+  input string logLeve = "INFO"
+  output string endpoint = "https://logs.example.com"
+  output string outend = logLeve
+}
+
 component SharedLogger shared{
   logLevels = "info"
 }
