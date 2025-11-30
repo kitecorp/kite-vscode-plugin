@@ -329,6 +329,98 @@ string host
         });
     });
 
+    describe('vertical alignment', () => {
+        it('should align values by = in schema body', () => {
+            const input = `schema Config {
+    string hostname = "localhost"
+    number port = 8080
+    boolean ssl = true
+}`;
+            const expected = `schema Config {
+    string hostname = "localhost"
+    number port     = 8080
+    boolean ssl     = true
+}`;
+            expect(format(input)).toBe(expected);
+        });
+
+        it('should align values by = in resource body', () => {
+            const input = `resource Config server {
+    hostname = "localhost"
+    port = 8080
+    ssl = true
+}`;
+            const expected = `resource Config server {
+    hostname = "localhost"
+    port     = 8080
+    ssl      = true
+}`;
+            expect(format(input)).toBe(expected);
+        });
+
+        it('should align values by = in component body', () => {
+            const input = `component WebServer {
+    input string name = "default"
+    input number replicas = 1
+    output string endpoint = "http://localhost"
+}`;
+            const expected = `component WebServer {
+    input string name      = "default"
+    input number replicas  = 1
+    output string endpoint = "http://localhost"
+}`;
+            expect(format(input)).toBe(expected);
+        });
+
+        it('should handle mixed lines with and without =', () => {
+            const input = `schema Config {
+    string host = "localhost"
+    number port
+    boolean ssl = true
+}`;
+            const expected = `schema Config {
+    string host = "localhost"
+    number port
+    boolean ssl = true
+}`;
+            expect(format(input)).toBe(expected);
+        });
+
+        it('should align decorated inputs', () => {
+            const input = `component WebServer {
+    @unique
+    @allowed(["dev", "prod"])
+    input string env = "dev"
+    input string instanceType = "t2.micro"
+}`;
+            const expected = `component WebServer {
+    @unique
+    @allowed(["dev", "prod"])
+    input string env          = "dev"
+    input string instanceType = "t2.micro"
+}`;
+            expect(format(input)).toBe(expected);
+        });
+
+        it('should not align across different blocks', () => {
+            const input = `schema A {
+    string x = "a"
+}
+
+schema B {
+    string longerName = "b"
+}`;
+            const expected = `schema A {
+    string x = "a"
+}
+
+schema B {
+    string longerName = "b"
+}`;
+            expect(format(input)).toBe(expected);
+        });
+    });
+
     describe('complex cases', () => {
         it('should format a complete schema', () => {
             const input = `schema ServerConfig{
@@ -351,8 +443,8 @@ input number replicas=1
 output string endpoint="http://localhost"
 }`;
             const expected = `component WebServer {
-    input string name = "default"
-    input number replicas = 1
+    input string name      = "default"
+    input number replicas  = 1
     output string endpoint = "http://localhost"
 }`;
             expect(format(input)).toBe(expected);

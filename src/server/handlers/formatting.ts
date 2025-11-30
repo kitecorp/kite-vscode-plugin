@@ -114,7 +114,152 @@ export function formatKiteCode(text: string, options: FormatOptions): string {
         result.pop();
     }
 
-    return result.join('\n');
+    // Apply vertical alignment within blocks
+    return alignEqualsInBlocks(result).join('\n');
+}
+
+/**
+ * Align = signs vertically within blocks and at top level
+ */
+function alignEqualsInBlocks(lines: string[]): string[] {
+    const result = [...lines];
+    let blockStart = 0;  // Start from beginning for top-level
+    let depth = 0;
+
+    for (let i = 0; i < result.length; i++) {
+        const line = result[i];
+
+        // Track block depth
+        const opens = (line.match(/\{/g) || []).length;
+        const closes = (line.match(/\}/g) || []).length;
+
+        // Start of a block
+        if (opens > closes) {
+            // Align lines before this block (at current depth)
+            if (blockStart < i) {
+                alignBlockLines(result, blockStart, i - 1);
+            }
+            depth += opens - closes;
+            blockStart = i + 1;
+        } else if (closes > opens) {
+            // End of a block - align lines in this block
+            if (blockStart < i) {
+                alignBlockLines(result, blockStart, i - 1);
+            }
+            depth -= closes - opens;
+            blockStart = i + 1;  // Next potential block starts after closing brace
+        }
+    }
+
+    // Align any remaining lines
+    if (blockStart < result.length) {
+        alignBlockLines(result, blockStart, result.length - 1);
+    }
+
+    return result;
+}
+
+/**
+ * Align = signs in a range of lines (within a block)
+ */
+function alignBlockLines(lines: string[], start: number, end: number): void {
+    // Find groups of consecutive lines with = (not interrupted by blank lines)
+    // Decorators (@...) and lines with = are part of the group
+    let groupStart = -1;
+    let linesWithEquals = 0;
+
+    for (let i = start; i <= end + 1; i++) {
+        const line = i <= end ? lines[i] : '';
+        const trimmed = line.trim();
+        const isDecorator = trimmed.startsWith('@');
+        const isComment = trimmed.startsWith('//') || trimmed.startsWith('/*');
+        const isBlank = trimmed === '';
+        const hasEquals = trimmed.includes('=') && !isComment;
+
+        if (isBlank) {
+            // Blank line ends the group
+            if (groupStart !== -1 && linesWithEquals >= 2) {
+                alignGroup(lines, groupStart, i - 1);
+            }
+            groupStart = -1;
+            linesWithEquals = 0;
+        } else if (hasEquals || isDecorator) {
+            // Lines with = or decorators continue/start the group
+            if (groupStart === -1) {
+                groupStart = i;
+                linesWithEquals = 0;
+            }
+            if (hasEquals) {
+                linesWithEquals++;
+            }
+        } else if (!isComment) {
+            // Other non-comment lines end the group
+            if (groupStart !== -1 && linesWithEquals >= 2) {
+                alignGroup(lines, groupStart, i - 1);
+            }
+            groupStart = -1;
+            linesWithEquals = 0;
+        }
+        // Comments don't affect grouping - they're skipped
+    }
+}
+
+/**
+ * Align = signs in a group of consecutive lines
+ */
+function alignGroup(lines: string[], start: number, end: number): void {
+    // Find the maximum position of = in this group
+    let maxEqPos = 0;
+
+    for (let i = start; i <= end; i++) {
+        const line = lines[i];
+        const eqIndex = findAssignmentEquals(line);
+        if (eqIndex > maxEqPos) {
+            maxEqPos = eqIndex;
+        }
+    }
+
+    // Pad each line to align =
+    for (let i = start; i <= end; i++) {
+        const line = lines[i];
+        const eqIndex = findAssignmentEquals(line);
+        if (eqIndex >= 0 && eqIndex < maxEqPos) {
+            const padding = ' '.repeat(maxEqPos - eqIndex);
+            lines[i] = line.substring(0, eqIndex) + padding + line.substring(eqIndex);
+        }
+    }
+}
+
+/**
+ * Find the position of the assignment = (not ==, !=, <=, >=)
+ */
+function findAssignmentEquals(line: string): number {
+    // Find = that is not part of ==, !=, <=, >=
+    let i = 0;
+    while (i < line.length) {
+        const char = line[i];
+        if (char === '"' || char === "'") {
+            // Skip strings
+            const quote = char;
+            i++;
+            while (i < line.length && line[i] !== quote) {
+                if (line[i] === '\\') i++; // Skip escaped char
+                i++;
+            }
+            i++;
+        } else if (char === '=') {
+            // Check if it's a standalone =
+            const prev = i > 0 ? line[i - 1] : '';
+            const next = i < line.length - 1 ? line[i + 1] : '';
+            if (prev !== '=' && prev !== '!' && prev !== '<' && prev !== '>' && next !== '=') {
+                return i;
+            }
+            i++;
+        } else {
+            i++;
+        }
+    }
+    return -1;
 }
 
 /**

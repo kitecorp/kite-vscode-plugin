@@ -14,13 +14,12 @@ component WebServer {
 
   var client = "myClient"
 
-
   resource Instance server {
-    size        = instanceType
-    tag         = {
+    size = instanceType
+    tag = {
       Environment: "$env",
-      Name       : "web-server",
-      New        : {
+      Name: "web-server",
+      New: {
         a: "b"
       }
     }
@@ -28,11 +27,11 @@ component WebServer {
   }
 
   resource DatabaseConfig config {
-    size        = instanceType
-    tag         = {
+    size = instanceType
+    tag = {
       Environment: "$env",
-      Name       : "web-server",
-      New        : {
+      Name: "web-server",
+      New: {
         a: "b"
       }
     }
@@ -62,19 +61,17 @@ input string instanceTypes = "t2.micro"
 output number port         = 8080
 output string instanceType = "t2.micro"
 
-var number portVar         = 8080
+var number portVar      = 8080
 var string instanceType = "t2.micro"
 var string size         = serviceA.endpoint
 
-
-var portInlay           = 8080
-var portInlayString     = "str"
-var inlaySingleString   = 'str'
-var inlayBoolean       = false
-
+var portInlay         = 8080
+var portInlayString   = "str"
+var inlaySingleString = 'str'
+var inlayBoolean      = false
 
 fun greet(string name) {
-  
+
   println(name)
 }
 
