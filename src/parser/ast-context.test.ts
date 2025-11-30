@@ -15,6 +15,12 @@ import {
     extractImportsAST,
     findLastImportLineAST,
     findImportByPathAST,
+    findSchemaDefinitionAST,
+    findComponentDefinitionAST,
+    findFunctionDefinitionAST,
+    findTypeDefinitionAST,
+    findSchemaPropertyAST,
+    findComponentInputAST,
 } from './ast-context';
 import { parseKite } from './parse-utils';
 
@@ -323,5 +329,116 @@ import * from "aws.kite"`;
 
         const found = findImportByPathAST(result.tree!, 'nonexistent.kite');
         expect(found).toBeNull();
+    });
+});
+
+describe('findSchemaDefinitionAST', () => {
+    it('should find schema definition location', () => {
+        const text = `schema ServerConfig {
+    string host
+}`;
+        const result = parseKite(text);
+        expect(result.tree).not.toBeNull();
+
+        const loc = findSchemaDefinitionAST(result.tree!, 'ServerConfig');
+        expect(loc).not.toBeNull();
+        expect(loc?.name).toBe('ServerConfig');
+        expect(loc?.line).toBe(0);
+    });
+
+    it('should return null for non-existent schema', () => {
+        const text = `schema Config { }`;
+        const result = parseKite(text);
+        const loc = findSchemaDefinitionAST(result.tree!, 'NonExistent');
+        expect(loc).toBeNull();
+    });
+});
+
+describe('findFunctionDefinitionAST', () => {
+    it('should find function definition location', () => {
+        const text = `fun calculate(number x) number {
+    return x * 2
+}`;
+        const result = parseKite(text);
+        expect(result.tree).not.toBeNull();
+
+        const loc = findFunctionDefinitionAST(result.tree!, 'calculate');
+        expect(loc).not.toBeNull();
+        expect(loc?.name).toBe('calculate');
+        expect(loc?.line).toBe(0);
+    });
+});
+
+describe('findComponentDefinitionAST', () => {
+    it('should find component definition location', () => {
+        const text = `component WebServer {
+    input string name
+}`;
+        const result = parseKite(text);
+        expect(result.tree).not.toBeNull();
+
+        const loc = findComponentDefinitionAST(result.tree!, 'WebServer');
+        expect(loc).not.toBeNull();
+        expect(loc?.name).toBe('WebServer');
+        expect(loc?.line).toBe(0);
+    });
+});
+
+describe('findTypeDefinitionAST', () => {
+    it('should find type alias definition location', () => {
+        const text = `type Region = "us-east-1" | "us-west-2"`;
+        const result = parseKite(text);
+        expect(result.tree).not.toBeNull();
+
+        const loc = findTypeDefinitionAST(result.tree!, 'Region');
+        expect(loc).not.toBeNull();
+        expect(loc?.name).toBe('Region');
+        expect(loc?.line).toBe(0);
+    });
+});
+
+describe('findSchemaPropertyAST', () => {
+    it('should find schema property location', () => {
+        const text = `schema Config {
+    string host
+    number port
+}`;
+        const result = parseKite(text);
+        expect(result.tree).not.toBeNull();
+
+        const loc = findSchemaPropertyAST(result.tree!, 'Config', 'port');
+        expect(loc).not.toBeNull();
+        expect(loc?.name).toBe('port');
+        expect(loc?.line).toBe(2);
+    });
+
+    it('should return null for non-existent property', () => {
+        const text = `schema Config { string host }`;
+        const result = parseKite(text);
+        const loc = findSchemaPropertyAST(result.tree!, 'Config', 'missing');
+        expect(loc).toBeNull();
+    });
+});
+
+describe('findComponentInputAST', () => {
+    it('should find component input location', () => {
+        const text = `component WebServer {
+    input string name
+    input number replicas
+}`;
+        const result = parseKite(text);
+        expect(result.tree).not.toBeNull();
+
+        const loc = findComponentInputAST(result.tree!, 'WebServer', 'replicas');
+        expect(loc).not.toBeNull();
+        expect(loc?.name).toBe('replicas');
+        expect(loc?.line).toBe(2);
+    });
+
+    it('should return null for non-existent input', () => {
+        const text = `component WebServer { input string name }`;
+        const result = parseKite(text);
+        const loc = findComponentInputAST(result.tree!, 'WebServer', 'missing');
+        expect(loc).toBeNull();
     });
 });

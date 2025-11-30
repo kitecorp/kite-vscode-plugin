@@ -1,6 +1,7 @@
 /**
  * Go to Definition handler for the Kite language server.
  * Provides navigation to symbol definitions.
+ * Uses AST-based parsing for accurate definition lookup.
  */
 
 import {
@@ -15,6 +16,16 @@ import { URI } from 'vscode-uri';
 import { Declaration, BlockContext, ImportInfo, PropertyAccessContext, PropertyResult, BaseContext } from '../types';
 import { escapeRegex } from '../utils/rename-utils';
 import { getWordAtPosition, findMatchingBrace } from '../utils/text-utils';
+import {
+    parseKite,
+    findSchemaDefinitionAST,
+    findComponentDefinitionAST,
+    findFunctionDefinitionAST,
+    findTypeDefinitionAST,
+    findSchemaPropertyAST,
+    findComponentInputAST,
+    DefinitionLocation,
+} from '../../parser';
 
 /**
  * Context for definition handler - provides access to shared functions
@@ -372,8 +383,24 @@ function findTypeDefinition(
 
 /**
  * Find schema definition location in text
+ * Uses AST-based parsing for accuracy with regex fallback.
  */
 export function findSchemaDefinition(text: string, schemaName: string, filePathOrUri: string): Location | null {
+    const uri = filePathOrUri.startsWith('file://') ? filePathOrUri : URI.file(filePathOrUri).toString();
+
+    // Try AST-based lookup first
+    const result = parseKite(text);
+    if (result.tree) {
+        const defLoc = findSchemaDefinitionAST(result.tree, schemaName);
+        if (defLoc) {
+            return Location.create(uri, Range.create(
+                Position.create(defLoc.line, defLoc.column),
+                Position.create(defLoc.line, defLoc.column + schemaName.length)
+            ));
+        }
+    }
+
+    // Fallback to regex for partial/invalid files
     const regex = new RegExp(`\\bschema\\s+(${escapeRegex(schemaName)})\\s*\\{`, 'g');
     const match = regex.exec(text);
 
@@ -384,8 +411,6 @@ export function findSchemaDefinition(text: string, schemaName: string, filePathO
         const startPos = offsetToPosition(text, nameStart);
         const endPos = offsetToPosition(text, nameEnd);
 
-        const uri = filePathOrUri.startsWith('file://') ? filePathOrUri : URI.file(filePathOrUri).toString();
-
         return Location.create(uri, Range.create(startPos, endPos));
     }
 
@@ -394,8 +419,24 @@ export function findSchemaDefinition(text: string, schemaName: string, filePathO
 
 /**
  * Find function definition location in text
+ * Uses AST-based parsing for accuracy with regex fallback.
  */
 export function findFunctionDefinition(text: string, functionName: string, filePathOrUri: string): Location | null {
+    const uri = filePathOrUri.startsWith('file://') ? filePathOrUri : URI.file(filePathOrUri).toString();
+
+    // Try AST-based lookup first
+    const result = parseKite(text);
+    if (result.tree) {
+        const defLoc = findFunctionDefinitionAST(result.tree, functionName);
+        if (defLoc) {
+            return Location.create(uri, Range.create(
+                Position.create(defLoc.line, defLoc.column),
+                Position.create(defLoc.line, defLoc.column + functionName.length)
+            ));
+        }
+    }
+
+    // Fallback to regex for partial/invalid files
     const regex = new RegExp(`\\bfun\\s+(${escapeRegex(functionName)})\\s*\\(`, 'g');
     const match = regex.exec(text);
 
@@ -406,8 +447,6 @@ export function findFunctionDefinition(text: string, functionName: string, fileP
         const startPos = offsetToPosition(text, nameStart);
         const endPos = offsetToPosition(text, nameEnd);
 
-        const uri = filePathOrUri.startsWith('file://') ? filePathOrUri : URI.file(filePathOrUri).toString();
-
         return Location.create(uri, Range.create(startPos, endPos));
     }
 
@@ -416,8 +455,24 @@ export function findFunctionDefinition(text: string, functionName: string, fileP
 
 /**
  * Find component definition location in text
+ * Uses AST-based parsing for accuracy with regex fallback.
  */
 export function findComponentDefinition(text: string, componentName: string, filePathOrUri: string): Location | null {
+    const uri = filePathOrUri.startsWith('file://') ? filePathOrUri : URI.file(filePathOrUri).toString();
+
+    // Try AST-based lookup first
+    const result = parseKite(text);
+    if (result.tree) {
+        const defLoc = findComponentDefinitionAST(result.tree, componentName);
+        if (defLoc) {
+            return Location.create(uri, Range.create(
+                Position.create(defLoc.line, defLoc.column),
+                Position.create(defLoc.line, defLoc.column + componentName.length)
+            ));
+        }
+    }
+
+    // Fallback to regex for partial/invalid files
     const regex = new RegExp(`\\bcomponent\\s+(${escapeRegex(componentName)})\\s*\\{`, 'g');
     let match;
 
@@ -434,8 +489,6 @@ export function findComponentDefinition(text: string, componentName: string, fil
             const startPos = offsetToPosition(text, nameStart);
             const endPos = offsetToPosition(text, nameEnd);
 
-            const uri = filePathOrUri.startsWith('file://') ? filePathOrUri : URI.file(filePathOrUri).toString();
-
             return Location.create(uri, Range.create(startPos, endPos));
         }
     }
@@ -445,8 +498,24 @@ export function findComponentDefinition(text: string, componentName: string, fil
 
 /**
  * Find schema property location in text
+ * Uses AST-based parsing for accuracy with regex fallback.
  */
 function findSchemaPropertyLocation(text: string, schemaName: string, propertyName: string, filePathOrUri: string): Location | null {
+    const uri = filePathOrUri.startsWith('file://') ? filePathOrUri : URI.file(filePathOrUri).toString();
+
+    // Try AST-based lookup first
+    const result = parseKite(text);
+    if (result.tree) {
+        const propLoc = findSchemaPropertyAST(result.tree, schemaName, propertyName);
+        if (propLoc) {
+            return Location.create(uri, Range.create(
+                Position.create(propLoc.line, propLoc.column),
+                Position.create(propLoc.line, propLoc.column + propertyName.length)
+            ));
+        }
+    }
+
+    // Fallback to regex for partial/invalid files
     // Handle dotted schema names like "VM.Instance" - just use the last part for matching
     const schemaBaseName = schemaName.includes('.') ? schemaName.split('.').pop()! : schemaName;
 
@@ -477,8 +546,6 @@ function findSchemaPropertyLocation(text: string, schemaName: string, propertyNa
             const startPos = offsetToPosition(text, propNameOffset);
             const endPos = offsetToPosition(text, propNameEndOffset);
 
-            const uri = filePathOrUri.startsWith('file://') ? filePathOrUri : URI.file(filePathOrUri).toString();
-
             return Location.create(uri, Range.create(startPos, endPos));
         }
     }
@@ -488,8 +555,24 @@ function findSchemaPropertyLocation(text: string, schemaName: string, propertyNa
 
 /**
  * Find component input location in text
+ * Uses AST-based parsing for accuracy with regex fallback.
  */
 function findComponentInputLocation(text: string, componentTypeName: string, inputName: string, filePathOrUri: string): Location | null {
+    const uri = filePathOrUri.startsWith('file://') ? filePathOrUri : URI.file(filePathOrUri).toString();
+
+    // Try AST-based lookup first
+    const result = parseKite(text);
+    if (result.tree) {
+        const inputLoc = findComponentInputAST(result.tree, componentTypeName, inputName);
+        if (inputLoc) {
+            return Location.create(uri, Range.create(
+                Position.create(inputLoc.line, inputLoc.column),
+                Position.create(inputLoc.line, inputLoc.column + inputName.length)
+            ));
+        }
+    }
+
+    // Fallback to regex for partial/invalid files
     const defRegex = new RegExp(`\\bcomponent\\s+${escapeRegex(componentTypeName)}\\s*\\{`, 'g');
     let match;
 
@@ -524,8 +607,6 @@ function findComponentInputLocation(text: string, componentTypeName: string, inp
 
             const startPos = offsetToPosition(text, inputNameOffset);
             const endPos = offsetToPosition(text, inputNameEndOffset);
-
-            const uri = filePathOrUri.startsWith('file://') ? filePathOrUri : URI.file(filePathOrUri).toString();
 
             return Location.create(uri, Range.create(startPos, endPos));
         }

@@ -3,9 +3,9 @@
  * Provides cursor context detection using the ANTLR parse tree.
  */
 
-import { ParserRuleContext, TerminalNode } from 'antlr4';
+import { ParserRuleContext } from 'antlr4';
 import { parseKite, ParseResult } from './parse-utils';
-import KiteParser, {
+import {
     ProgramContext,
     SchemaDeclarationContext,
     ResourceDeclarationContext,
@@ -13,12 +13,6 @@ import KiteParser, {
     FunctionDeclarationContext,
     BlockExpressionContext,
     DecoratorContext,
-    SchemaPropertyContext,
-    InputDeclarationContext,
-    OutputDeclarationContext,
-    VarDeclarationContext,
-    ObjectPropertyContext,
-    ParameterContext,
     ForStatementContext,
     ImportStatementContext,
 } from './grammar/KiteParser';
@@ -217,7 +211,7 @@ function determineContextType(
                     bodyStart: blockExpr.start?.start ?? 0,
                     bodyEnd: (blockExpr.stop?.stop ?? 0) + 1,
                 };
-                context.alreadySetProperties = extractSetPropertiesFromBlock(blockExpr, text);
+                context.alreadySetProperties = extractSetPropertiesFromBlock(blockExpr);
                 return;
             }
         }
@@ -249,7 +243,7 @@ function determineContextType(
                         bodyEnd: (blockExpr.stop?.stop ?? 0) + 1,
                     };
                 }
-                context.alreadySetProperties = extractSetPropertiesFromBlock(blockExpr, text);
+                context.alreadySetProperties = extractSetPropertiesFromBlock(blockExpr);
                 return;
             }
         }
@@ -324,32 +318,6 @@ function isOffsetInBlock(blockExpr: BlockExpressionContext, offset: number): boo
 }
 
 /**
- * Find block expression child in a context
- */
-function findBlockExpression(ctx: ParserRuleContext): BlockExpressionContext | null {
-    for (let i = 0; i < ctx.getChildCount(); i++) {
-        const child = ctx.getChild(i);
-        if (child instanceof BlockExpressionContext) {
-            return child;
-        }
-    }
-    return null;
-}
-
-/**
- * Get identifier text from a declaration context
- */
-function getIdentifierText(ctx: ParserRuleContext): string | null {
-    if (ctx instanceof SchemaDeclarationContext) {
-        return ctx.identifier()?.getText() ?? null;
-    }
-    if (ctx instanceof FunctionDeclarationContext) {
-        return ctx.identifier()?.getText() ?? null;
-    }
-    return null;
-}
-
-/**
  * Extract properties already set in a schema
  */
 function extractSetPropertiesFromSchema(ctx: SchemaDeclarationContext): Set<string> {
@@ -369,7 +337,7 @@ function extractSetPropertiesFromSchema(ctx: SchemaDeclarationContext): Set<stri
 /**
  * Extract properties already set in a block (resource/component body)
  */
-function extractSetPropertiesFromBlock(blockExpr: BlockExpressionContext, text: string): Set<string> {
+function extractSetPropertiesFromBlock(blockExpr: BlockExpressionContext): Set<string> {
     const props = new Set<string>();
     const stmtList = blockExpr.statementList();
     if (!stmtList) return props;
@@ -666,4 +634,174 @@ export function findLastImportLineAST(tree: ProgramContext): number {
 export function findImportByPathAST(tree: ProgramContext, importPath: string): ImportInfo | null {
     const imports = extractImportsAST(tree);
     return imports.find(i => i.path === importPath) ?? null;
+}
+
+/**
+ * Location information for a definition
+ */
+export interface DefinitionLocation {
+    /** Name of the definition */
+    name: string;
+    /** Start offset in the text */
+    nameStart: number;
+    /** End offset in the text */
+    nameEnd: number;
+    /** Start line (0-based) */
+    line: number;
+    /** Start column (0-based) */
+    column: number;
+}
+
+/**
+ * Find schema definition location in the AST
+ */
+export function findSchemaDefinitionAST(tree: ProgramContext, schemaName: string): DefinitionLocation | null {
+    const schema = findSchemaByName(tree, schemaName);
+    if (!schema) return null;
+
+    const identifier = schema.identifier();
+    if (!identifier) return null;
+
+    const nameStart = identifier.start?.start ?? 0;
+    const nameEnd = nameStart + schemaName.length;
+    const line = (identifier.start?.line ?? 1) - 1;
+    const column = identifier.start?.column ?? 0;
+
+    return { name: schemaName, nameStart, nameEnd, line, column };
+}
+
+/**
+ * Find component definition location in the AST
+ */
+export function findComponentDefinitionAST(tree: ProgramContext, componentName: string): DefinitionLocation | null {
+    const comp = findComponentDefByName(tree, componentName);
+    if (!comp) return null;
+
+    const typeId = comp.componentType()?.typeIdentifier();
+    if (!typeId) return null;
+
+    const nameStart = typeId.start?.start ?? 0;
+    const nameEnd = nameStart + componentName.length;
+    const line = (typeId.start?.line ?? 1) - 1;
+    const column = typeId.start?.column ?? 0;
+
+    return { name: componentName, nameStart, nameEnd, line, column };
+}
+
+/**
+ * Find function definition location in the AST
+ */
+export function findFunctionDefinitionAST(tree: ProgramContext, functionName: string): DefinitionLocation | null {
+    const stmtList = tree.statementList();
+    if (!stmtList) return null;
+
+    for (const stmt of stmtList.nonEmptyStatement_list()) {
+        const decl = stmt.declaration();
+        if (decl) {
+            const funcDecl = decl.functionDeclaration();
+            if (funcDecl) {
+                const identifier = funcDecl.identifier();
+                if (identifier?.getText() === functionName) {
+                    const nameStart = identifier.start?.start ?? 0;
+                    const nameEnd = nameStart + functionName.length;
+                    const line = (identifier.start?.line ?? 1) - 1;
+                    const column = identifier.start?.column ?? 0;
+
+                    return { name: functionName, nameStart, nameEnd, line, column };
+                }
+            }
+        }
+    }
+
+    return null;
+}
+
+/**
+ * Find type alias definition location in the AST
+ */
+export function findTypeDefinitionAST(tree: ProgramContext, typeName: string): DefinitionLocation | null {
+    const stmtList = tree.statementList();
+    if (!stmtList) return null;
+
+    for (const stmt of stmtList.nonEmptyStatement_list()) {
+        const decl = stmt.declaration();
+        if (decl) {
+            const typeDecl = decl.typeDeclaration();
+            if (typeDecl) {
+                const identifier = typeDecl.identifier();
+                if (identifier?.getText() === typeName) {
+                    const nameStart = identifier.start?.start ?? 0;
+                    const nameEnd = nameStart + typeName.length;
+                    const line = (identifier.start?.line ?? 1) - 1;
+                    const column = identifier.start?.column ?? 0;
+
+                    return { name: typeName, nameStart, nameEnd, line, column };
+                }
+            }
+        }
+    }
+
+    return null;
+}
+
+/**
+ * Find schema property definition location in the AST
+ */
+export function findSchemaPropertyAST(tree: ProgramContext, schemaName: string, propertyName: string): DefinitionLocation | null {
+    // Handle dotted schema names like "VM.Instance" - just use the last part
+    const schemaBaseName = schemaName.includes('.') ? schemaName.split('.').pop()! : schemaName;
+
+    const schema = findSchemaByName(tree, schemaBaseName);
+    if (!schema) return null;
+
+    const propList = schema.schemaPropertyList();
+    if (!propList) return null;
+
+    for (const prop of propList.schemaProperty_list()) {
+        const identifier = prop.identifier();
+        if (identifier?.getText() === propertyName) {
+            const nameStart = identifier.start?.start ?? 0;
+            const nameEnd = nameStart + propertyName.length;
+            const line = (identifier.start?.line ?? 1) - 1;
+            const column = identifier.start?.column ?? 0;
+
+            return { name: propertyName, nameStart, nameEnd, line, column };
+        }
+    }
+
+    return null;
+}
+
+/**
+ * Find component input definition location in the AST
+ */
+export function findComponentInputAST(tree: ProgramContext, componentName: string, inputName: string): DefinitionLocation | null {
+    const comp = findComponentDefByName(tree, componentName);
+    if (!comp) return null;
+
+    const blockExpr = comp.blockExpression();
+    if (!blockExpr) return null;
+
+    const stmtList = blockExpr.statementList();
+    if (!stmtList) return null;
+
+    for (const stmt of stmtList.nonEmptyStatement_list()) {
+        const decl = stmt.declaration();
+        if (decl) {
+            const inputDecl = decl.inputDeclaration();
+            if (inputDecl) {
+                const identifier = inputDecl.identifier();
+                if (identifier?.getText() === inputName) {
+                    const nameStart = identifier.start?.start ?? 0;
+                    const nameEnd = nameStart + inputName.length;
+                    const line = (identifier.start?.line ?? 1) - 1;
+                    const column = identifier.start?.column ?? 0;
+
+                    return { name: inputName, nameStart, nameEnd, line, column };
+                }
+            }
+        }
+    }
+
+    return null;
 }
