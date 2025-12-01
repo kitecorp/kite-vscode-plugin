@@ -34,6 +34,18 @@
 - [x] Missing value validation - error when `=` has no value after it
 - [x] Organize imports on save - automatically organizes imports when saving
 
+## Completed Features (v0.5.0) - Diagnostics/Validation
+- [x] Duplicate parameters - error for duplicate function parameter names
+- [x] Duplicate declarations - error for duplicate top-level declaration names
+- [x] Unknown decorator - error for unrecognized decorator names
+- [x] Duplicate decorator - error when same decorator applied multiple times
+- [x] Empty block - warning for empty schema/component/function bodies
+- [x] Invalid number - error for malformed number literals
+- [x] Unclosed string - error for strings without closing quote
+- [x] Missing return - error for typed functions without return statement
+- [x] Unreachable code - warning for code after return statement
+- [x] Variable shadowing - warning when inner variable shadows outer variable
+
 ## Pending Features
 
 ## Skipped / Deferred

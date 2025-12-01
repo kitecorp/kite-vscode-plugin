@@ -23,6 +23,16 @@ import { checkDuplicateProperties } from './duplicate-properties';
 import { checkDecoratorTargets } from './decorator-targets';
 import { checkCircularImports } from './circular-imports';
 import { checkMissingValues } from './missing-value';
+import { checkDuplicateParameters } from './duplicate-parameters';
+import { checkDuplicateDeclarations } from './duplicate-declarations';
+import { checkUnknownDecorators } from './unknown-decorator';
+import { checkDuplicateDecorators } from './duplicate-decorator';
+import { checkEmptyBlocks } from './empty-block';
+import { checkInvalidNumbers } from './invalid-number';
+import { checkUnclosedStrings } from './unclosed-string';
+import { checkMissingReturn } from './missing-return';
+import { checkUnreachableCode } from './unreachable-code';
+import { checkVariableShadowing } from './variable-shadowing';
 import { isInComment } from '../../utils/text-utils';
 import { findSymbolInWorkspace } from '../../utils/workspace-utils';
 
@@ -581,6 +591,46 @@ export function validateDocument(document: TextDocument, ctx: ValidationContext)
     // Check for missing values after '='
     const missingValueDiagnostics = checkMissingValues(document);
     diagnostics.push(...missingValueDiagnostics);
+
+    // Check for duplicate function parameters
+    const duplicateParamDiagnostics = checkDuplicateParameters(document);
+    diagnostics.push(...duplicateParamDiagnostics);
+
+    // Check for duplicate top-level declarations
+    const duplicateDeclDiagnostics = checkDuplicateDeclarations(document);
+    diagnostics.push(...duplicateDeclDiagnostics);
+
+    // Check for unknown decorators
+    const unknownDecoratorDiagnostics = checkUnknownDecorators(document);
+    diagnostics.push(...unknownDecoratorDiagnostics);
+
+    // Check for duplicate decorators
+    const duplicateDecoratorDiagnostics = checkDuplicateDecorators(document);
+    diagnostics.push(...duplicateDecoratorDiagnostics);
+
+    // Check for empty blocks
+    const emptyBlockDiagnostics = checkEmptyBlocks(document);
+    diagnostics.push(...emptyBlockDiagnostics);
+
+    // Check for invalid number literals
+    const invalidNumberDiagnostics = checkInvalidNumbers(document);
+    diagnostics.push(...invalidNumberDiagnostics);
+
+    // Check for unclosed strings
+    const unclosedStringDiagnostics = checkUnclosedStrings(document);
+    diagnostics.push(...unclosedStringDiagnostics);
+
+    // Check for missing return statements
+    const missingReturnDiagnostics = checkMissingReturn(document);
+    diagnostics.push(...missingReturnDiagnostics);
+
+    // Check for unreachable code
+    const unreachableCodeDiagnostics = checkUnreachableCode(document);
+    diagnostics.push(...unreachableCodeDiagnostics);
+
+    // Check for variable shadowing
+    const shadowingDiagnostics = checkVariableShadowing(document);
+    diagnostics.push(...shadowingDiagnostics);
 
     return diagnostics;
 }

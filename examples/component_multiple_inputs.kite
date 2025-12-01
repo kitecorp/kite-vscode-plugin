@@ -1,7 +1,7 @@
 
 
-import Instance from "component.kite"
 import CommonConfig from "common.kite"
+import Instance from "component.kite"
 component WebServer {
   input string instanceType = "t2.micro"
   input string fromOutput   = "t2.micro"

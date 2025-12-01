@@ -1125,6 +1125,172 @@ Built-in types (`string`, `number`, `boolean`, `any`, `object`) have no type def
 
 ---
 
+## 27. Extended Diagnostics & Validation
+
+**File:** `src/server/handlers/validation/`
+
+A comprehensive set of validation rules that detect common errors and code quality issues.
+
+### Duplicate Parameters
+
+**File:** `duplicate-parameters.ts`
+
+Reports error when a function has duplicate parameter names.
+
+```kite
+fun calculate(number x, string x) {  // Error: Duplicate parameter 'x'
+    return x
+}
+```
+
+### Duplicate Declarations
+
+**File:** `duplicate-declarations.ts`
+
+Reports error when multiple top-level declarations have the same name.
+
+```kite
+schema Config { }
+schema Config { }  // Error: Duplicate declaration 'Config'
+
+fun process() { }
+fun process() { }  // Error: Duplicate declaration 'process'
+```
+
+### Unknown Decorator
+
+**File:** `unknown-decorator.ts`
+
+Reports error for unrecognized decorator names.
+
+```kite
+@invalidDecorator  // Error: Unknown decorator '@invalidDecorator'
+resource Config srv { }
+
+@description("Valid")  // OK - recognized decorator
+resource Config db { }
+```
+
+### Duplicate Decorator
+
+**File:** `duplicate-decorator.ts`
+
+Reports error when the same decorator is applied multiple times to a single declaration.
+
+```kite
+@description("First")
+@description("Second")  // Error: Duplicate decorator '@description'
+schema Config { }
+```
+
+### Empty Block
+
+**File:** `empty-block.ts`
+
+Reports warning for empty schema, component, or function bodies.
+
+```kite
+schema Config { }     // Warning: Empty schema 'Config'
+component Server { }  // Warning: Empty component 'Server'
+fun calculate() { }   // Warning: Empty function 'calculate'
+
+schema Valid {        // OK - has content
+    string name
+}
+```
+
+### Invalid Number
+
+**File:** `invalid-number.ts`
+
+Reports error for malformed number literals.
+
+```kite
+var x = 123abc   // Error: Invalid number literal '123abc'
+var y = 1.2.3    // Error: Invalid number literal '1.2.3'
+var z = 123      // OK
+var w = 3.14     // OK
+```
+
+### Unclosed String
+
+**File:** `unclosed-string.ts`
+
+Reports error for strings without closing quotes.
+
+```kite
+var x = "hello    // Error: Unclosed string literal
+var y = "world"   // OK
+```
+
+### Missing Return
+
+**File:** `missing-return.ts`
+
+Reports error when a function declares a return type but has no return statement.
+
+```kite
+fun calculate(number x) number {  // Error: Function 'calculate' has return type 'number' but no return statement
+    var y = x * 2
+}
+
+fun valid(number x) number {      // OK
+    return x * 2
+}
+
+fun noType() {                    // OK - no return type declared
+    println("hello")
+}
+```
+
+### Unreachable Code
+
+**File:** `unreachable-code.ts`
+
+Reports warning for code after a return statement.
+
+```kite
+fun calculate() number {
+    return 42
+    var x = 10    // Warning: Unreachable code after return statement
+}
+```
+
+### Variable Shadowing
+
+**File:** `variable-shadowing.ts`
+
+Reports warning when an inner variable shadows an outer variable with the same name.
+
+```kite
+var x = 10
+fun calculate() {
+    var x = 20    // Warning: Variable 'x' shadows outer variable
+}
+
+var item = "test"
+for item in items {  // Warning: Variable 'item' shadows outer variable
+    println(item)
+}
+```
+
+### Summary Table
+
+| Validation | Severity | File |
+|------------|----------|------|
+| Duplicate parameters | Error | `duplicate-parameters.ts` |
+| Duplicate declarations | Error | `duplicate-declarations.ts` |
+| Unknown decorator | Error | `unknown-decorator.ts` |
+| Duplicate decorator | Error | `duplicate-decorator.ts` |
+| Empty block | Warning | `empty-block.ts` |
+| Invalid number | Error | `invalid-number.ts` |
+| Unclosed string | Error | `unclosed-string.ts` |
+| Missing return | Error | `missing-return.ts` |
+| Unreachable code | Warning | `unreachable-code.ts` |
+| Variable shadowing | Warning | `variable-shadowing.ts` |
+
+---
+
 ## All Features Complete
 
 All planned language server features have been implemented for the Kite VS Code extension.
