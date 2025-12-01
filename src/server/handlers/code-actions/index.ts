@@ -23,9 +23,11 @@ import {
 } from '../../../parser';
 import { UnusedImportData } from '../validation/unused-imports';
 import { createWildcardConversionAction, findWildcardImportAtPosition, WildcardConversionContext } from './wildcard-conversion';
+import { createSortImportsAction } from './sort-imports';
 
 // Re-export for external use
 export { WildcardConversionContext } from './wildcard-conversion';
+export { createSortImportsAction } from './sort-imports';
 
 /**
  * Handle code action request
@@ -204,6 +206,12 @@ export function handleCodeAction(
         if (removeAllAction) {
             actions.push(removeAllAction);
         }
+    }
+
+    // Add "Sort imports" action (source action, always available)
+    const sortImportsAction = createSortImportsAction(document);
+    if (sortImportsAction) {
+        actions.push(sortImportsAction);
     }
 
     return actions;

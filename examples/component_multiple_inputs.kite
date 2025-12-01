@@ -1,3 +1,5 @@
+
+
 import Instance from "component.kite"
 component WebServer {
   input string instanceType = "t2.micro"

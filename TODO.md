@@ -16,11 +16,8 @@
 - [ ] Undefined symbol errors - error for undeclared references
 
 ### Code Actions / Refactoring
-- [ ] Extract function - code action to extract selection to function
-- [ ] Extract variable - code action to extract expression to variable
 - [ ] Generate missing properties - add required properties to resource
-- [ ] Sort imports - alphabetically sort import statements
+- [x] Sort imports - alphabetically sort import statements
 
 ### Other
-- [ ] More snippets - common code patterns
 - [x] Find Implementations - find resources using a schema

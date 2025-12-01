@@ -149,7 +149,7 @@ connection.onInitialize((params: InitializeParams): InitializeResult => {
             referencesProvider: true,
             hoverProvider: true,
             codeActionProvider: {
-                codeActionKinds: ['quickfix']
+                codeActionKinds: ['quickfix', 'source.organizeImports']
             },
             documentSymbolProvider: true,
             renameProvider: {
