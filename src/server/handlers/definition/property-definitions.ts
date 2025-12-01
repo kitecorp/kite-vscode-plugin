@@ -6,8 +6,7 @@
 import { Location, Range, Position } from 'vscode-languageserver/node';
 import { TextDocument } from 'vscode-languageserver-textdocument';
 import { URI } from 'vscode-uri';
-import { escapeRegex } from '../../utils/rename-utils';
-import { findMatchingBrace } from '../../utils/text-utils';
+import { escapeRegex, findMatchingBrace } from '../../utils/text-utils';
 import {
     parseKite,
     findSchemaPropertyAST,

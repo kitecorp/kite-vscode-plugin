@@ -11,7 +11,7 @@ import {
 } from 'vscode-languageserver/node';
 import { TextDocument } from 'vscode-languageserver-textdocument';
 import { ImportInfo } from '../../types';
-import { escapeRegex } from '../../utils/text-utils';
+import { escapeRegex, wordBoundaryRegex } from '../../utils/text-utils';
 
 /**
  * Data attached to unused import diagnostics for quick fixes
@@ -223,7 +223,7 @@ function checkSymbolUsed(text: string, symbol: string, importStmt: ImportStateme
 
     // Check for word boundary match of the symbol
     // Must be preceded and followed by non-word characters
-    const symbolPattern = new RegExp(`\\b${escapeRegex(symbol)}\\b`);
+    const symbolPattern = wordBoundaryRegex(symbol, '');
 
     return symbolPattern.test(textNoComments);
 }

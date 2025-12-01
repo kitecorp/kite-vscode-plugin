@@ -12,6 +12,10 @@ import {
     findMatchingBrace,
     findMatchingBracket,
     findEnclosingBlock,
+    findBraceEnd,
+    isInComment,
+    escapeRegex,
+    wordBoundaryRegex,
 } from './text-utils';
 
 describe('offsetToPosition', () => {
@@ -353,5 +357,162 @@ resource B b { y = 2 }`;
         const block = findEnclosingBlock(text, 30);
         expect(block?.start).toBe(0);
         expect(block?.end).toBe(39); // position of closing brace
+    });
+});
+
+describe('findBraceEnd', () => {
+    it('finds end of simple brace block', () => {
+        const text = '{ }';
+        expect(findBraceEnd(text, 0)).toBe(3);
+    });
+
+    it('finds end of brace block with content', () => {
+        const text = '{ hello }';
+        expect(findBraceEnd(text, 0)).toBe(9);
+    });
+
+    it('handles nested braces', () => {
+        const text = '{ { inner } }';
+        expect(findBraceEnd(text, 0)).toBe(13);
+    });
+
+    it('handles deeply nested braces', () => {
+        const text = '{ { { deep } } }';
+        expect(findBraceEnd(text, 0)).toBe(16);
+    });
+
+    it('finds inner brace end', () => {
+        const text = '{ { inner } }';
+        expect(findBraceEnd(text, 2)).toBe(11);
+    });
+
+    it('handles function body', () => {
+        const text = 'fun test() { return 1 }';
+        expect(findBraceEnd(text, 11)).toBe(23);
+    });
+
+    it('handles schema body', () => {
+        const text = 'schema Config { string name }';
+        expect(findBraceEnd(text, 14)).toBe(29);
+    });
+
+    it('handles component body', () => {
+        const text = 'component Server { input string host }';
+        expect(findBraceEnd(text, 17)).toBe(38);
+    });
+
+    it('returns position after text when unmatched', () => {
+        const text = '{ unclosed';
+        expect(findBraceEnd(text, 0)).toBe(10);
+    });
+});
+
+describe('isInComment', () => {
+    it('returns false when not in comment', () => {
+        const text = 'var x = 123';
+        expect(isInComment(text, 5)).toBe(false);
+    });
+
+    it('returns true for single-line comment', () => {
+        const text = 'var x = 123 // comment';
+        expect(isInComment(text, 18)).toBe(true);
+    });
+
+    it('returns false before single-line comment', () => {
+        const text = 'var x = 123 // comment';
+        expect(isInComment(text, 5)).toBe(false);
+    });
+
+    it('returns true inside block comment', () => {
+        const text = 'var x /* comment */ = 123';
+        expect(isInComment(text, 10)).toBe(true);
+    });
+
+    it('returns false after block comment', () => {
+        const text = 'var x /* comment */ = 123';
+        expect(isInComment(text, 22)).toBe(false);
+    });
+
+    it('handles multi-line block comments', () => {
+        const text = `var x = 1
+/* this is
+a multi-line
+comment */
+var y = 2`;
+        expect(isInComment(text, 20)).toBe(true);
+        expect(isInComment(text, 50)).toBe(false);
+    });
+
+    it('returns false at start of line with comment later', () => {
+        const text = 'var x = 123 // comment\nvar y = 456';
+        expect(isInComment(text, 27)).toBe(false);
+    });
+
+    it('handles comment at start of line', () => {
+        const text = '// comment\nvar x = 123';
+        expect(isInComment(text, 5)).toBe(true);
+        expect(isInComment(text, 15)).toBe(false);
+    });
+});
+
+describe('escapeRegex', () => {
+    it('escapes special regex characters', () => {
+        expect(escapeRegex('hello.world')).toBe('hello\\.world');
+        expect(escapeRegex('test[0]')).toBe('test\\[0\\]');
+        expect(escapeRegex('a+b*c')).toBe('a\\+b\\*c');
+        expect(escapeRegex('foo(bar)')).toBe('foo\\(bar\\)');
+        expect(escapeRegex('$value')).toBe('\\$value');
+        expect(escapeRegex('^start')).toBe('\\^start');
+        expect(escapeRegex('end$')).toBe('end\\$');
+        expect(escapeRegex('a|b')).toBe('a\\|b');
+        expect(escapeRegex('path\\to')).toBe('path\\\\to');
+    });
+
+    it('leaves normal strings unchanged', () => {
+        expect(escapeRegex('hello')).toBe('hello');
+        expect(escapeRegex('myVariable123')).toBe('myVariable123');
+        expect(escapeRegex('snake_case')).toBe('snake_case');
+    });
+
+    it('handles empty string', () => {
+        expect(escapeRegex('')).toBe('');
+    });
+});
+
+describe('wordBoundaryRegex', () => {
+    it('creates regex matching whole word', () => {
+        const regex = wordBoundaryRegex('test');
+        expect(regex.test('test')).toBe(true);
+        expect(regex.test('testing')).toBe(false);
+        expect(regex.test('atest')).toBe(false);
+    });
+
+    it('uses global flag by default', () => {
+        const regex = wordBoundaryRegex('test');
+        expect(regex.flags).toContain('g');
+    });
+
+    it('allows custom flags', () => {
+        const regex = wordBoundaryRegex('test', 'i');
+        expect(regex.flags).toBe('i');
+        expect(regex.test('TEST')).toBe(true);
+    });
+
+    it('allows empty flags', () => {
+        const regex = wordBoundaryRegex('test', '');
+        expect(regex.flags).toBe('');
+    });
+
+    it('finds all occurrences with global flag', () => {
+        const regex = wordBoundaryRegex('x');
+        const text = 'x + x + x';
+        const matches = text.match(regex);
+        expect(matches?.length).toBe(3);
+    });
+
+    it('escapes special characters in word', () => {
+        const regex = wordBoundaryRegex('test.value');
+        expect(regex.test('test.value')).toBe(true);
+        expect(regex.test('testXvalue')).toBe(false);
     });
 });

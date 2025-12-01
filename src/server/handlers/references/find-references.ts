@@ -6,12 +6,11 @@
 import { Location, Range } from 'vscode-languageserver/node';
 import { URI } from 'vscode-uri';
 import {
-    escapeRegex,
     isInComment,
     findComponentTypeForScope,
     getSchemaContextAtPosition,
 } from '../../utils/rename-utils';
-import { offsetToPosition } from '../../utils/text-utils';
+import { offsetToPosition, wordBoundaryRegex } from '../../utils/text-utils';
 import {
     parseKite,
     findComponentDefByName,
@@ -191,7 +190,7 @@ function findPropertyAccessReferences(
                 const bodyText = fileContent.substring(bodyStart, bodyEnd);
 
                 // Find usages within the component definition
-                const usageRegex = new RegExp(`\\b${escapeRegex(word)}\\b`, 'g');
+                const usageRegex = wordBoundaryRegex(word);
                 let usageMatch;
                 while ((usageMatch = usageRegex.exec(bodyText)) !== null) {
                     const usageOffset = bodyStart + usageMatch.index;
@@ -344,7 +343,7 @@ function findReferencesWithScope(
         : null;
 
     // Search current file
-    const regex = new RegExp(`\\b${escapeRegex(word)}\\b`, 'g');
+    const regex = wordBoundaryRegex(word);
     let match;
     while ((match = regex.exec(currentText)) !== null) {
         if (isInComment(currentText, match.index)) continue;
@@ -381,7 +380,7 @@ function findReferencesWithScope(
             const fileContent = ctx.getFileContent(filePath, currentDocUri);
             if (fileContent) {
                 const fileUri = URI.file(filePath).toString();
-                const fileRegex = new RegExp(`\\b${escapeRegex(word)}\\b`, 'g');
+                const fileRegex = wordBoundaryRegex(word);
                 let fileMatch;
                 while ((fileMatch = fileRegex.exec(fileContent)) !== null) {
                     if (isInComment(fileContent, fileMatch.index)) continue;

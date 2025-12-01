@@ -5,8 +5,7 @@
 import { Location, Range } from 'vscode-languageserver/node';
 import { TextDocument } from 'vscode-languageserver-textdocument';
 import { PropertyAccessContext, PropertyResult } from '../../types';
-import { escapeRegex } from '../../utils/rename-utils';
-import { findMatchingBrace, offsetToPosition } from '../../utils/text-utils';
+import { escapeRegex, findMatchingBrace, offsetToPosition } from '../../utils/text-utils';
 
 // Re-export for backward compatibility
 export { offsetToPosition } from '../../utils/text-utils';

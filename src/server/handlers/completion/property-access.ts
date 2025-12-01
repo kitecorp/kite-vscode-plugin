@@ -8,7 +8,7 @@ import {
     CompletionItemKind,
 } from 'vscode-languageserver/node';
 import { OutputInfo } from '../../types';
-import { escapeRegex } from '../../utils/rename-utils';
+import { escapeRegex } from '../../utils/text-utils';
 import { extractSchemaPropertyTypes, InlayHintContext } from '../inlay-hints';
 import { CompletionContext } from './types';
 import { extractPropertiesFromBody } from './utils';

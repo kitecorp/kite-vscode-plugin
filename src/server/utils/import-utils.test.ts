@@ -3,7 +3,7 @@
  */
 
 import { describe, it, expect } from 'vitest';
-import { extractImports, isSymbolImported } from './import-utils';
+import { extractImports, isSymbolImported, resolveImportPath, resolveImportPathFromUri } from './import-utils';
 
 describe('extractImports', () => {
     describe('wildcard imports', () => {
@@ -236,5 +236,104 @@ describe('isSymbolImported', () => {
             const symbolFilePath = '/project/src/aws/ec2/instances.kite';
             expect(isSymbolImported(imports, 'Instance', symbolFilePath, currentFilePath)).toBe(true);
         });
+    });
+});
+
+describe('resolveImportPath', () => {
+    const currentDir = '/project/src';
+
+    describe('relative paths', () => {
+        it('resolves ./ relative path', () => {
+            const result = resolveImportPath('./utils.kite', currentDir);
+            expect(result).toBe('/project/src/utils.kite');
+        });
+
+        it('resolves ../ parent directory path', () => {
+            const result = resolveImportPath('../common.kite', currentDir);
+            expect(result).toBe('/project/common.kite');
+        });
+
+        it('resolves nested relative path', () => {
+            const result = resolveImportPath('./lib/helpers.kite', currentDir);
+            expect(result).toBe('/project/src/lib/helpers.kite');
+        });
+
+        it('resolves multiple ../ levels', () => {
+            const result = resolveImportPath('../../root.kite', '/project/src/sub');
+            expect(result).toBe('/project/root.kite');
+        });
+    });
+
+    describe('simple filenames', () => {
+        it('resolves simple .kite filename', () => {
+            const result = resolveImportPath('common.kite', currentDir);
+            expect(result).toBe('/project/src/common.kite');
+        });
+
+        it('resolves filename with path ending in .kite', () => {
+            const result = resolveImportPath('lib/utils.kite', currentDir);
+            expect(result).toBe('/project/src/lib/utils.kite');
+        });
+    });
+
+    describe('package-style paths', () => {
+        it('resolves single-segment package path', () => {
+            const result = resolveImportPath('common', currentDir);
+            expect(result).toBe('/project/src/common.kite');
+        });
+
+        it('resolves two-segment package path', () => {
+            const result = resolveImportPath('aws.Database', currentDir);
+            expect(result).toBe('/project/src/aws/Database.kite');
+        });
+
+        it('resolves deep package path', () => {
+            const result = resolveImportPath('aws.ec2.Instance', currentDir);
+            expect(result).toBe('/project/src/aws/ec2/Instance.kite');
+        });
+
+        it('resolves package path with lowercase', () => {
+            const result = resolveImportPath('lib.utils.helpers', currentDir);
+            expect(result).toBe('/project/src/lib/utils/helpers.kite');
+        });
+    });
+
+    describe('edge cases', () => {
+        it('handles empty segments in path', () => {
+            // Edge case: consecutive dots create empty segments, but path.resolve normalizes them
+            const result = resolveImportPath('aws..test', currentDir);
+            expect(result).toBe('/project/src/aws/test.kite');
+        });
+
+        it('handles mixed case paths', () => {
+            const result = resolveImportPath('AWS.DatabaseConfig', currentDir);
+            expect(result).toBe('/project/src/AWS/DatabaseConfig.kite');
+        });
+    });
+});
+
+describe('resolveImportPathFromUri', () => {
+    it('resolves import from file URI', () => {
+        const uri = 'file:///project/src/main.kite';
+        const result = resolveImportPathFromUri('./utils.kite', uri);
+        expect(result).toBe('/project/src/utils.kite');
+    });
+
+    it('resolves parent directory from file URI', () => {
+        const uri = 'file:///project/src/sub/main.kite';
+        const result = resolveImportPathFromUri('../common.kite', uri);
+        expect(result).toBe('/project/src/common.kite');
+    });
+
+    it('resolves package-style path from file URI', () => {
+        const uri = 'file:///project/src/main.kite';
+        const result = resolveImportPathFromUri('aws.Database', uri);
+        expect(result).toBe('/project/src/aws/Database.kite');
+    });
+
+    it('resolves simple filename from file URI', () => {
+        const uri = 'file:///project/src/main.kite';
+        const result = resolveImportPathFromUri('common.kite', uri);
+        expect(result).toBe('/project/src/common.kite');
     });
 });

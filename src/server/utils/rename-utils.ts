@@ -4,7 +4,7 @@
  */
 
 import { KEYWORDS, TYPES } from '../constants';
-import { escapeRegex, isInComment, findBraceEnd } from './text-utils';
+import { escapeRegex, isInComment, findBraceEnd, wordBoundaryRegex } from './text-utils';
 
 // Re-export for backward compatibility
 export { escapeRegex, isInComment } from './text-utils';
@@ -145,7 +145,7 @@ export function getSchemaContextAtPosition(text: string, offset: number): { sche
  */
 export function findWordOccurrences(text: string, word: string): ReferenceLocation[] {
     const locations: ReferenceLocation[] = [];
-    const regex = new RegExp(`\\b${escapeRegex(word)}\\b`, 'g');
+    const regex = wordBoundaryRegex(word);
     let match;
 
     while ((match = regex.exec(text)) !== null) {
@@ -169,7 +169,7 @@ export function findWordOccurrencesInScope(
     scopeEnd: number
 ): ReferenceLocation[] {
     const locations: ReferenceLocation[] = [];
-    const regex = new RegExp(`\\b${escapeRegex(word)}\\b`, 'g');
+    const regex = wordBoundaryRegex(word);
     let match;
 
     while ((match = regex.exec(text)) !== null) {

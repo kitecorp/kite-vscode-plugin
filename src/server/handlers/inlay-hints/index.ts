@@ -12,7 +12,7 @@ import {
 } from 'vscode-languageserver/node';
 import { TextDocument } from 'vscode-languageserver-textdocument';
 import { Declaration, FunctionParameter, ArgRange, BaseContext } from '../../types';
-import { escapeRegex } from '../../utils/rename-utils';
+import { escapeRegex } from '../../utils/text-utils';
 import {
     parseKite,
     findSchemaByName,

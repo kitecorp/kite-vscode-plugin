@@ -4,8 +4,8 @@
 
 import { Location, Range } from 'vscode-languageserver/node';
 import { TextDocument } from 'vscode-languageserver-textdocument';
-import { escapeRegex, isInComment } from '../../utils/rename-utils';
-import { offsetToPosition, findMatchingBrace, findMatchingBracket } from '../../utils/text-utils';
+import { isInComment } from '../../utils/rename-utils';
+import { offsetToPosition, findMatchingBrace, findMatchingBracket, wordBoundaryRegex } from '../../utils/text-utils';
 
 // Re-export for backward compatibility
 export { findMatchingBrace, findMatchingBracket } from '../../utils/text-utils';
@@ -87,7 +87,7 @@ export function findReferencesInScope(
 ): Location[] {
     const locations: Location[] = [];
     const scopeText = text.substring(scopeStart, scopeEnd);
-    const regex = new RegExp(`\\b${escapeRegex(word)}\\b`, 'g');
+    const regex = wordBoundaryRegex(word);
 
     let match;
     while ((match = regex.exec(scopeText)) !== null) {

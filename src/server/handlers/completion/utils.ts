@@ -2,8 +2,7 @@
  * Utility functions for completion handling.
  */
 
-import { escapeRegex } from '../../utils/rename-utils';
-import { findMatchingBrace } from '../../utils/text-utils';
+import { escapeRegex, findMatchingBrace } from '../../utils/text-utils';
 
 /**
  * Check if cursor is after '=' sign (assignment, not comparison)
