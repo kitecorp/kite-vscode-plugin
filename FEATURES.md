@@ -571,9 +571,74 @@ serverEndpoint  (Variable)   constants.kite
 
 ---
 
+## 19. Semantic Tokens (Enhanced Syntax Highlighting)
+
+**Handler:** `connection.onRequest('textDocument/semanticTokens/full')`
+
+Provides enhanced syntax highlighting via the LSP semantic tokens protocol, enabling the editor to distinguish between different uses of identifiers.
+
+### Token Types
+
+| Token Type | Description | Examples |
+|------------|-------------|----------|
+| `class` | Schema and component definitions | `schema Config {}`, `component Server {}` |
+| `variable` | Variable declarations and references | `var x = 1`, `resource Type name {}` |
+| `function` | Function definitions and calls | `fun calc() {}`, `calc()` |
+| `parameter` | Function parameters and inputs | `fun f(number x)`, `input string name` |
+| `property` | Schema properties and outputs | `string host`, `output string endpoint` |
+| `type` | Type annotations and aliases | `string`, `number`, `type Region = ...` |
+| `decorator` | Decorator names | `@description`, `@tags` |
+| `keyword` | Control flow keywords | `if`, `else`, `for`, `while`, `return`, `in` |
+
+### Token Modifiers
+
+| Modifier | Description | Applied To |
+|----------|-------------|------------|
+| `declaration` | New symbol binding | Variable, parameter, property declarations |
+| `definition` | Symbol definition | Schema, component, function, type definitions |
+
+### Supported Constructs
+
+- **Schema definitions**: Name highlighted as class with definition modifier
+- **Schema properties**: Type and property name with declaration modifier
+- **Component definitions**: Name as class/definition, instance name as variable/declaration
+- **Component instances**: Type reference and instance name
+- **Resources**: Type reference and instance name
+- **Functions**: Name with definition modifier, parameters, return type
+- **Variables**: Declarations with modifier, references without
+- **Type aliases**: Name with definition modifier
+- **Decorators**: Name after `@`
+- **Keywords**: `if`, `else`, `for`, `while`, `in`, `return`
+- **References**: Variable and function references in expressions
+
+### Example
+
+```kite
+schema Config {        // Config: class/definition
+    string host        // string: type, host: property/declaration
+}
+
+resource Config srv {  // Config: class, srv: variable/declaration
+    host = myVar       // myVar: variable (reference)
+}
+
+fun calc(number x) {   // calc: function/definition, x: parameter/declaration
+    return x * 2       // return: keyword, x: variable
+}
+```
+
+### Features
+
+- **Declaration vs Reference**: Distinguishes between defining a symbol and using it
+- **Function call detection**: Identifies function calls by following `(`
+- **String filtering**: Ignores identifiers inside string literals
+- **Comment filtering**: Skips content in comments
+- **Keyword exclusion**: Reserved words not highlighted as variables
+
+---
+
 ## Future Features
 
 | Feature | Description | Priority |
 |---------|-------------|----------|
-| Semantic Tokens | Enhanced syntax highlighting via LSP | Medium |
 | Folding Range | Custom folding regions via LSP | Low |

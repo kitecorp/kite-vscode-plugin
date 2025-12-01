@@ -31,6 +31,8 @@ import {
     CodeLensParams,
     SymbolInformation,
     WorkspaceSymbolParams,
+    SemanticTokens,
+    SemanticTokensParams,
 } from 'vscode-languageserver/node';
 
 import { TextDocument } from 'vscode-languageserver-textdocument';
@@ -58,6 +60,7 @@ import { handleDocumentHighlight } from './handlers/document-highlight';
 import { handleSelectionRange } from './handlers/selection-range';
 import { handleCodeLens, CodeLensContext } from './handlers/code-lens';
 import { handleWorkspaceSymbols, WorkspaceSymbolsContext } from './handlers/workspace-symbols';
+import { handleSemanticTokens, semanticTokensLegend } from './handlers/semantic-tokens';
 import { scanDocumentAST } from '../parser';
 
 // Create a connection for the server using Node's IPC
@@ -138,7 +141,11 @@ connection.onInitialize((params: InitializeParams): InitializeResult => {
             codeLensProvider: {
                 resolveProvider: false
             },
-            workspaceSymbolProvider: true
+            workspaceSymbolProvider: true,
+            semanticTokensProvider: {
+                legend: semanticTokensLegend,
+                full: true,
+            }
         }
     };
 });
@@ -385,6 +392,13 @@ connection.onWorkspaceSymbol((params: WorkspaceSymbolParams): SymbolInformation[
         getFileContent,
     };
     return handleWorkspaceSymbols(params.query, ctx);
+});
+
+// Semantic Tokens handler - provides enhanced syntax highlighting
+connection.onRequest('textDocument/semanticTokens/full', (params: SemanticTokensParams): SemanticTokens => {
+    const document = documents.get(params.textDocument.uri);
+    if (!document) return { data: [] };
+    return handleSemanticTokens(document);
 });
 
 // Start the server
