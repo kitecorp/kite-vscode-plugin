@@ -483,4 +483,75 @@ describe('import path navigation', () => {
         expect(result?.range.start.line).toBe(0);
         expect(result?.range.start.character).toBe(0);
     });
+
+    it('should navigate to schema definition when clicking on imported symbol', () => {
+        const content = 'import Config from "common.kite"';
+        // Click on "Config" (position 7-13)
+        const result = findDefinitionWithFiles(content, 0, 9, {
+            'common.kite': 'schema Config {\n    string name\n}'
+        });
+
+        expect(result).not.toBeNull();
+        expect(result?.uri).toContain('common.kite');
+        expect(result?.range.start.line).toBe(0);
+        expect(result?.range.start.character).toBe(7); // "schema Config" - Config starts at 7
+    });
+
+    it('should navigate to component definition when clicking on imported symbol', () => {
+        const content = 'import WebServer from "components.kite"';
+        // Click on "WebServer"
+        const result = findDefinitionWithFiles(content, 0, 10, {
+            'components.kite': 'component WebServer {\n    input string name\n}'
+        });
+
+        expect(result).not.toBeNull();
+        expect(result?.uri).toContain('components.kite');
+        expect(result?.range.start.character).toBe(10); // "component WebServer" - WebServer starts at 10
+    });
+
+    it('should navigate to function definition when clicking on imported symbol', () => {
+        const content = 'import calculateCost from "utils.kite"';
+        // Click on "calculateCost"
+        const result = findDefinitionWithFiles(content, 0, 10, {
+            'utils.kite': 'fun calculateCost(number x) number {\n    return x * 2\n}'
+        });
+
+        expect(result).not.toBeNull();
+        expect(result?.uri).toContain('utils.kite');
+        expect(result?.range.start.character).toBe(4); // "fun calculateCost" - calculateCost starts at 4
+    });
+
+    it('should navigate to first symbol in multi-symbol import', () => {
+        const content = 'import Config, Server from "common.kite"';
+        // Click on "Config"
+        const result = findDefinitionWithFiles(content, 0, 9, {
+            'common.kite': 'schema Config { }\nschema Server { }'
+        });
+
+        expect(result).not.toBeNull();
+        expect(result?.uri).toContain('common.kite');
+        expect(result?.range.start.line).toBe(0);
+    });
+
+    it('should navigate to second symbol in multi-symbol import', () => {
+        const content = 'import Config, Server from "common.kite"';
+        // Click on "Server" (position ~15-21)
+        const result = findDefinitionWithFiles(content, 0, 17, {
+            'common.kite': 'schema Config { }\nschema Server { }'
+        });
+
+        expect(result).not.toBeNull();
+        expect(result?.uri).toContain('common.kite');
+        expect(result?.range.start.line).toBe(1); // Server is on line 1
+    });
+
+    it('should return null for imported symbol not found in file', () => {
+        const content = 'import NonExistent from "common.kite"';
+        // Click on "NonExistent"
+        const result = findDefinitionWithFiles(content, 0, 10, {
+            'common.kite': 'schema Other { }'
+        });
+
+        expect(result).toBeNull();
+    });
 });

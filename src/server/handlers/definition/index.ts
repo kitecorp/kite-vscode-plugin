@@ -45,10 +45,10 @@ export function handleDefinition(
     const text = document.getText();
     const offset = document.offsetAt(params.position);
 
-    // Check if cursor is on an import path string - only offer file navigation
-    const importPathResult = findImportPathDefinition(text, offset, params.textDocument.uri, ctx);
-    if (importPathResult.isImportPath) {
-        return importPathResult.location; // Return file location or null, don't look for symbols
+    // Check if cursor is on an import statement (path or symbol)
+    const importResult = findImportDefinition(text, offset, params.textDocument.uri, ctx);
+    if (importResult.isImport) {
+        return importResult.location; // Return location or null, don't look elsewhere
     }
 
     const word = getWordAtPosition(document, params.position);
@@ -285,52 +285,132 @@ function createLocation(fileContent: string, fileUri: string, nameStart: number,
 }
 
 /**
- * Result of checking for import path at cursor position.
+ * Result of checking for import at cursor position.
  */
-interface ImportPathResult {
-    isImportPath: boolean;
+interface ImportResult {
+    isImport: boolean;
     location: Location | null;
 }
 
 /**
- * Check if cursor is inside an import path string and return location to that file.
- * Returns { isImportPath: true } if cursor is in import path (even if file not found).
+ * Check if cursor is on an import statement (path string or symbol name).
+ * Returns { isImport: true } if cursor is in import (even if target not found).
  */
-function findImportPathDefinition(
+function findImportDefinition(
     text: string,
     offset: number,
     currentDocUri: string,
     ctx: DefinitionContext
-): ImportPathResult {
-    // Find all import statements with their path string positions
-    // Match: import ... from "path" or import ... from 'path'
-    const importRegex = /\bimport\s+(?:\*|[\w\s,]+)\s+from\s+(["'])([^"']+)\1/g;
+): ImportResult {
+    // Match: import <symbols> from "path" or import * from "path"
+    const importRegex = /\bimport\s+([\w\s,*]+)\s+from\s+(["'])([^"']+)\2/g;
 
     let match;
     while ((match = importRegex.exec(text)) !== null) {
-        // match[1] is the quote character, match[2] is the path
-        const pathStart = match.index + match[0].indexOf(match[1]) + 1; // +1 to skip the quote
-        const pathEnd = pathStart + match[2].length;
+        const importStart = match.index;
+        const importEnd = match.index + match[0].length;
 
-        // Check if cursor is within the path string
+        // Check if cursor is within this import statement
+        if (offset < importStart || offset > importEnd) {
+            continue;
+        }
+
+        const symbolsPart = match[1].trim();
+        const quoteChar = match[2];
+        const importPath = match[3];
+
+        // Find path string position
+        const pathStart = match.index + match[0].lastIndexOf(quoteChar, match[0].lastIndexOf(quoteChar) - 1) + 1;
+        const pathEnd = pathStart + importPath.length;
+
+        // Check if cursor is on the path string
         if (offset >= pathStart && offset <= pathEnd) {
-            const importPath = match[2];
             const resolvedFile = resolveImportPath(importPath, currentDocUri, ctx);
-
             if (resolvedFile) {
                 const fileUri = URI.file(resolvedFile).toString();
-                // Navigate to start of file
                 return {
-                    isImportPath: true,
+                    isImport: true,
                     location: Location.create(fileUri, Range.create(Position.create(0, 0), Position.create(0, 0)))
                 };
             }
-            // Cursor is in import path but file doesn't exist - don't look for symbols
-            return { isImportPath: true, location: null };
+            return { isImport: true, location: null };
         }
+
+        // Check if cursor is on a symbol name (not wildcard)
+        if (symbolsPart !== '*') {
+            const symbols = symbolsPart.split(',').map(s => s.trim()).filter(s => s);
+            const symbolsStartOffset = match.index + 'import '.length;
+
+            let currentOffset = symbolsStartOffset;
+            for (const symbol of symbols) {
+                // Find this symbol's position in the import statement
+                const symbolIndex = text.indexOf(symbol, currentOffset);
+                if (symbolIndex !== -1 && symbolIndex < pathStart) {
+                    const symbolEnd = symbolIndex + symbol.length;
+
+                    // Check if cursor is on this symbol
+                    if (offset >= symbolIndex && offset <= symbolEnd) {
+                        // Find the symbol definition in the imported file
+                        const resolvedFile = resolveImportPath(importPath, currentDocUri, ctx);
+                        if (resolvedFile) {
+                            const fileContent = ctx.getFileContent(resolvedFile, currentDocUri);
+                            if (fileContent) {
+                                const fileUri = URI.file(resolvedFile).toString();
+                                const symbolLocation = findSymbolDefinitionInFile(fileContent, symbol, fileUri);
+                                return { isImport: true, location: symbolLocation };
+                            }
+                        }
+                        return { isImport: true, location: null };
+                    }
+                    currentOffset = symbolEnd;
+                }
+            }
+        }
+
+        // Cursor is somewhere else in import statement (on 'import', 'from', etc.)
+        return { isImport: true, location: null };
     }
 
-    return { isImportPath: false, location: null };
+    return { isImport: false, location: null };
+}
+
+/**
+ * Find a symbol definition (schema, component, function, type) in file content.
+ */
+function findSymbolDefinitionInFile(fileContent: string, symbol: string, fileUri: string): Location | null {
+    // Check for schema definition
+    const schemaRegex = new RegExp(`\\bschema\\s+(${escapeRegex(symbol)})\\s*\\{`);
+    const schemaMatch = schemaRegex.exec(fileContent);
+    if (schemaMatch) {
+        const nameStart = schemaMatch.index + schemaMatch[0].indexOf(symbol);
+        return createLocation(fileContent, fileUri, nameStart, symbol.length);
+    }
+
+    // Check for component definition
+    const componentRegex = new RegExp(`\\bcomponent\\s+(${escapeRegex(symbol)})\\s*\\{`);
+    const componentMatch = componentRegex.exec(fileContent);
+    if (componentMatch) {
+        const nameStart = componentMatch.index + componentMatch[0].indexOf(symbol);
+        return createLocation(fileContent, fileUri, nameStart, symbol.length);
+    }
+
+    // Check for function definition
+    const funcRegex = new RegExp(`\\bfun\\s+(${escapeRegex(symbol)})\\s*\\(`);
+    const funcMatch = funcRegex.exec(fileContent);
+    if (funcMatch) {
+        const nameStart = funcMatch.index + funcMatch[0].indexOf(symbol);
+        return createLocation(fileContent, fileUri, nameStart, symbol.length);
+    }
+
+    // Check for type definition
+    const typeRegex = new RegExp(`\\btype\\s+(${escapeRegex(symbol)})\\s*=`);
+    const typeMatch = typeRegex.exec(fileContent);
+    if (typeMatch) {
+        const nameStart = typeMatch.index + typeMatch[0].indexOf(symbol);
+        return createLocation(fileContent, fileUri, nameStart, symbol.length);
+    }
+
+    return null;
 }
 
 /**
