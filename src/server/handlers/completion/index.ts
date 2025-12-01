@@ -24,6 +24,7 @@ import * as path from 'path';
 import { BlockContext } from '../../types';
 import { getCursorContext, isInDecoratorContext, getDotAccessTarget } from '../../../parser';
 import { getSnippetCompletions } from './snippets';
+import { resolveImportPath } from '../../utils/import-utils';
 
 // Import from modular files
 import { CompletionContext } from './types';
@@ -231,17 +232,7 @@ function getSymbolsFromImportedFile(
     // Resolve import path
     const currentFilePath = URI.parse(currentDocUri).fsPath;
     const currentDir = path.dirname(currentFilePath);
-
-    let resolvedPath: string;
-    if (importPath.startsWith('./') || importPath.startsWith('../')) {
-        resolvedPath = path.resolve(currentDir, importPath);
-    } else if (importPath.endsWith('.kite')) {
-        resolvedPath = path.resolve(currentDir, importPath);
-    } else {
-        // Package-style path
-        const packagePath = importPath.replace(/\./g, '/') + '.kite';
-        resolvedPath = path.resolve(currentDir, packagePath);
-    }
+    const resolvedPath = resolveImportPath(importPath, currentDir);
 
     // Get file content
     const fileContent = ctx.getFileContent(resolvedPath, currentDocUri);

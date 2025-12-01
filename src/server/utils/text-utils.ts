@@ -197,3 +197,70 @@ export function findEnclosingBlock(text: string, offset: number): BlockContext |
 
     return enclosing;
 }
+
+/**
+ * Escape special regex characters in a string.
+ * Use this when building regex patterns from user input or variable names.
+ */
+export function escapeRegex(str: string): string {
+    return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+/**
+ * Check if a position is inside a comment.
+ * Handles both single-line (//) and multi-line block comments.
+ *
+ * @param text - The full text content
+ * @param pos - The position (offset) to check
+ * @returns true if the position is inside a comment
+ */
+export function isInComment(text: string, pos: number): boolean {
+    // Check for single-line comment
+    const lineStart = text.lastIndexOf('\n', pos - 1) + 1;
+    const lineBeforePos = text.substring(lineStart, pos);
+    if (lineBeforePos.includes('//')) {
+        return true;
+    }
+
+    // Check for multi-line comment
+    const textBefore = text.substring(0, pos);
+    const lastBlockCommentStart = textBefore.lastIndexOf('/*');
+    if (lastBlockCommentStart !== -1) {
+        const lastBlockCommentEnd = textBefore.lastIndexOf('*/');
+        if (lastBlockCommentEnd < lastBlockCommentStart) {
+            return true; // Inside block comment
+        }
+    }
+    return false;
+}
+
+/**
+ * Create a regex that matches a word with word boundaries.
+ * This is a common pattern for finding identifier references.
+ *
+ * @param word - The word to match
+ * @param flags - Regex flags (default: 'g')
+ */
+export function wordBoundaryRegex(word: string, flags = 'g'): RegExp {
+    return new RegExp(`\\b${escapeRegex(word)}\\b`, flags);
+}
+
+/**
+ * Find the end position of a brace block (simple depth counting).
+ * This is a lighter alternative to findMatchingBrace that doesn't handle string literals.
+ * Use this when you know the context doesn't contain complex strings.
+ *
+ * @param text - The text to search in
+ * @param braceStart - Position of the opening brace
+ * @returns Position after the matching closing brace
+ */
+export function findBraceEnd(text: string, braceStart: number): number {
+    let braceDepth = 1;
+    let pos = braceStart + 1;
+    while (pos < text.length && braceDepth > 0) {
+        if (text[pos] === '{') braceDepth++;
+        else if (text[pos] === '}') braceDepth--;
+        pos++;
+    }
+    return pos;
+}

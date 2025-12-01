@@ -15,6 +15,8 @@ import { Declaration, ImportSuggestion, ImportInfo, BaseContext } from '../../ty
 import { DECORATORS } from '../../constants';
 import { checkTypeMismatches } from './type-checking';
 import { checkUnusedImports } from './unused-imports';
+import { isInComment } from '../../utils/text-utils';
+import { findSymbolInWorkspace } from '../../utils/workspace-utils';
 
 /**
  * Context containing dependencies needed for validation
@@ -220,33 +222,12 @@ export function validateDocument(document: TextDocument, ctx: ValidationContext)
     ctx.clearDiagnosticData(document.uri);
     const docDiagnosticData = ctx.getDiagnosticData(document.uri);
 
-    // Helper to check if position is inside a comment
-    function isInsideComment(pos: number): boolean {
-        // Check for single-line comment
-        const lineStart = text.lastIndexOf('\n', pos - 1) + 1;
-        const lineBeforePos = text.substring(lineStart, pos);
-        if (lineBeforePos.includes('//')) {
-            return true;
-        }
-
-        // Check for multi-line comment
-        const textBefore = text.substring(0, pos);
-        const lastBlockCommentStart = textBefore.lastIndexOf('/*');
-        if (lastBlockCommentStart !== -1) {
-            const lastBlockCommentEnd = textBefore.lastIndexOf('*/');
-            if (lastBlockCommentEnd < lastBlockCommentStart) {
-                return true; // Inside block comment
-            }
-        }
-        return false;
-    }
-
     // Check resource declarations: resource SchemaName instanceName {
     const resourceRegex = /\bresource\s+([\w.]+)\s+(\w+)\s*\{/g;
     let resourceMatch;
     while ((resourceMatch = resourceRegex.exec(text)) !== null) {
         // Skip if inside a comment
-        if (isInsideComment(resourceMatch.index)) continue;
+        if (isInComment(text, resourceMatch.index)) continue;
 
         const schemaName = resourceMatch[1];
         // Find the actual position of the schema name in the match
@@ -259,20 +240,12 @@ export function validateDocument(document: TextDocument, ctx: ValidationContext)
         const schemaInCurrentFile = ctx.findSchemaDefinition(text, schemaName, document.uri);
         if (schemaInCurrentFile) continue;
 
-        // Check if schema is imported
-        let foundInFile: string | null = null;
-        const kiteFiles = ctx.findKiteFilesInWorkspace();
-        for (const filePath of kiteFiles) {
-            if (filePath === currentFilePath) continue;
-            const fileContent = ctx.getFileContent(filePath, document.uri);
-            if (fileContent) {
-                const loc = ctx.findSchemaDefinition(fileContent, schemaName, filePath);
-                if (loc) {
-                    foundInFile = filePath;
-                    break;
-                }
-            }
-        }
+        // Check if schema is in other files
+        const schemaSearch = findSymbolInWorkspace(
+            ctx, currentFilePath, document.uri,
+            (content, path) => ctx.findSchemaDefinition(content, schemaName, path)
+        );
+        const foundInFile = schemaSearch.filePath;
 
         const startPos = document.positionAt(schemaStart);
         const endPos = document.positionAt(schemaEnd);
@@ -317,7 +290,7 @@ export function validateDocument(document: TextDocument, ctx: ValidationContext)
     let componentMatch;
     while ((componentMatch = componentInstRegex.exec(text)) !== null) {
         // Skip if inside a comment
-        if (isInsideComment(componentMatch.index)) continue;
+        if (isInComment(text, componentMatch.index)) continue;
 
         const componentType = componentMatch[1];
         // Find the actual position of the type name in the match
@@ -331,19 +304,11 @@ export function validateDocument(document: TextDocument, ctx: ValidationContext)
         if (componentInCurrentFile) continue;
 
         // Check if component is in other files
-        let foundInFile: string | null = null;
-        const kiteFiles = ctx.findKiteFilesInWorkspace();
-        for (const filePath of kiteFiles) {
-            if (filePath === currentFilePath) continue;
-            const fileContent = ctx.getFileContent(filePath, document.uri);
-            if (fileContent) {
-                const loc = ctx.findComponentDefinition(fileContent, componentType, filePath);
-                if (loc) {
-                    foundInFile = filePath;
-                    break;
-                }
-            }
-        }
+        const componentSearch = findSymbolInWorkspace(
+            ctx, currentFilePath, document.uri,
+            (content, path) => ctx.findComponentDefinition(content, componentType, path)
+        );
+        const foundInFile = componentSearch.filePath;
 
         const startPos = document.positionAt(typeStart);
         const endPos = document.positionAt(typeEnd);
@@ -395,7 +360,7 @@ export function validateDocument(document: TextDocument, ctx: ValidationContext)
 
     while ((funcMatch = functionCallRegex.exec(text)) !== null) {
         // Skip if inside a comment
-        if (isInsideComment(funcMatch.index)) continue;
+        if (isInComment(text, funcMatch.index)) continue;
 
         const funcName = funcMatch[1];
 
@@ -424,19 +389,11 @@ export function validateDocument(document: TextDocument, ctx: ValidationContext)
         if (funcInCurrentFile) continue;
 
         // Check if function is in other files
-        let foundInFile: string | null = null;
-        const kiteFiles = ctx.findKiteFilesInWorkspace();
-        for (const filePath of kiteFiles) {
-            if (filePath === currentFilePath) continue;
-            const fileContent = ctx.getFileContent(filePath, document.uri);
-            if (fileContent) {
-                const loc = ctx.findFunctionDefinition(fileContent, funcName, filePath);
-                if (loc) {
-                    foundInFile = filePath;
-                    break;
-                }
-            }
-        }
+        const funcSearch = findSymbolInWorkspace(
+            ctx, currentFilePath, document.uri,
+            (content, path) => ctx.findFunctionDefinition(content, funcName, path)
+        );
+        const foundInFile = funcSearch.filePath;
 
         const startPos = document.positionAt(funcStart);
         const endPos = document.positionAt(funcEnd);

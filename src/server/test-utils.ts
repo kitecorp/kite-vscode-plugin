@@ -153,13 +153,24 @@ export interface TestContextOptions {
 }
 
 /**
- * Create a CompletionContext for testing completion handler.
+ * Base context with common methods shared by all handler contexts.
+ * Use this to avoid duplicating file lookup and workspace methods.
  */
-export function createCompletionContext(options: TestContextOptions = {}): CompletionContext {
-    const { files = {}, declarations = [] } = options;
+interface BaseTestContext {
+    findKiteFilesInWorkspace: () => string[];
+    getFileContent: (filePath: string, currentDocUri?: string) => string | null;
+}
+
+/**
+ * Create a base test context with common methods.
+ * All handler context factories use this to get findKiteFilesInWorkspace and getFileContent.
+ */
+function createBaseTestContext(options: TestContextOptions): BaseTestContext {
+    const { files = {} } = options;
+
     return {
-        getDeclarations: () => declarations,
-        findKiteFilesInWorkspace: () => Object.keys(files).map(f => f.startsWith('/') ? f : `/project/${f}`),
+        findKiteFilesInWorkspace: () =>
+            Object.keys(files).map(f => f.startsWith('/') ? f : `/project/${f}`),
         getFileContent: (filePath: string) => {
             for (const [pattern, content] of Object.entries(files)) {
                 if (filePath.includes(pattern) || filePath.endsWith(pattern)) {
@@ -168,6 +179,19 @@ export function createCompletionContext(options: TestContextOptions = {}): Compl
             }
             return options.currentContent ?? null;
         },
+    };
+}
+
+/**
+ * Create a CompletionContext for testing completion handler.
+ */
+export function createCompletionContext(options: TestContextOptions = {}): CompletionContext {
+    const base = createBaseTestContext(options);
+    const { declarations = [] } = options;
+
+    return {
+        ...base,
+        getDeclarations: () => declarations,
         findEnclosingBlock: (text: string, offset: number) => findEnclosingBlock(text, offset),
     };
 }
@@ -176,8 +200,11 @@ export function createCompletionContext(options: TestContextOptions = {}): Compl
  * Create a DefinitionContext for testing definition handler.
  */
 export function createDefinitionContext(options: TestContextOptions = {}): DefinitionContext {
-    const { files = {}, declarations = [] } = options;
+    const base = createBaseTestContext(options);
+    const { declarations = [] } = options;
+
     return {
+        ...base,
         getDeclarations: (uri: string) => {
             // If we have a document for this URI, scan it
             if (options.documents?.[uri]) {
@@ -188,15 +215,6 @@ export function createDefinitionContext(options: TestContextOptions = {}): Defin
                 return declarations;
             }
             return undefined;
-        },
-        findKiteFilesInWorkspace: () => Object.keys(files).map(f => f.startsWith('/') ? f : `/project/${f}`),
-        getFileContent: (filePath: string) => {
-            for (const [pattern, content] of Object.entries(files)) {
-                if (filePath.includes(pattern) || filePath.endsWith(pattern)) {
-                    return content;
-                }
-            }
-            return options.currentContent ?? null;
         },
         extractImports: (text: string) => extractImports(text),
         isSymbolImported: (imports: ImportInfo[], symbolName: string, filePath: string, currentFilePath: string) =>
@@ -209,11 +227,14 @@ export function createDefinitionContext(options: TestContextOptions = {}): Defin
  * Create a ReferencesContext for testing references handler.
  */
 export function createReferencesContext(options: TestContextOptions = {}): ReferencesContext {
+    const base = createBaseTestContext(options);
     const { files = {}, declarations = [], documents = {} } = options;
+
     return {
-        getDeclarations: () => declarations,
-        findKiteFilesInWorkspace: () => Object.keys(files).map(f => f.startsWith('/') ? f : `/project/${f}`),
+        ...base,
+        // References uses exact path lookup, not pattern matching
         getFileContent: (path: string) => files[path] ?? null,
+        getDeclarations: () => declarations,
         getDocument: (uri: string) => documents[uri],
     };
 }
@@ -224,20 +245,13 @@ export function createReferencesContext(options: TestContextOptions = {}): Refer
  * For more sophisticated tests, create context inline with custom implementations.
  */
 export function createValidationContext(options: TestContextOptions = {}): ValidationContext {
-    const { files = {}, declarations = [] } = options;
+    const base = createBaseTestContext(options);
+    const { declarations = [] } = options;
     const diagnosticData = new Map<string, Map<string, ImportSuggestion>>();
 
     return {
+        ...base,
         getDeclarations: () => declarations,
-        findKiteFilesInWorkspace: () => Object.keys(files).map(f => f.startsWith('/') ? f : `/project/${f}`),
-        getFileContent: (filePath: string) => {
-            for (const [pattern, content] of Object.entries(files)) {
-                if (filePath.includes(pattern) || filePath.endsWith(pattern)) {
-                    return content;
-                }
-            }
-            return null;
-        },
         extractImports: (text: string) => extractImports(text),
         isSymbolImported: (imports: ImportInfo[], symbolName: string, filePath: string, currentFilePath: string) =>
             isSymbolImported(imports, symbolName, filePath, currentFilePath),
@@ -260,16 +274,9 @@ export function createValidationContext(options: TestContextOptions = {}): Valid
  * Create an InlayHintContext for testing inlay hints handler.
  */
 export function createInlayHintContext(options: TestContextOptions = {}): InlayHintContext {
-    const { files = {} } = options;
+    const base = createBaseTestContext(options);
+
     return {
-        findKiteFilesInWorkspace: () => Object.keys(files).map(f => f.startsWith('/') ? f : `/project/${f}`),
-        getFileContent: (filePath: string) => {
-            for (const [pattern, content] of Object.entries(files)) {
-                if (filePath.includes(pattern) || filePath.endsWith(pattern)) {
-                    return content;
-                }
-            }
-            return null;
-        },
+        ...base,
     };
 }

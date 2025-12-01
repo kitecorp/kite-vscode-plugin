@@ -11,6 +11,7 @@ import {
 } from 'vscode-languageserver/node';
 import { TextDocument } from 'vscode-languageserver-textdocument';
 import { ImportInfo } from '../../types';
+import { escapeRegex } from '../../utils/text-utils';
 
 /**
  * Data attached to unused import diagnostics for quick fixes
@@ -294,11 +295,4 @@ function removeComments(text: string): string {
     result = result.replace(/\/\*[\s\S]*?\*\//g, '');
 
     return result;
-}
-
-/**
- * Escape special regex characters
- */
-function escapeRegex(str: string): string {
-    return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }

@@ -20,8 +20,9 @@ import {
 import { TextDocument } from 'vscode-languageserver-textdocument';
 import { URI } from 'vscode-uri';
 import * as path from 'path';
-import { escapeRegex } from '../../utils/rename-utils';
+import { escapeRegex } from '../../utils/text-utils';
 import { getWordAtPosition } from '../../utils/text-utils';
+import { resolveImportPath } from '../../utils/import-utils';
 
 // Import from modular files
 import { DefinitionContext } from './types';
@@ -325,7 +326,7 @@ function findImportDefinition(
 
         // Check if cursor is on the path string
         if (offset >= pathStart && offset <= pathEnd) {
-            const resolvedFile = resolveImportPath(importPath, currentDocUri, ctx);
+            const resolvedFile = resolveAndVerifyImportPath(importPath, currentDocUri, ctx);
             if (resolvedFile) {
                 const fileUri = URI.file(resolvedFile).toString();
                 return {
@@ -351,7 +352,7 @@ function findImportDefinition(
                     // Check if cursor is on this symbol
                     if (offset >= symbolIndex && offset <= symbolEnd) {
                         // Find the symbol definition in the imported file
-                        const resolvedFile = resolveImportPath(importPath, currentDocUri, ctx);
+                        const resolvedFile = resolveAndVerifyImportPath(importPath, currentDocUri, ctx);
                         if (resolvedFile) {
                             const fileContent = ctx.getFileContent(resolvedFile, currentDocUri);
                             if (fileContent) {
@@ -414,29 +415,16 @@ function findSymbolDefinitionInFile(fileContent: string, symbol: string, fileUri
 }
 
 /**
- * Resolve an import path to an absolute file path.
+ * Resolve an import path and verify the file exists.
  */
-function resolveImportPath(
+function resolveAndVerifyImportPath(
     importPath: string,
     currentDocUri: string,
     ctx: DefinitionContext
 ): string | null {
     const currentFilePath = URI.parse(currentDocUri).fsPath;
     const currentDir = path.dirname(currentFilePath);
-
-    let resolvedPath: string;
-
-    if (importPath.startsWith('./') || importPath.startsWith('../')) {
-        // Relative path
-        resolvedPath = path.resolve(currentDir, importPath);
-    } else if (importPath.endsWith('.kite')) {
-        // Simple filename relative to current directory
-        resolvedPath = path.resolve(currentDir, importPath);
-    } else {
-        // Package-style path like "aws.DatabaseConfig" -> aws/DatabaseConfig.kite
-        const packagePath = importPath.replace(/\./g, '/') + '.kite';
-        resolvedPath = path.resolve(currentDir, packagePath);
-    }
+    const resolvedPath = resolveImportPath(importPath, currentDir);
 
     // Check if file exists via context
     const fileContent = ctx.getFileContent(resolvedPath, currentDocUri);

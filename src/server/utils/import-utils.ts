@@ -4,7 +4,45 @@
  */
 
 import * as path from 'path';
+import { URI } from 'vscode-uri';
 import { ImportInfo } from '../types';
+
+/**
+ * Resolve an import path to an absolute file path.
+ * Handles relative paths (./foo, ../bar), simple filenames (foo.kite),
+ * and package-style paths (aws.DatabaseConfig -> aws/DatabaseConfig.kite).
+ *
+ * @param importPath - The import path from the import statement
+ * @param currentDir - Directory of the current file
+ * @returns Resolved absolute file path
+ */
+export function resolveImportPath(importPath: string, currentDir: string): string {
+    if (importPath.startsWith('./') || importPath.startsWith('../')) {
+        // Relative path
+        return path.resolve(currentDir, importPath);
+    } else if (importPath.endsWith('.kite')) {
+        // Simple filename relative to current directory
+        return path.resolve(currentDir, importPath);
+    } else {
+        // Package-style path like "aws.DatabaseConfig" -> aws/DatabaseConfig.kite
+        const packagePath = importPath.replace(/\./g, '/') + '.kite';
+        return path.resolve(currentDir, packagePath);
+    }
+}
+
+/**
+ * Resolve an import path from a document URI.
+ * Convenience wrapper that extracts the directory from a URI.
+ *
+ * @param importPath - The import path from the import statement
+ * @param currentDocUri - URI of the current document
+ * @returns Resolved absolute file path
+ */
+export function resolveImportPathFromUri(importPath: string, currentDocUri: string): string {
+    const currentFilePath = URI.parse(currentDocUri).fsPath;
+    const currentDir = path.dirname(currentFilePath);
+    return resolveImportPath(importPath, currentDir);
+}
 
 /**
  * Extract all import statements from text.
@@ -49,19 +87,7 @@ export function isSymbolImported(
     const currentDir = path.dirname(currentFilePath);
 
     for (const importInfo of imports) {
-        // Handle relative imports like "common.kite" or "./common.kite"
-        let resolvedPath: string;
-
-        if (importInfo.path.startsWith('./') || importInfo.path.startsWith('../')) {
-            resolvedPath = path.resolve(currentDir, importInfo.path);
-        } else if (importInfo.path.endsWith('.kite')) {
-            // Relative to current directory
-            resolvedPath = path.resolve(currentDir, importInfo.path);
-        } else {
-            // Package-style path like "aws.DatabaseConfig" -> aws/DatabaseConfig.kite
-            const packagePath = importInfo.path.replace(/\./g, '/') + '.kite';
-            resolvedPath = path.resolve(currentDir, packagePath);
-        }
+        const resolvedPath = resolveImportPath(importInfo.path, currentDir);
 
         // Normalize paths for comparison
         if (path.normalize(resolvedPath) === path.normalize(filePath)) {

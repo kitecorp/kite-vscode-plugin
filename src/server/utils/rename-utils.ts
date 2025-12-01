@@ -4,6 +4,10 @@
  */
 
 import { KEYWORDS, TYPES } from '../constants';
+import { escapeRegex, isInComment, findBraceEnd } from './text-utils';
+
+// Re-export for backward compatibility
+export { escapeRegex, isInComment } from './text-utils';
 
 export interface ScopeBlock {
     start: number;
@@ -18,30 +22,6 @@ export interface ReferenceLocation {
 }
 
 /**
- * Escape special regex characters in a string
- */
-export function escapeRegex(str: string): string {
-    return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-}
-
-/**
- * Check if a position is inside a comment
- */
-export function isInComment(text: string, pos: number): boolean {
-    const lineStart = text.lastIndexOf('\n', pos - 1) + 1;
-    const lineBeforePos = text.substring(lineStart, pos);
-    if (lineBeforePos.includes('//')) return true;
-
-    const textBefore = text.substring(0, pos);
-    const lastBlockStart = textBefore.lastIndexOf('/*');
-    if (lastBlockStart !== -1) {
-        const lastBlockEnd = textBefore.lastIndexOf('*/');
-        if (lastBlockEnd < lastBlockStart) return true;
-    }
-    return false;
-}
-
-/**
  * Find all scope blocks (functions, component definitions, schemas) in text
  */
 export function findScopeBlocks(text: string): ScopeBlock[] {
@@ -52,14 +32,8 @@ export function findScopeBlocks(text: string): ScopeBlock[] {
     let funcMatch;
     while ((funcMatch = funcScopeRegex.exec(text)) !== null) {
         const braceStart = funcMatch.index + funcMatch[0].length - 1;
-        let braceDepth = 1;
-        let pos = braceStart + 1;
-        while (pos < text.length && braceDepth > 0) {
-            if (text[pos] === '{') braceDepth++;
-            else if (text[pos] === '}') braceDepth--;
-            pos++;
-        }
-        scopeBlocks.push({ start: braceStart, end: pos, type: 'function' });
+        const braceEnd = findBraceEnd(text, braceStart);
+        scopeBlocks.push({ start: braceStart, end: braceEnd, type: 'function' });
     }
 
     // Find component definition scopes: component TypeName { (without instance name)
@@ -73,14 +47,8 @@ export function findScopeBlocks(text: string): ScopeBlock[] {
         // Instantiation: component TypeName instanceName { -> two words before {
         if (parts.length === 2 && parts[1] === '{') {
             const braceStart = compMatch.index + compMatch[0].length - 1;
-            let braceDepth = 1;
-            let pos = braceStart + 1;
-            while (pos < text.length && braceDepth > 0) {
-                if (text[pos] === '{') braceDepth++;
-                else if (text[pos] === '}') braceDepth--;
-                pos++;
-            }
-            scopeBlocks.push({ start: braceStart, end: pos, type: 'component-def' });
+            const braceEnd = findBraceEnd(text, braceStart);
+            scopeBlocks.push({ start: braceStart, end: braceEnd, type: 'component-def' });
         }
     }
 
@@ -89,14 +57,8 @@ export function findScopeBlocks(text: string): ScopeBlock[] {
     let schemaMatch;
     while ((schemaMatch = schemaRegex.exec(text)) !== null) {
         const braceStart = schemaMatch.index + schemaMatch[0].length - 1;
-        let braceDepth = 1;
-        let pos = braceStart + 1;
-        while (pos < text.length && braceDepth > 0) {
-            if (text[pos] === '{') braceDepth++;
-            else if (text[pos] === '}') braceDepth--;
-            pos++;
-        }
-        scopeBlocks.push({ start: braceStart, end: pos, type: 'schema' });
+        const braceEnd = findBraceEnd(text, braceStart);
+        scopeBlocks.push({ start: braceStart, end: braceEnd, type: 'schema' });
     }
 
     return scopeBlocks;
