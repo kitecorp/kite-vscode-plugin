@@ -21,6 +21,7 @@ import { checkMissingProperties } from './missing-properties';
 import { checkReservedNames } from './reserved-names';
 import { checkDuplicateProperties } from './duplicate-properties';
 import { checkDecoratorTargets } from './decorator-targets';
+import { checkCircularImports } from './circular-imports';
 import { isInComment } from '../../utils/text-utils';
 import { findSymbolInWorkspace } from '../../utils/workspace-utils';
 
@@ -571,6 +572,10 @@ export function validateDocument(document: TextDocument, ctx: ValidationContext)
     // Check for decorator target mismatches
     const decoratorTargetDiagnostics = checkDecoratorTargets(document);
     diagnostics.push(...decoratorTargetDiagnostics);
+
+    // Check for circular imports
+    const circularImportDiagnostics = checkCircularImports(document, ctx);
+    diagnostics.push(...circularImportDiagnostics);
 
     return diagnostics;
 }

@@ -25,6 +25,7 @@ import { UnusedImportData } from '../validation/unused-imports';
 import { createWildcardConversionAction, findWildcardImportAtPosition, WildcardConversionContext } from './wildcard-conversion';
 import { createSortImportsAction } from './sort-imports';
 import { createGenerateMissingPropertiesAction, isMissingPropertyData } from './generate-properties';
+import { createRemoveUnusedVariableAction, isUnusedVariableDiagnostic } from './remove-unused-variable';
 
 // Re-export for external use
 export { WildcardConversionContext } from './wildcard-conversion';
@@ -224,6 +225,16 @@ export function handleCodeAction(
         const generateAction = createGenerateMissingPropertiesAction(document, missingPropertyDiagnostics);
         if (generateAction) {
             actions.push(generateAction);
+        }
+    }
+
+    // Add "Remove unused variable" actions for unused variable diagnostics
+    for (const diagnostic of params.context.diagnostics) {
+        if (diagnostic.source === 'kite' && isUnusedVariableDiagnostic(diagnostic)) {
+            const removeAction = createRemoveUnusedVariableAction(document, diagnostic);
+            if (removeAction) {
+                actions.push(removeAction);
+            }
         }
     }
 
