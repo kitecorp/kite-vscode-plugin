@@ -28,6 +28,8 @@
 - [x] Import path completions - suggest `.kite` files inside quotes
 - [x] Go to definition for import symbols - click symbol in import to jump to source
 - [x] Organize imports - merge duplicates, sort alphabetically (`Shift+Alt+O`)
+- [x] Add all missing imports - bulk import action after paste
+- [x] Auto-import on paste - automatically adds missing imports when pasting code
 
 ## Pending Features
 

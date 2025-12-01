@@ -1,6 +1,7 @@
 
 
 import Instance from "component.kite"
+import CommonConfig from "common.kite"
 component WebServer {
   input string instanceType = "t2.micro"
   input string fromOutput   = "t2.micro"
@@ -10,7 +11,7 @@ component WebServer {
   }
   output string fromOutputs = "t2.micro"
 }
-
+resource CommonConfig db {}
 component WebServer serviceA {
   instanceType = "t4g.normal"
 }

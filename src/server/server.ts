@@ -81,6 +81,7 @@ import { handleDocumentLinks, DocumentLinksContext } from './handlers/document-l
 import { handleOnTypeFormatting } from './handlers/on-type-formatting';
 import { handleTypeDefinition, TypeDefinitionContext } from './handlers/type-definition';
 import { handleImplementation, ImplementationContext } from './handlers/implementation';
+import { handleAutoImport, cleanupAutoImport, AutoImportContext } from './handlers/auto-import';
 import { scanDocumentAST } from '../parser';
 
 // Create a connection for the server using Node's IPC
@@ -190,10 +191,19 @@ documents.onDidChangeContent(change => {
     // Validate document and publish diagnostics
     const diagnostics = validateDocument(change.document, createValidationContext());
     connection.sendDiagnostics({ uri: change.document.uri, diagnostics });
+
+    // Auto-import on paste: detect paste and add missing imports automatically
+    const autoImportCtx: AutoImportContext = {
+        findKiteFilesInWorkspace,
+        getFileContent,
+        getDeclarations: (uri) => declarationCache.get(uri),
+    };
+    handleAutoImport(change.document, connection, autoImportCtx);
 });
 
 documents.onDidClose(e => {
     declarationCache.delete(e.document.uri);
+    cleanupAutoImport(e.document.uri);
 });
 
 // Completion handler

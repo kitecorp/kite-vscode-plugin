@@ -234,6 +234,23 @@ Provides the outline view in VS Code's sidebar.
   - Sorts imports alphabetically by path
   - Sorts symbols within imports alphabetically
   - Example: `import B from "x"` + `import A from "x"` → `import A, B from "x"`
+- **Add All Missing Imports**: Bulk import action (useful after paste)
+  - Appears when multiple undefined symbols are detected
+  - Adds all missing imports in one action
+  - Groups symbols from same file into single import
+  - Sorts symbols alphabetically
+
+### Auto-Import on Paste
+
+Automatically adds missing imports when pasting code:
+- Detects paste operations (15+ characters inserted at once)
+- Scans for undefined PascalCase symbols (schemas, components, types)
+- Searches workspace for symbol definitions
+- Automatically adds import statements after a short debounce (300ms)
+- Groups imports by file path
+- Shows notification: "Added N missing import(s)"
+
+**Note**: This is a proactive feature that runs automatically, unlike the quick fix which requires user action.
 
 ---
 

@@ -25,6 +25,7 @@ import { UnusedImportData } from '../validation/unused-imports';
 import { createWildcardConversionAction, findWildcardImportAtPosition, WildcardConversionContext } from './wildcard-conversion';
 import { createSortImportsAction } from './sort-imports';
 import { createOrganizeImportsAction } from './organize-imports';
+import { createAddMissingImportsAction } from './add-missing-imports';
 import { createGenerateMissingPropertiesAction, isMissingPropertyData } from './generate-properties';
 import { createRemoveUnusedVariableAction, isUnusedVariableDiagnostic } from './remove-unused-variable';
 
@@ -32,6 +33,7 @@ import { createRemoveUnusedVariableAction, isUnusedVariableDiagnostic } from './
 export { WildcardConversionContext } from './wildcard-conversion';
 export { createSortImportsAction } from './sort-imports';
 export { createOrganizeImportsAction } from './organize-imports';
+export { createAddMissingImportsAction } from './add-missing-imports';
 export { createGenerateMissingPropertiesAction, MissingPropertyData } from './generate-properties';
 
 /**
@@ -85,6 +87,9 @@ export function handleCodeAction(
 
     // Collect all unused import diagnostics for "Remove all" action
     const unusedImportDiagnostics: { diagnostic: typeof params.context.diagnostics[0]; data: UnusedImportData }[] = [];
+
+    // Collect all import suggestions for "Add all missing imports" action
+    const importSuggestions: ImportSuggestion[] = [];
 
     for (const diagnostic of params.context.diagnostics) {
         if (diagnostic.source !== 'kite') continue;
@@ -191,6 +196,9 @@ export function handleCodeAction(
             };
         }
 
+        // Collect for bulk action
+        importSuggestions.push(suggestion);
+
         actions.push({
             title: `Import '${suggestion.symbolName}' from "${suggestion.importPath}"`,
             kind: CodeActionKind.QuickFix,
@@ -198,6 +206,14 @@ export function handleCodeAction(
             isPreferred: true,
             edit
         });
+    }
+
+    // Add "Add all missing imports" action if there are multiple import suggestions
+    if (importSuggestions.length > 1) {
+        const addAllImportsAction = createAddMissingImportsAction(document, importSuggestions);
+        if (addAllImportsAction) {
+            actions.push(addAllImportsAction);
+        }
     }
 
     // Add "Remove all unused imports" action if there are multiple unused imports

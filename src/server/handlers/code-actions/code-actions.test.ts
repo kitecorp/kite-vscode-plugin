@@ -297,9 +297,11 @@ component WebServer api { }`);
 
             const actions = handleCodeAction(params, doc, diagnosticData);
 
-            expect(actions).toHaveLength(2);
+            // 2 individual import actions + 1 "Add all missing imports" action
+            expect(actions).toHaveLength(3);
             expect(actions[0].title).toContain('Config');
             expect(actions[1].title).toContain('WebServer');
+            expect(actions[2].title).toBe('Add 2 missing imports');
         });
     });
 
