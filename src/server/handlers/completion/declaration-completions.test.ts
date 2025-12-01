@@ -3,9 +3,8 @@
  */
 
 import { describe, it, expect } from 'vitest';
-import { createDocument } from '../../test-utils';
+import { createDocument, createCompletionContext } from '../../test-utils';
 import { CompletionItem, CompletionItemKind } from 'vscode-languageserver/node';
-import { TextDocument } from 'vscode-languageserver-textdocument';
 import {
     addKeywordCompletions,
     addTypeCompletions,
@@ -15,14 +14,7 @@ import { KEYWORDS, TYPES } from '../../constants';
 import { BlockContext, Declaration } from '../../types';
 import { CompletionContext } from './types';
 
-function createMockContext(declarations: Declaration[] = []): CompletionContext {
-    return {
-        getDeclarations: () => declarations,
-        findKiteFilesInWorkspace: () => [],
-        getFileContent: () => null,
-        findEnclosingBlock: () => null,
-    };
-}
+const createMockContext = (declarations: Declaration[] = []) => createCompletionContext({ declarations });
 
 describe('addKeywordCompletions', () => {
     it('adds all keywords from KEYWORDS constant', () => {

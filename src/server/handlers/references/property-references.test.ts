@@ -4,25 +4,20 @@
 
 import { describe, it, expect } from 'vitest';
 import { TextDocument } from 'vscode-languageserver-textdocument';
-import { createDocument } from '../../test-utils';
+import { createDocument, createReferencesContext } from '../../test-utils';
 import {
     findComponentPropertyReferences,
     findSchemaPropertyReferences,
 } from './property-references';
 import { ReferencesContext } from './types';
 
+// Helper that creates documents from files for ReferencesContext
 function createContext(files: Record<string, string>): ReferencesContext {
-    const docs = new Map<string, TextDocument>();
+    const docs: Record<string, TextDocument> = {};
     for (const [path, content] of Object.entries(files)) {
-        docs.set(`file://${path}`, createDocument(content, `file://${path}`));
+        docs[`file://${path}`] = createDocument(content, `file://${path}`);
     }
-
-    return {
-        findKiteFilesInWorkspace: () => Object.keys(files),
-        getFileContent: (filePath: string) => files[filePath] || null,
-        getDocument: (uri: string) => docs.get(uri),
-        getDeclarations: () => [],
-    };
+    return createReferencesContext({ files, documents: docs });
 }
 
 describe('findComponentPropertyReferences', () => {
