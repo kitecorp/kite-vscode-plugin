@@ -264,3 +264,40 @@ export function findBraceEnd(text: string, braceStart: number): number {
     }
     return pos;
 }
+
+/**
+ * Check if a position is inside a string literal.
+ * Handles both single and double quoted strings.
+ *
+ * @param text - The full text
+ * @param pos - Position to check
+ * @returns True if position is inside a string literal
+ */
+export function isInString(text: string, pos: number): boolean {
+    let inString = false;
+    let stringChar = '';
+
+    for (let i = 0; i < pos && i < text.length; i++) {
+        const char = text[i];
+        const prevChar = i > 0 ? text[i - 1] : '';
+
+        // Handle escape sequences
+        if (prevChar === '\\') continue;
+
+        if ((char === '"' || char === "'")) {
+            if (!inString) {
+                inString = true;
+                stringChar = char;
+            } else if (char === stringChar) {
+                inString = false;
+            }
+        }
+
+        // Handle newlines - strings don't span lines in Kite
+        if (char === '\n' && inString) {
+            inString = false;
+        }
+    }
+
+    return inString;
+}

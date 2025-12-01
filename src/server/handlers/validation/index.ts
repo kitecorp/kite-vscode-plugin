@@ -16,6 +16,7 @@ import { DECORATORS } from '../../constants';
 import { checkTypeMismatches } from './type-checking';
 import { checkUnusedImports } from './unused-imports';
 import { checkUnusedVariables } from './unused-variables';
+import { checkUndefinedSymbols } from './undefined-symbols';
 import { isInComment } from '../../utils/text-utils';
 import { findSymbolInWorkspace } from '../../utils/workspace-utils';
 
