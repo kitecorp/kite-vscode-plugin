@@ -14,6 +14,7 @@ import * as path from 'path';
 import { Declaration, ImportSuggestion, ImportInfo, BaseContext } from '../../types';
 import { DECORATORS } from '../../constants';
 import { checkTypeMismatches } from './type-checking';
+import { checkUnusedImports } from './unused-imports';
 
 /**
  * Context containing dependencies needed for validation
@@ -579,6 +580,10 @@ export function validateDocument(document: TextDocument, ctx: ValidationContext)
     // Check for type mismatches
     const typeDiagnostics = checkTypeMismatches(document);
     diagnostics.push(...typeDiagnostics);
+
+    // Check for unused imports
+    const unusedImportDiagnostics = checkUnusedImports(document, imports);
+    diagnostics.push(...unusedImportDiagnostics);
 
     return diagnostics;
 }

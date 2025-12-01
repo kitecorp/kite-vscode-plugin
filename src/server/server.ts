@@ -51,6 +51,9 @@ import { scanDocumentAST } from '../parser';
 // Create a connection for the server using Node's IPC
 const connection = createConnection(ProposedFeatures.all);
 
+// Log that server started
+connection.console.log('[Kite] Server module loaded');
+
 // Create a text document manager
 const documents: TextDocuments<TextDocument> = new TextDocuments(TextDocument);
 
@@ -85,6 +88,7 @@ function createValidationContext(): ValidationContext {
 }
 
 connection.onInitialize((params: InitializeParams): InitializeResult => {
+    connection.console.log('[Kite] Server initializing...');
     // Store workspace folders for cross-file resolution
     if (params.workspaceFolders) {
         workspaceFolders = params.workspaceFolders.map(folder => URI.parse(folder.uri).fsPath);
