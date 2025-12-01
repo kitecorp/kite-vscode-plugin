@@ -401,6 +401,44 @@ resource Config server {
         });
     });
 
+    describe('Import declarations', () => {
+        it('should not report error for imported symbols', () => {
+            const doc = createDocument(`import DatabaseConfig from "simple.kite"
+resource DatabaseConfig db {
+    host = "localhost"
+}`);
+            const declarations = createDeclarations([
+                { name: 'DatabaseConfig', type: 'import' },
+                { name: 'db', type: 'resource' },
+            ]);
+
+            const diagnostics = checkUndefinedSymbols(doc, declarations);
+
+            // DatabaseConfig is imported, should not be flagged
+            const errors = diagnostics.filter(d => d.message.includes("'DatabaseConfig'"));
+            expect(errors).toHaveLength(0);
+        });
+
+        it('should not report error for multiple imported symbols', () => {
+            const doc = createDocument(`import formatName, CommonConfig from "common.kite"
+var result = formatName("test")
+resource CommonConfig config { name = "test" }`);
+            const declarations = createDeclarations([
+                { name: 'formatName', type: 'import' },
+                { name: 'CommonConfig', type: 'import' },
+                { name: 'result', type: 'variable' },
+                { name: 'config', type: 'resource' },
+            ]);
+
+            const diagnostics = checkUndefinedSymbols(doc, declarations);
+
+            const formatNameErrors = diagnostics.filter(d => d.message.includes("'formatName'"));
+            const commonConfigErrors = diagnostics.filter(d => d.message.includes("'CommonConfig'"));
+            expect(formatNameErrors).toHaveLength(0);
+            expect(commonConfigErrors).toHaveLength(0);
+        });
+    });
+
     describe('Edge cases', () => {
         it('should handle empty document', () => {
             const doc = createDocument('');

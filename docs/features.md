@@ -114,6 +114,31 @@ Intelligent autocomplete with context awareness.
 - For resources: Shows set properties (with indicator) + unset schema properties
 - For component instances: Shows outputs
 
+### Import Completions:
+
+#### Symbol Completions (after `import `):
+When typing after `import `, suggests exportable symbols from the target file:
+```kite
+import █ from "common.kite"  // Shows: schemas, components, functions, types
+```
+
+| Symbol Type | Kind | Example |
+|-------------|------|---------|
+| Schema | Struct | `schema Config {}` |
+| Component | Module | `component Server {}` |
+| Function | Function | `fun calculate() {}` |
+| Type alias | TypeParameter | `type Region = ...` |
+
+#### Path Completions (inside quotes after `from`):
+When typing inside the path string, suggests available `.kite` files:
+```kite
+import Config from "█"  // Shows: common.kite, utils.kite, etc.
+```
+
+- Shows relative paths from current file
+- Excludes current file from suggestions
+- Works for both named and wildcard imports
+
 ---
 
 ## 5. Hover Documentation
@@ -204,6 +229,11 @@ Provides the outline view in VS Code's sidebar.
   - Analyzes which symbols are actually used
   - Only includes symbols that are referenced in the file
   - Alphabetically sorted symbol list
+- **Organize Imports** (`Shift+Alt+O`): Comprehensive import cleanup
+  - Merges imports from the same file into single import
+  - Sorts imports alphabetically by path
+  - Sorts symbols within imports alphabetically
+  - Example: `import B from "x"` + `import A from "x"` → `import A, B from "x"`
 
 ---
 

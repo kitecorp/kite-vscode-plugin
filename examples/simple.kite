@@ -1,4 +1,4 @@
-import formatName, CommonConfig from "common.kite"
+import formatName, CommonConfig,de from "common.kite"
 // Simple Kite example
 // Test cross-file navigation: Cmd+Click on imported symbols
 

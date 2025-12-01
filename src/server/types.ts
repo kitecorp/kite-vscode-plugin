@@ -5,7 +5,7 @@
 import { Range, Location } from 'vscode-languageserver/node';
 
 // Declaration types in Kite
-export type DeclarationType = 'variable' | 'input' | 'output' | 'resource' | 'component' | 'schema' | 'function' | 'type' | 'for';
+export type DeclarationType = 'variable' | 'input' | 'output' | 'resource' | 'component' | 'schema' | 'function' | 'type' | 'for' | 'import';
 
 // Represents a function parameter
 export interface FunctionParameter {
@@ -28,6 +28,7 @@ export interface Declaration {
     documentation?: string;
     scopeStart?: number;       // Start offset of the scope this declaration is in (undefined = file scope)
     scopeEnd?: number;         // End offset of the scope
+    importPath?: string;       // For import: the file path being imported from
 }
 
 // Diagnostic data for code actions (stores import suggestions)

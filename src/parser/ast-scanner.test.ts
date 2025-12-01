@@ -205,4 +205,57 @@ fun broken(
             expect(decls.find(d => d.name === 'Valid' && d.type === 'schema')).toBeDefined();
         });
     });
+
+    describe('import declarations', () => {
+        it('should extract single named import', () => {
+            const doc = createDocument('import DatabaseConfig from "simple.kite"');
+            const decls = scanDocumentAST(doc);
+
+            const importDecl = decls.find(d => d.name === 'DatabaseConfig' && d.type === 'import');
+            expect(importDecl).toBeDefined();
+            expect(importDecl?.importPath).toBe('simple.kite');
+            expect(importDecl?.documentation).toBe('Imported from `simple.kite`');
+        });
+
+        it('should extract multiple named imports', () => {
+            const doc = createDocument('import formatName, CommonConfig from "common.kite"');
+            const decls = scanDocumentAST(doc);
+
+            const formatNameDecl = decls.find(d => d.name === 'formatName' && d.type === 'import');
+            expect(formatNameDecl).toBeDefined();
+            expect(formatNameDecl?.importPath).toBe('common.kite');
+
+            const commonConfigDecl = decls.find(d => d.name === 'CommonConfig' && d.type === 'import');
+            expect(commonConfigDecl).toBeDefined();
+            expect(commonConfigDecl?.importPath).toBe('common.kite');
+        });
+
+        it('should not extract declarations for wildcard imports', () => {
+            const doc = createDocument('import * from "utils.kite"');
+            const decls = scanDocumentAST(doc);
+
+            // Wildcard imports don't create declarations (we'd need to resolve the file)
+            const imports = decls.filter(d => d.type === 'import');
+            expect(imports).toHaveLength(0);
+        });
+
+        it('should handle imports with other declarations', () => {
+            const doc = createDocument(`
+import DatabaseConfig from "simple.kite"
+
+schema LocalConfig {
+    string name
+}
+
+resource DatabaseConfig db {
+    host = "localhost"
+}
+`);
+            const decls = scanDocumentAST(doc);
+
+            expect(decls.find(d => d.name === 'DatabaseConfig' && d.type === 'import')).toBeDefined();
+            expect(decls.find(d => d.name === 'LocalConfig' && d.type === 'schema')).toBeDefined();
+            expect(decls.find(d => d.name === 'db' && d.type === 'resource')).toBeDefined();
+        });
+    });
 });

@@ -23,6 +23,11 @@
 - [x] Remove unused variable - quick fix to delete unused var declarations (renames loop vars/params to `_`)
 - [x] Decorator argument validation - check decorator arguments match expected types
 - [x] Circular import detection - error for circular dependencies
+- [x] Named import parsing - `import A, B from "path"` syntax support
+- [x] Import symbol completions - suggest symbols after `import `
+- [x] Import path completions - suggest `.kite` files inside quotes
+- [x] Go to definition for import symbols - click symbol in import to jump to source
+- [x] Organize imports - merge duplicates, sort alphabetically (`Shift+Alt+O`)
 
 ## Pending Features
 

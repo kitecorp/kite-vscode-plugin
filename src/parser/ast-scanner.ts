@@ -24,6 +24,7 @@ import KiteParser, {
     ParameterContext,
     BlockExpressionContext,
     SchemaPropertyContext,
+    ImportStatementContext,
 } from './grammar/KiteParser';
 
 /**
@@ -63,6 +64,12 @@ function visitProgram(ctx: ProgramContext, declarations: Declaration[], uri: str
     if (!statementList) return;
 
     for (const stmt of statementList.nonEmptyStatement_list()) {
+        // Handle import statements
+        const importStmt = stmt.importStatement();
+        if (importStmt) {
+            visitImportStatement(importStmt, declarations, uri, text);
+        }
+
         const decl = stmt.declaration();
         if (decl) {
             visitDeclaration(decl, declarations, uri, text, null);
@@ -77,6 +84,70 @@ function visitProgram(ctx: ProgramContext, declarations: Declaration[], uri: str
             }
         }
     }
+}
+
+/**
+ * Visit an import statement and extract imported symbols
+ */
+function visitImportStatement(
+    ctx: ImportStatementContext,
+    declarations: Declaration[],
+    uri: string,
+    text: string
+): void {
+    // Get the import path for documentation
+    const stringLiteralCtx = ctx.stringLiteral();
+    const importPath = stringLiteralCtx ? getStringLiteralValue(stringLiteralCtx) : undefined;
+
+    // Check for named imports: import x, y from "path"
+    const symbolList = ctx.importSymbolList();
+    if (symbolList) {
+        const identifiers = symbolList.IDENTIFIER_list();
+        for (const idToken of identifiers) {
+            const name = idToken.getText();
+            const startToken = idToken.symbol;
+
+            const startLine = startToken.line - 1;
+            const startCol = startToken.column;
+            const endCol = startCol + name.length;
+
+            const lines = text.split('\n');
+            const lineText = lines[startLine] || '';
+
+            const decl: Declaration = {
+                name,
+                type: 'import',
+                range: Range.create(
+                    Position.create(startLine, 0),
+                    Position.create(startLine, lineText.length)
+                ),
+                nameRange: Range.create(
+                    Position.create(startLine, startCol),
+                    Position.create(startLine, endCol)
+                ),
+                uri,
+                documentation: importPath ? `Imported from \`${importPath}\`` : undefined,
+                importPath,
+            };
+            declarations.push(decl);
+        }
+    }
+    // For wildcard imports (import * from "path"), we don't add declarations
+    // since we'd need to resolve the file and extract all its exports
+}
+
+/**
+ * Get the string value from a stringLiteral context
+ */
+function getStringLiteralValue(ctx: ParserRuleContext): string | undefined {
+    const text = ctx.getText();
+    if (!text) return undefined;
+    // Remove surrounding quotes
+    if ((text.startsWith('"') && text.endsWith('"')) ||
+        (text.startsWith("'") && text.endsWith("'"))) {
+        return text.slice(1, -1);
+    }
+    return text;
 }
 
 /**

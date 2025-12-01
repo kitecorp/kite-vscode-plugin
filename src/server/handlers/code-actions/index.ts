@@ -24,12 +24,14 @@ import {
 import { UnusedImportData } from '../validation/unused-imports';
 import { createWildcardConversionAction, findWildcardImportAtPosition, WildcardConversionContext } from './wildcard-conversion';
 import { createSortImportsAction } from './sort-imports';
+import { createOrganizeImportsAction } from './organize-imports';
 import { createGenerateMissingPropertiesAction, isMissingPropertyData } from './generate-properties';
 import { createRemoveUnusedVariableAction, isUnusedVariableDiagnostic } from './remove-unused-variable';
 
 // Re-export for external use
 export { WildcardConversionContext } from './wildcard-conversion';
 export { createSortImportsAction } from './sort-imports';
+export { createOrganizeImportsAction } from './organize-imports';
 export { createGenerateMissingPropertiesAction, MissingPropertyData } from './generate-properties';
 
 /**
@@ -211,10 +213,11 @@ export function handleCodeAction(
         }
     }
 
-    // Add "Sort imports" action (source action, always available)
-    const sortImportsAction = createSortImportsAction(document);
-    if (sortImportsAction) {
-        actions.push(sortImportsAction);
+    // Add "Organize imports" action (source action, always available)
+    // This merges duplicate imports, sorts alphabetically, and removes unused
+    const organizeImportsAction = createOrganizeImportsAction(document);
+    if (organizeImportsAction) {
+        actions.push(organizeImportsAction);
     }
 
     // Add "Generate missing properties" action for missing property diagnostics
