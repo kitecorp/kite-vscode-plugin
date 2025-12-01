@@ -33,6 +33,27 @@ import { checkUnclosedStrings } from './unclosed-string';
 import { checkMissingReturn } from './missing-return';
 import { checkUnreachableCode } from './unreachable-code';
 import { checkVariableShadowing } from './variable-shadowing';
+import { checkInvalidImportPaths } from './invalid-import-path';
+import { checkReturnOutsideFunction } from './return-outside-function';
+import { checkInvalidStringInterpolation } from './invalid-string-interpolation';
+import { checkUnusedFunctions } from './unused-function';
+import { checkDivisionByZero } from './division-by-zero';
+import { checkInfiniteLoop } from './infinite-loop';
+import { checkAssignmentInCondition } from './assignment-in-condition';
+import { checkSelfAssignment } from './self-assignment';
+import { checkComparisonToSelf } from './comparison-to-self';
+import { checkDuplicateImport } from './duplicate-import';
+import { checkConstantCondition } from './constant-condition';
+import { checkTooManyParameters } from './too-many-parameters';
+import { checkRedundantCondition } from './redundant-condition';
+import { checkTypeCoercion } from './type-coercion';
+import { checkEmptyStringCheck } from './empty-string-check';
+import { checkRedundantBoolean } from './redundant-boolean';
+import { checkNegatedComparison } from './negated-comparison';
+import { checkUselessExpression } from './useless-expression';
+import { checkLongFunction } from './long-function';
+import { checkUnusedParameter } from './unused-parameter';
+import { checkImplicitAny } from './implicit-any';
 import { isInComment } from '../../utils/text-utils';
 import { findSymbolInWorkspace } from '../../utils/workspace-utils';
 
@@ -631,6 +652,90 @@ export function validateDocument(document: TextDocument, ctx: ValidationContext)
     // Check for variable shadowing
     const shadowingDiagnostics = checkVariableShadowing(document);
     diagnostics.push(...shadowingDiagnostics);
+
+    // Check for invalid import paths
+    const invalidImportDiagnostics = checkInvalidImportPaths(document, ctx);
+    diagnostics.push(...invalidImportDiagnostics);
+
+    // Check for return statements outside functions
+    const returnOutsideFuncDiagnostics = checkReturnOutsideFunction(document);
+    diagnostics.push(...returnOutsideFuncDiagnostics);
+
+    // Check for invalid string interpolation
+    const invalidInterpolationDiagnostics = checkInvalidStringInterpolation(document);
+    diagnostics.push(...invalidInterpolationDiagnostics);
+
+    // Check for unused functions
+    const unusedFunctionDiagnostics = checkUnusedFunctions(document);
+    diagnostics.push(...unusedFunctionDiagnostics);
+
+    // Check for division by zero
+    const divisionByZeroDiagnostics = checkDivisionByZero(document);
+    diagnostics.push(...divisionByZeroDiagnostics);
+
+    // Check for infinite loops
+    const infiniteLoopDiagnostics = checkInfiniteLoop(document);
+    diagnostics.push(...infiniteLoopDiagnostics);
+
+    // Check for assignment in condition
+    const assignmentInConditionDiagnostics = checkAssignmentInCondition(document);
+    diagnostics.push(...assignmentInConditionDiagnostics);
+
+    // Check for self-assignment
+    const selfAssignmentDiagnostics = checkSelfAssignment(document);
+    diagnostics.push(...selfAssignmentDiagnostics);
+
+    // Check for comparison to self
+    const comparisonToSelfDiagnostics = checkComparisonToSelf(document);
+    diagnostics.push(...comparisonToSelfDiagnostics);
+
+    // Check for duplicate imports
+    const duplicateImportDiagnostics = checkDuplicateImport(document);
+    diagnostics.push(...duplicateImportDiagnostics);
+
+    // Check for constant conditions
+    const constantConditionDiagnostics = checkConstantCondition(document);
+    diagnostics.push(...constantConditionDiagnostics);
+
+    // Check for too many parameters
+    const tooManyParamsDiagnostics = checkTooManyParameters(document);
+    diagnostics.push(...tooManyParamsDiagnostics);
+
+    // Check for redundant conditions (x && x, x || x)
+    const redundantConditionDiagnostics = checkRedundantCondition(document);
+    diagnostics.push(...redundantConditionDiagnostics);
+
+    // Check for type coercion in comparisons
+    const typeCoercionDiagnostics = checkTypeCoercion(document);
+    diagnostics.push(...typeCoercionDiagnostics);
+
+    // Check for empty string comparisons
+    const emptyStringDiagnostics = checkEmptyStringCheck(document);
+    diagnostics.push(...emptyStringDiagnostics);
+
+    // Check for redundant boolean comparisons
+    const redundantBooleanDiagnostics = checkRedundantBoolean(document);
+    diagnostics.push(...redundantBooleanDiagnostics);
+
+    // Check for negated comparisons
+    const negatedComparisonDiagnostics = checkNegatedComparison(document);
+    diagnostics.push(...negatedComparisonDiagnostics);
+
+    // Check for useless expressions
+    const uselessExpressionDiagnostics = checkUselessExpression(document);
+    diagnostics.push(...uselessExpressionDiagnostics);
+
+    // Check for long functions
+    const longFunctionDiagnostics = checkLongFunction(document);
+    diagnostics.push(...longFunctionDiagnostics);
+
+    // Check for unused parameters
+    const unusedParameterDiagnostics = checkUnusedParameter(document);
+    diagnostics.push(...unusedParameterDiagnostics);
+
+    // Check for implicit any
+    const implicitAnyDiagnostics = checkImplicitAny(document);
+    diagnostics.push(...implicitAnyDiagnostics);
 
     return diagnostics;
 }

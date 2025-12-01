@@ -17,40 +17,82 @@ import { isInComment } from '../../utils/text-utils';
 export function checkDuplicateDecorators(document: TextDocument): Diagnostic[] {
     const diagnostics: Diagnostic[] = [];
     const text = document.getText();
+    const lines = text.split('\n');
 
     // Find declarations that can have decorators
-    // Decorators appear on lines before: schema, component, resource, fun, input, output, var
-    const declarationRegex = /^[ \t]*(?:@\w+(?:\([^)]*\))?[ \t]*\n)*[ \t]*(schema|component|resource|fun|input|output|var)\b/gm;
+    const declarationKeywords = ['schema', 'component', 'resource', 'fun', 'input', 'output', 'var'];
 
-    let match;
-    while ((match = declarationRegex.exec(text)) !== null) {
-        const blockStart = match.index;
-        const blockText = match[0];
+    for (let i = 0; i < lines.length; i++) {
+        const line = lines[i].trim();
 
-        // Skip if in comment
-        if (isInComment(text, blockStart)) continue;
+        // Check if this line starts a declaration (possibly after decorators on same line)
+        const lineWithoutDecorators = line.replace(/@\w+(?:\([^)]*\))?\s*/g, '');
+        const startsDeclaration = declarationKeywords.some(
+            kw => lineWithoutDecorators.startsWith(kw + ' ') || lineWithoutDecorators.startsWith(kw + '\t')
+        );
 
-        // Find all decorators in this block
-        const decoratorRegex = /@(\w+)/g;
-        const seenDecorators = new Map<string, number>(); // name -> first offset
+        if (!startsDeclaration) continue;
 
-        let decoratorMatch;
-        while ((decoratorMatch = decoratorRegex.exec(blockText)) !== null) {
-            const decoratorName = decoratorMatch[1];
-            const decoratorOffset = blockStart + decoratorMatch.index;
+        // Calculate line offset
+        const lineOffset = lines.slice(0, i).join('\n').length + (i > 0 ? 1 : 0);
+        if (isInComment(text, lineOffset)) continue;
 
-            if (seenDecorators.has(decoratorName)) {
-                const startPos = document.positionAt(decoratorOffset);
-                const endPos = document.positionAt(decoratorOffset + decoratorMatch[0].length);
+        // Collect all decorators for this declaration
+        // Look at current line and preceding lines that are decorators
+        const decoratorPositions: { name: string; offset: number; length: number }[] = [];
+
+        // Check decorators on same line (before the declaration keyword)
+        const sameLineDecoratorRegex = /@(\w+)(?:\([^)]*\))?/g;
+        let sameLineMatch;
+        const currentLineStart = lineOffset;
+        while ((sameLineMatch = sameLineDecoratorRegex.exec(lines[i])) !== null) {
+            // Stop if we've reached the declaration keyword
+            const matchEnd = sameLineMatch.index + sameLineMatch[0].length;
+            if (matchEnd > lines[i].indexOf(lineWithoutDecorators.split(/\s/)[0])) break;
+
+            decoratorPositions.push({
+                name: sameLineMatch[1],
+                offset: currentLineStart + sameLineMatch.index,
+                length: sameLineMatch[0].length,
+            });
+        }
+
+        // Look backward for decorator lines
+        let j = i - 1;
+        while (j >= 0) {
+            const prevLine = lines[j].trim();
+            // Stop if empty line or not a decorator line
+            if (!prevLine || !prevLine.startsWith('@')) break;
+
+            const prevLineOffset = lines.slice(0, j).join('\n').length + (j > 0 ? 1 : 0);
+            const decoratorRegex = /@(\w+)(?:\([^)]*\))?/g;
+            let decoratorMatch;
+
+            while ((decoratorMatch = decoratorRegex.exec(lines[j])) !== null) {
+                decoratorPositions.push({
+                    name: decoratorMatch[1],
+                    offset: prevLineOffset + decoratorMatch.index,
+                    length: decoratorMatch[0].length,
+                });
+            }
+            j--;
+        }
+
+        // Find duplicates
+        const seenDecorators = new Map<string, boolean>();
+        for (const dec of decoratorPositions) {
+            if (seenDecorators.has(dec.name)) {
+                const startPos = document.positionAt(dec.offset);
+                const endPos = document.positionAt(dec.offset + dec.length);
 
                 diagnostics.push({
                     severity: DiagnosticSeverity.Error,
                     range: Range.create(startPos, endPos),
-                    message: `Duplicate decorator '@${decoratorName}'`,
+                    message: `Duplicate decorator '@${dec.name}'`,
                     source: 'kite',
                 });
             } else {
-                seenDecorators.set(decoratorName, decoratorOffset);
+                seenDecorators.set(dec.name, true);
             }
         }
     }

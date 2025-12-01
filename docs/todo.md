@@ -45,6 +45,27 @@
 - [x] Missing return - error for typed functions without return statement
 - [x] Unreachable code - warning for code after return statement
 - [x] Variable shadowing - warning when inner variable shadows outer variable
+- [x] Invalid import path - error when import file doesn't exist
+- [x] Return outside function - error for return at top level
+- [x] Invalid string interpolation - error for unclosed ${
+- [x] Unused function - warning for functions never called
+- [x] Division by zero - warning for literal / 0 or % 0
+- [x] Infinite loop - warning for while true without break/return
+- [x] Assignment in condition - warning for = instead of == in if/while
+- [x] Self-assignment - warning when variable assigned to itself (x = x)
+- [x] Comparison to self - warning when comparing variable to itself (x == x)
+- [x] Duplicate import - warning when same file imported multiple times
+- [x] Constant condition - warning for always true/false if/while conditions
+- [x] Too many parameters - warning for functions with 6+ parameters
+- [x] Redundant condition - warning for x && x or x || x
+- [x] Type coercion - warning for comparing different types (number == string)
+- [x] Empty string check - hint suggesting len(str) == 0 instead of str == ""
+- [x] Redundant boolean - warning for x == true → x, x == false → !x
+- [x] Negated comparison - hint for !(x == y) → x != y
+- [x] Useless expression - warning for statements with no effect (x + 1)
+- [x] Long function - warning for functions with 50+ lines
+- [x] Unused parameter - warning for function parameters never used
+- [x] Implicit any - hint for variables where type can't be inferred
 
 ## Pending Features
 

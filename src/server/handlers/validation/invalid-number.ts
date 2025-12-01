@@ -47,7 +47,7 @@ export function checkInvalidNumbers(document: TextDocument): Diagnostic[] {
         if (isInString(text, match.index)) continue;
 
         // Check it's not followed by a digit and not a property access
-        const afterDot = text.substring(match.index + match[0].length - 1).trim();
+        const afterDot = text.substring(match.index + match[0].length).trim();
         if (/^\d/.test(afterDot)) continue; // Has digits after, it's valid
         if (/^[a-zA-Z_]/.test(afterDot)) continue; // Property access like 123.toString
 
