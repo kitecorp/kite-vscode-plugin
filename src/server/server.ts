@@ -80,6 +80,7 @@ import { handleLinkedEditingRange } from './handlers/linked-editing-range';
 import { handleDocumentLinks, DocumentLinksContext } from './handlers/document-links';
 import { handleOnTypeFormatting } from './handlers/on-type-formatting';
 import { handleTypeDefinition, TypeDefinitionContext } from './handlers/type-definition';
+import { handleImplementation, ImplementationContext } from './handlers/implementation';
 import { scanDocumentAST } from '../parser';
 
 // Create a connection for the server using Node's IPC
@@ -175,7 +176,8 @@ connection.onInitialize((params: InitializeParams): InitializeResult => {
                 firstTriggerCharacter: '\n',
                 moreTriggerCharacter: ['}']
             },
-            typeDefinitionProvider: true
+            typeDefinitionProvider: true,
+            implementationProvider: true
         }
     };
 });
@@ -504,6 +506,17 @@ connection.onTypeDefinition((params: TextDocumentPositionParams) => {
         getFileContent,
     };
     return handleTypeDefinition(document, params.position, ctx);
+});
+
+// Implementation handler - find all implementations of a schema/component
+connection.onImplementation((params: TextDocumentPositionParams) => {
+    const document = documents.get(params.textDocument.uri);
+    if (!document) return [];
+    const ctx: ImplementationContext = {
+        findKiteFilesInWorkspace,
+        getFileContent,
+    };
+    return handleImplementation(document, params.position, ctx);
 });
 
 // Start the server

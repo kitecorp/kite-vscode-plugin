@@ -23,7 +23,7 @@ component WebServer {
         a: "b"
       }
     }
-    private_ips = ["172.16.10.100"]
+
   }
 
   resource DatabaseConfig config {

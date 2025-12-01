@@ -23,4 +23,4 @@
 
 ### Other
 - [ ] More snippets - common code patterns
-- [ ] Find Implementations - find resources using a schema
+- [x] Find Implementations - find resources using a schema
