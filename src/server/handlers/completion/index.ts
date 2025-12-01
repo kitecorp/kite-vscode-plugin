@@ -34,6 +34,7 @@ import { getSchemaBodyCompletions } from './schema-completions';
 import { getComponentDefinitionCompletions } from './component-completions';
 import { getBlockBodyCompletions, addContextAwareSuggestions } from './block-completions';
 import { addKeywordCompletions, addTypeCompletions, addDeclarationCompletions } from './declaration-completions';
+import { getAutoImportCompletions } from './auto-import-completions';
 
 // Re-export types and utilities
 export { CompletionContext } from './types';
@@ -131,6 +132,15 @@ export function handleCompletion(
     // Add context-aware suggestions at the end for resource/component value context
     if (isValueContext && enclosingBlock) {
         addContextAwareSuggestions(completions, text, offset, enclosingBlock, uri, ctx);
+    }
+
+    // Add auto-import completions for symbols from other files
+    // Only show in type positions (not in value context like after '=')
+    if (!isValueContext) {
+        const declarations = ctx.getDeclarations(uri) || [];
+        const localNames = new Set(declarations.map(d => d.name));
+        const autoImportCompletions = getAutoImportCompletions(text, uri, localNames, ctx);
+        completions.push(...autoImportCompletions);
     }
 
     return completions;

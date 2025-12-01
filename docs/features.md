@@ -242,15 +242,48 @@ Provides the outline view in VS Code's sidebar.
 
 ### Auto-Import on Paste
 
-Automatically adds missing imports when pasting code:
+**File:** `src/server/handlers/auto-import/index.ts`
+
+Automatically adds missing imports when pasting code containing undefined symbols.
+
 - Detects paste operations (15+ characters inserted at once)
 - Scans for undefined PascalCase symbols (schemas, components, types)
 - Searches workspace for symbol definitions
 - Automatically adds import statements after a short debounce (300ms)
-- Groups imports by file path
 - Shows notification: "Added N missing import(s)"
 
-**Note**: This is a proactive feature that runs automatically, unlike the quick fix which requires user action.
+**Example:**
+```kite
+// Paste this code into a file:
+resource DatabaseConfig db {
+    host = "localhost"
+}
+
+// Auto-import adds at top of file:
+import DatabaseConfig from "common.kite"
+```
+
+### Auto-Import on Type
+
+**File:** `src/server/handlers/completion/auto-import-completions.ts`
+
+Suggests importable symbols from other files in completions with automatic import insertion.
+
+- Shows schemas, components, functions, and types from all workspace `.kite` files
+- Completion items display `(auto-import from filename.kite)` in detail
+- Selecting a completion automatically adds the import statement
+- Lower priority than local symbols (appear after local suggestions)
+
+**Example:**
+```
+// When typing "Data", completions show:
+DatabaseConfig   schema (auto-import from common.kite)
+DataProcessor    component (auto-import from processors.kite)
+
+// Selecting "DatabaseConfig":
+// 1. Inserts "DatabaseConfig" at cursor
+// 2. Adds "import DatabaseConfig from "common.kite"" at top
+```
 
 ---
 

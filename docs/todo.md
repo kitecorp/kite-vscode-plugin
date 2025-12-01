@@ -30,6 +30,7 @@
 - [x] Organize imports - merge duplicates, sort alphabetically (`Shift+Alt+O`)
 - [x] Add all missing imports - bulk import action after paste
 - [x] Auto-import on paste - automatically adds missing imports when pasting code
+- [x] Auto-import on type - suggests importable symbols with automatic import insertion
 
 ## Pending Features
 
