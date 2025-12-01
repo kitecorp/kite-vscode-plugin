@@ -10,11 +10,13 @@ var filtered = [for x in items: if x > 10 { x }]
 resource S3.Bucket data {
   name       = "data-${env}"
   versioning = true
+  some = env
 }
 
 // Form 3: Standalone for loop
 for env in environments {
   console.log("Processing environment: ${env}")
+
 }
 
 // While loop
@@ -23,3 +25,8 @@ while (counter < 5) {
   console.log(counter)
   counter++
 }
+
+fun calculate(number x) {
+      var y = x * 2
+      return x + y
+  }

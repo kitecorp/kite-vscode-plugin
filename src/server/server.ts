@@ -41,6 +41,11 @@ import {
     CallHierarchyIncomingCallsParams,
     CallHierarchyOutgoingCallsParams,
     CallHierarchyPrepareParams,
+    LinkedEditingRanges,
+    LinkedEditingRangeParams,
+    DocumentLink,
+    DocumentLinkParams,
+    DocumentOnTypeFormattingParams,
 } from 'vscode-languageserver/node';
 
 import { TextDocument } from 'vscode-languageserver-textdocument';
@@ -52,7 +57,7 @@ import {
     ImportSuggestion,
 } from './types';
 import { getWordAtPosition, readFileContent, findEnclosingBlock } from './utils/text-utils';
-import { extractImports, isSymbolImported } from './utils/import-utils';
+import { extractImports, isSymbolImported, resolveImportPath } from './utils/import-utils';
 import { validateDocument, ValidationContext } from './handlers/validation';
 import { handleDocumentSymbol } from './handlers/document-symbols';
 import { handleHover } from './handlers/hover';
@@ -71,6 +76,10 @@ import { handleWorkspaceSymbols, WorkspaceSymbolsContext } from './handlers/work
 import { handleSemanticTokens, semanticTokensLegend } from './handlers/semantic-tokens';
 import { handleFoldingRange } from './handlers/folding-range';
 import { prepareCallHierarchy, getIncomingCalls, getOutgoingCalls, CallHierarchyContext } from './handlers/call-hierarchy';
+import { handleLinkedEditingRange } from './handlers/linked-editing-range';
+import { handleDocumentLinks, DocumentLinksContext } from './handlers/document-links';
+import { handleOnTypeFormatting } from './handlers/on-type-formatting';
+import { handleTypeDefinition, TypeDefinitionContext } from './handlers/type-definition';
 import { scanDocumentAST } from '../parser';
 
 // Create a connection for the server using Node's IPC
@@ -157,7 +166,16 @@ connection.onInitialize((params: InitializeParams): InitializeResult => {
                 full: true,
             },
             foldingRangeProvider: true,
-            callHierarchyProvider: true
+            callHierarchyProvider: true,
+            linkedEditingRangeProvider: true,
+            documentLinkProvider: {
+                resolveProvider: false
+            },
+            documentOnTypeFormattingProvider: {
+                firstTriggerCharacter: '\n',
+                moreTriggerCharacter: ['}']
+            },
+            typeDefinitionProvider: true
         }
     };
 });
@@ -445,6 +463,47 @@ connection.onRequest('callHierarchy/outgoingCalls', (params: CallHierarchyOutgoi
         getFileContent,
     };
     return getOutgoingCalls(params.item, document, ctx);
+});
+
+// Linked Editing Range handler - simultaneous editing of related ranges
+connection.onRequest('textDocument/linkedEditingRange', (params: LinkedEditingRangeParams): LinkedEditingRanges | null => {
+    const document = documents.get(params.textDocument.uri);
+    if (!document) return null;
+    return handleLinkedEditingRange(document, params.position);
+});
+
+// Document Links handler - makes import paths clickable
+connection.onDocumentLinks((params: DocumentLinkParams): DocumentLink[] => {
+    const document = documents.get(params.textDocument.uri);
+    if (!document) return [];
+    const currentFilePath = URI.parse(document.uri).fsPath;
+    const currentDir = path.dirname(currentFilePath);
+    const ctx: DocumentLinksContext = {
+        findKiteFilesInWorkspace,
+        resolveImportPath: (importPath: string) => resolveImportPath(importPath, currentDir),
+    };
+    return handleDocumentLinks(document, ctx);
+});
+
+// On Type Formatting handler - auto-format as you type
+connection.onDocumentOnTypeFormatting((params: DocumentOnTypeFormattingParams): TextEdit[] => {
+    const document = documents.get(params.textDocument.uri);
+    if (!document) return [];
+    return handleOnTypeFormatting(document, params.position, params.ch, {
+        tabSize: params.options.tabSize,
+        insertSpaces: params.options.insertSpaces,
+    });
+});
+
+// Type Definition handler - navigate to type definition
+connection.onTypeDefinition((params: TextDocumentPositionParams) => {
+    const document = documents.get(params.textDocument.uri);
+    if (!document) return null;
+    const ctx: TypeDefinitionContext = {
+        findKiteFilesInWorkspace,
+        getFileContent,
+    };
+    return handleTypeDefinition(document, params.position, ctx);
 });
 
 // Start the server

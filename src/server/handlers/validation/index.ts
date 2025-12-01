@@ -15,6 +15,7 @@ import { Declaration, ImportSuggestion, ImportInfo, BaseContext } from '../../ty
 import { DECORATORS } from '../../constants';
 import { checkTypeMismatches } from './type-checking';
 import { checkUnusedImports } from './unused-imports';
+import { checkUnusedVariables } from './unused-variables';
 import { isInComment } from '../../utils/text-utils';
 import { findSymbolInWorkspace } from '../../utils/workspace-utils';
 
@@ -541,6 +542,10 @@ export function validateDocument(document: TextDocument, ctx: ValidationContext)
     // Check for unused imports
     const unusedImportDiagnostics = checkUnusedImports(document, imports);
     diagnostics.push(...unusedImportDiagnostics);
+
+    // Check for unused variables
+    const unusedVariableDiagnostics = checkUnusedVariables(document);
+    diagnostics.push(...unusedVariableDiagnostics);
 
     return diagnostics;
 }
