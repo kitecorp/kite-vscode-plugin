@@ -66,6 +66,10 @@ function checkSchemaPropertyNames(text: string, document: TextDocument, diagnost
         let propMatch;
 
         while ((propMatch = propRegex.exec(bodyText)) !== null) {
+            // Skip if this match is inside a comment
+            const matchAbsoluteOffset = bodyOffset + propMatch.index;
+            if (isInComment(text, matchAbsoluteOffset)) continue;
+
             const propName = propMatch[2];
             const nameOffset = bodyOffset + propMatch.index + propMatch[0].lastIndexOf(propName);
 
@@ -112,6 +116,10 @@ function checkComponentIONames(text: string, document: TextDocument, diagnostics
         let ioMatch;
 
         while ((ioMatch = ioRegex.exec(bodyText)) !== null) {
+            // Skip if this match is inside a comment
+            const matchAbsoluteOffset = bodyOffset + ioMatch.index;
+            if (isInComment(text, matchAbsoluteOffset)) continue;
+
             const ioName = ioMatch[3];
             const nameOffset = bodyOffset + ioMatch.index + ioMatch[0].lastIndexOf(ioName);
 

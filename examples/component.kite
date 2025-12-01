@@ -2,7 +2,7 @@ import DatabaseConfig from "simple.kite"
 schema Instance {
   string size
   object tag
-  string[] private_ips
+  string[] private_ips = []
 }
 // asd
 component WebServer {

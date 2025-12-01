@@ -119,6 +119,98 @@ component WebServer {
             expect(diagnostics).toHaveLength(0);
         });
 
+        it('should not report error for output with default value using property access', () => {
+            const doc = createDocument(`
+component WebServer {
+    output string endpoint = server.size
+}
+`);
+            const diagnostics = checkReservedNames(doc);
+
+            expect(diagnostics).toHaveLength(0);
+        });
+
+        it('should not report error for output with interpolated default value', () => {
+            const doc = createDocument(`
+component WebServer {
+    output string url = "http://\${host}:\${port}"
+}
+`);
+            const diagnostics = checkReservedNames(doc);
+
+            expect(diagnostics).toHaveLength(0);
+        });
+
+        it('should handle output with complex expression', () => {
+            const doc = createDocument(`
+component WebServer {
+    output string result = someFunc(a, b)
+}
+`);
+            const diagnostics = checkReservedNames(doc);
+
+            expect(diagnostics).toHaveLength(0);
+        });
+
+        it('should report error when type name used as output name with custom type', () => {
+            // This is the user's case: output CustomType string
+            // where string is mistakenly used as the name
+            const doc = createDocument(`
+component WebServer {
+    output MyType string = something
+}
+`);
+            const diagnostics = checkReservedNames(doc);
+
+            expect(diagnostics).toHaveLength(1);
+            expect(diagnostics[0].message).toContain("'string'");
+        });
+
+        it('should not report error for user full component example', () => {
+            const doc = createDocument(`
+component WebServer {
+  @unique
+  @allowed(["dev", "prod"])
+  input string env          = "dev"
+  input string instanceType = "t2.micro"
+
+  var client = "myClient"
+
+  resource Instance server {
+    size = instanceType
+    tag = {
+      Environment: "$env",
+      Name: "web-server",
+      New: {
+        a: "b"
+      }
+    }
+
+  }
+
+  resource DatabaseConfig config {
+    size = instanceType
+    tag = {
+      Environment: "$env",
+      Name: "web-server",
+      New: {
+        a: "b"
+      }
+    }
+    private_ips = ["172.16.10.100"]
+  }
+  // some output
+  output string endpoint = server.size
+  output string tag      = server.tag.Name
+  output string tagNameA = server.tag.New.a
+}
+`);
+            const diagnostics = checkReservedNames(doc);
+
+            // Should have NO errors - all names are valid
+            expect(diagnostics).toHaveLength(0);
+        });
+
         it('should not check component instantiations', () => {
             const doc = createDocument(`
 component Server {
