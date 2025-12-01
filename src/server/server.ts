@@ -27,6 +27,8 @@ import {
     DocumentHighlightParams,
     SelectionRange,
     SelectionRangeParams,
+    CodeLens,
+    CodeLensParams,
 } from 'vscode-languageserver/node';
 
 import { TextDocument } from 'vscode-languageserver-textdocument';
@@ -52,6 +54,7 @@ import { handleCompletion, CompletionContext } from './handlers/completion';
 import { formatDocument } from './handlers/formatting';
 import { handleDocumentHighlight } from './handlers/document-highlight';
 import { handleSelectionRange } from './handlers/selection-range';
+import { handleCodeLens, CodeLensContext } from './handlers/code-lens';
 import { scanDocumentAST } from '../parser';
 
 // Create a connection for the server using Node's IPC
@@ -128,7 +131,10 @@ connection.onInitialize((params: InitializeParams): InitializeResult => {
             },
             documentFormattingProvider: true,
             documentHighlightProvider: true,
-            selectionRangeProvider: true
+            selectionRangeProvider: true,
+            codeLensProvider: {
+                resolveProvider: false
+            }
         }
     };
 });
@@ -355,6 +361,17 @@ connection.onSelectionRanges((params: SelectionRangeParams): SelectionRange[] =>
     const document = documents.get(params.textDocument.uri);
     if (!document) return [];
     return handleSelectionRange(document, params.positions);
+});
+
+// Code Lens handler - shows "X references" above declarations
+connection.onCodeLens((params: CodeLensParams): CodeLens[] => {
+    const document = documents.get(params.textDocument.uri);
+    if (!document) return [];
+    const ctx: CodeLensContext = {
+        findKiteFilesInWorkspace,
+        getFileContent,
+    };
+    return handleCodeLens(document, ctx);
 });
 
 // Start the server

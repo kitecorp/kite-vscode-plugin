@@ -479,11 +479,57 @@ With cursor in `localhost`:
 
 ---
 
+## 17. Code Lens (Reference Counts)
+
+**Handler:** `connection.onCodeLens`
+
+Shows "X references" above declarations, making it easy to see how widely used each symbol is.
+
+### Supported Declarations
+
+| Declaration | Example | What's Counted |
+|-------------|---------|----------------|
+| Schema | `schema Config {}` | Resources using this schema |
+| Component definition | `component Server {}` | Instances of this component |
+| Component instance | `component Server api {}` | Property access on instance |
+| Resource | `resource Config srv {}` | Property access on resource |
+| Function | `fun calc() {}` | Function calls |
+| Variable | `var x = 1` | Variable references |
+| Type alias | `type Region = ...` | Type annotations |
+
+### Features
+
+- **Clickable**: Click "X references" to open References panel
+- **Singular/plural**: Shows "1 reference" vs "2 references"
+- **Cross-file counting**: Counts references from all workspace files
+- **Comment filtering**: Ignores references inside comments
+- **String filtering**: Ignores references in string literals (except interpolation)
+- **Declaration excluded**: The definition itself isn't counted
+
+### Example Display
+
+```
+2 references
+schema ServerConfig {
+    string host
+    number port
+}
+
+3 references
+fun calculateCost(number instances) number {
+    return instances * 0.10
+}
+
+0 references
+var unusedVariable = "test"
+```
+
+---
+
 ## Future Features
 
 | Feature | Description | Priority |
 |---------|-------------|----------|
 | Workspace Symbols | Global "Go to Symbol" (Cmd+T) across all files | Medium |
 | Semantic Tokens | Enhanced syntax highlighting via LSP | Medium |
-| Code Lens | Show "X references" above declarations | Low |
 | Folding Range | Custom folding regions via LSP | Low |
