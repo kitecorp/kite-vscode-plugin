@@ -7,24 +7,6 @@ resource Configs server {
 
 var number aaa = "asd"
 var number aaa = "asd"
-var number a = "asd"
+var any[] a = ["asd"]
 
 
-
-component WebServer {
-    input string name
-    input number replicas = 1
-
-    output number replica = 1
-}
-
-component WebServer api {
-    name = ""
-}
-
-schema Config {
-    string name
-}
-
-resource Config cfg {
-}

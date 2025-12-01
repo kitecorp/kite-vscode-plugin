@@ -67,14 +67,15 @@ export function isTypeCompatible(declaredType: string, valueType: string): boole
         return true;
     }
 
-    // 'any' accepts everything
+    // 'any' accepts everything (but not any[] - that requires an array)
     if (normalizedDeclared === 'any') {
         return true;
     }
 
-    // Array types (e.g., string[], number[]) accept array values
-    if (normalizedDeclared.endsWith('[]') && normalizedValue === 'array') {
-        return true;
+    // Array types (e.g., string[], number[], any[]) require array values
+    if (normalizedDeclared.endsWith('[]')) {
+        // Array type MUST have an array value
+        return normalizedValue === 'array' || normalizedValue === 'null';
     }
 
     // null is compatible with any type (nullable)

@@ -148,6 +148,39 @@ var boolean enabled = true
             const diagnostics = checkTypeMismatches(doc);
             expect(diagnostics).toHaveLength(0);
         });
+
+        it('should report error for array type with non-array value', () => {
+            const doc = createDocument('var any[] a = "asd"');
+            const diagnostics = checkTypeMismatches(doc);
+
+            expect(diagnostics).toHaveLength(1);
+            expect(diagnostics[0].message).toContain('any[]');
+            expect(diagnostics[0].message).toContain('string');
+        });
+
+        it('should not report error for any[] with array of mixed types', () => {
+            const doc = createDocument('var any[] a = ["asd", 1, true]');
+            const diagnostics = checkTypeMismatches(doc);
+            expect(diagnostics).toHaveLength(0);
+        });
+
+        it('should report error for string[] with non-array value', () => {
+            const doc = createDocument('var string[] names = "John"');
+            const diagnostics = checkTypeMismatches(doc);
+
+            expect(diagnostics).toHaveLength(1);
+            expect(diagnostics[0].message).toContain('string[]');
+            expect(diagnostics[0].message).toContain('string');
+        });
+
+        it('should report error for number[] with object value', () => {
+            const doc = createDocument('var number[] nums = { a: 1 }');
+            const diagnostics = checkTypeMismatches(doc);
+
+            expect(diagnostics).toHaveLength(1);
+            expect(diagnostics[0].message).toContain('number[]');
+            expect(diagnostics[0].message).toContain('object');
+        });
     });
 
     describe('input declarations', () => {
