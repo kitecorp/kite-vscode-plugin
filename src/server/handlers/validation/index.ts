@@ -17,6 +17,7 @@ import { checkTypeMismatches } from './type-checking';
 import { checkUnusedImports } from './unused-imports';
 import { checkUnusedVariables } from './unused-variables';
 import { checkUndefinedSymbols } from './undefined-symbols';
+import { checkMissingProperties } from './missing-properties';
 import { isInComment } from '../../utils/text-utils';
 import { findSymbolInWorkspace } from '../../utils/workspace-utils';
 
@@ -547,6 +548,14 @@ export function validateDocument(document: TextDocument, ctx: ValidationContext)
     // Check for unused variables
     const unusedVariableDiagnostics = checkUnusedVariables(document);
     diagnostics.push(...unusedVariableDiagnostics);
+
+    // Check for undefined symbols
+    const undefinedSymbolDiagnostics = checkUndefinedSymbols(document, localDeclarations);
+    diagnostics.push(...undefinedSymbolDiagnostics);
+
+    // Check for missing required properties
+    const missingPropertyDiagnostics = checkMissingProperties(document);
+    diagnostics.push(...missingPropertyDiagnostics);
 
     return diagnostics;
 }

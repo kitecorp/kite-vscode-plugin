@@ -12,11 +12,11 @@
 ## Pending Features
 
 ### Diagnostics
-- [ ] Missing required properties - error for incomplete resources
-- [ ] Undefined symbol errors - error for undeclared references
+- [x] Missing required properties - error for incomplete resources
+- [x] Undefined symbol errors - error for undeclared references
 
 ### Code Actions / Refactoring
-- [ ] Generate missing properties - add required properties to resource
+- [x] Generate missing properties - add required properties to resource
 - [x] Sort imports - alphabetically sort import statements
 
 ### Other

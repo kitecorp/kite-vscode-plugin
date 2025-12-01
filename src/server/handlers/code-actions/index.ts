@@ -24,10 +24,12 @@ import {
 import { UnusedImportData } from '../validation/unused-imports';
 import { createWildcardConversionAction, findWildcardImportAtPosition, WildcardConversionContext } from './wildcard-conversion';
 import { createSortImportsAction } from './sort-imports';
+import { createGenerateMissingPropertiesAction, isMissingPropertyData } from './generate-properties';
 
 // Re-export for external use
 export { WildcardConversionContext } from './wildcard-conversion';
 export { createSortImportsAction } from './sort-imports';
+export { createGenerateMissingPropertiesAction, MissingPropertyData } from './generate-properties';
 
 /**
  * Handle code action request
@@ -212,6 +214,17 @@ export function handleCodeAction(
     const sortImportsAction = createSortImportsAction(document);
     if (sortImportsAction) {
         actions.push(sortImportsAction);
+    }
+
+    // Add "Generate missing properties" action for missing property diagnostics
+    const missingPropertyDiagnostics = params.context.diagnostics.filter(
+        d => d.source === 'kite' && isMissingPropertyData(d.data)
+    );
+    if (missingPropertyDiagnostics.length > 0) {
+        const generateAction = createGenerateMissingPropertiesAction(document, missingPropertyDiagnostics);
+        if (generateAction) {
+            actions.push(generateAction);
+        }
     }
 
     return actions;
