@@ -3,28 +3,13 @@
  */
 
 import { describe, it, expect } from 'vitest';
-import { createDocument } from '../../test-utils';
-import { TextDocument } from 'vscode-languageserver-textdocument';
+import { createDocument, positionFromOffset, createCompletionContext } from '../../test-utils';
 import { CompletionItemKind, Position, Range } from 'vscode-languageserver/node';
 import { handleCompletion, CompletionContext, isAfterEquals, isInsideNestedStructure } from '.';
 import { Declaration, BlockContext } from '../../types';
 
-
-// Helper to create position from offset
-function positionFromOffset(text: string, offset: number): Position {
-    const lines = text.substring(0, offset).split('\n');
-    return Position.create(lines.length - 1, lines[lines.length - 1].length);
-}
-
-// Helper to create a mock context
-function createContext(declarations: Declaration[] = []): CompletionContext {
-    return {
-        getDeclarations: () => declarations,
-        findKiteFilesInWorkspace: () => [],
-        getFileContent: () => null,
-        findEnclosingBlock: () => null,
-    };
-}
+// Alias for convenience - most tests use empty context
+const createContext = (declarations: Declaration[] = []) => createCompletionContext({ declarations });
 
 describe('handleCompletion', () => {
     describe('top-level completions', () => {

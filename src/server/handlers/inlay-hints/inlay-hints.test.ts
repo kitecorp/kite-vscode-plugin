@@ -3,8 +3,7 @@
  */
 
 import { describe, it, expect } from 'vitest';
-import { createDocument } from '../../test-utils';
-
+import { createDocument, createInlayHintContext } from '../../test-utils';
 import { InlayHintKind, Range, Position } from 'vscode-languageserver/node';
 import {
     handleInlayHints,
@@ -14,14 +13,8 @@ import {
 } from '.';
 import { Declaration } from '../../types';
 
-
-// Helper to create a mock context
-function createContext(files: Record<string, string> = {}): InlayHintContext {
-    return {
-        findKiteFilesInWorkspace: () => Object.keys(files),
-        getFileContent: (path: string) => files[path] || null,
-    };
-}
+// Alias for convenience
+const createContext = (files: Record<string, string> = {}) => createInlayHintContext({ files });
 
 // Helper to create a function declaration with parameters
 function createFunctionDecl(name: string, params: { type: string; name: string }[]): Declaration {

@@ -5,26 +5,12 @@
 import { describe, it, expect } from 'vitest';
 import { TextDocument } from 'vscode-languageserver-textdocument';
 import { Range, Position } from 'vscode-languageserver/node';
-import { createDocument } from '../../test-utils';
+import { createDocument, createReferencesContext } from '../../test-utils';
 import { handleReferences, findAllReferences, ReferencesContext } from '.';
 import { Declaration } from '../../types';
 
-
-// Helper to create a mock context
-function createContext(options: {
-    files?: Record<string, string>;
-    declarations?: Declaration[];
-    documents?: Record<string, TextDocument>;
-} = {}): ReferencesContext {
-    const documents = options.documents || {};
-
-    return {
-        getDeclarations: () => options.declarations || [],
-        findKiteFilesInWorkspace: () => Object.keys(options.files || {}),
-        getFileContent: (path: string) => options.files?.[path] || null,
-        getDocument: (uri: string) => documents[uri],
-    };
-}
+// Alias for convenience
+const createContext = createReferencesContext;
 
 describe('handleReferences', () => {
     it('should find references in single file', () => {
