@@ -33,6 +33,8 @@ import {
     WorkspaceSymbolParams,
     SemanticTokens,
     SemanticTokensParams,
+    FoldingRange,
+    FoldingRangeParams,
 } from 'vscode-languageserver/node';
 
 import { TextDocument } from 'vscode-languageserver-textdocument';
@@ -61,6 +63,7 @@ import { handleSelectionRange } from './handlers/selection-range';
 import { handleCodeLens, CodeLensContext } from './handlers/code-lens';
 import { handleWorkspaceSymbols, WorkspaceSymbolsContext } from './handlers/workspace-symbols';
 import { handleSemanticTokens, semanticTokensLegend } from './handlers/semantic-tokens';
+import { handleFoldingRange } from './handlers/folding-range';
 import { scanDocumentAST } from '../parser';
 
 // Create a connection for the server using Node's IPC
@@ -145,7 +148,8 @@ connection.onInitialize((params: InitializeParams): InitializeResult => {
             semanticTokensProvider: {
                 legend: semanticTokensLegend,
                 full: true,
-            }
+            },
+            foldingRangeProvider: true
         }
     };
 });
@@ -399,6 +403,13 @@ connection.onRequest('textDocument/semanticTokens/full', (params: SemanticTokens
     const document = documents.get(params.textDocument.uri);
     if (!document) return { data: [] };
     return handleSemanticTokens(document);
+});
+
+// Folding Range handler - provides custom code folding regions
+connection.onFoldingRanges((params: FoldingRangeParams): FoldingRange[] => {
+    const document = documents.get(params.textDocument.uri);
+    if (!document) return [];
+    return handleFoldingRange(document);
 });
 
 // Start the server

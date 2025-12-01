@@ -637,8 +637,70 @@ fun calc(number x) {   // calc: function/definition, x: parameter/declaration
 
 ---
 
-## Future Features
+## 20. Folding Range (Code Folding)
 
-| Feature | Description | Priority |
-|---------|-------------|----------|
-| Folding Range | Custom folding regions via LSP | Low |
+**Handler:** `connection.onFoldingRanges`
+
+Provides custom code folding regions, allowing users to collapse and expand code blocks.
+
+### Supported Constructs
+
+| Construct | Example | Fold Kind |
+|-----------|---------|-----------|
+| Schema | `schema Config { ... }` | Region |
+| Component definition | `component Server { ... }` | Region |
+| Component instance | `component Server api { ... }` | Region |
+| Resource | `resource Config srv { ... }` | Region |
+| Function | `fun calc() { ... }` | Region |
+| If block | `if condition { ... }` | Region |
+| Else block | `} else { ... }` | Region |
+| For loop | `for item in items { ... }` | Region |
+| While loop | `while running { ... }` | Region |
+| Object literal | `var x = { ... }` | Region |
+| Array literal | `var x = [ ... ]` | Region |
+| Import group | Multiple consecutive imports | Imports |
+| Multi-line comment | `/* ... */` | Comment |
+
+### Features
+
+- **Nested folding**: Inner blocks can be folded independently of outer blocks
+- **Import groups**: Consecutive import statements fold together (requires 2+ imports)
+- **Comment folding**: Multi-line `/* */` comments are foldable
+- **String awareness**: Braces inside strings don't create fold regions
+- **Single-line exclusion**: Blocks on a single line don't create fold regions
+
+### Example
+
+```kite
+import Config from "config.kite"  ─┐
+import Server from "server.kite"  ─┘ Imports fold
+
+/*                               ─┐
+ * Multi-line                     │ Comment fold
+ * comment                       ─┘
+ */
+
+schema ServerConfig {            ─┐
+    string host                   │
+    number port                   │ Region fold
+}                                ─┘
+
+component WebServer {            ─┐
+    fun init() {                 ─┼─┐
+        var x = 1                 │ │ Nested fold
+    }                            ─┼─┘
+}                                ─┘
+```
+
+### Usage
+
+- **Fold**: Click the `-` icon in the gutter, or use `Cmd+Opt+[` (Mac) / `Ctrl+Shift+[` (Windows/Linux)
+- **Unfold**: Click the `+` icon, or use `Cmd+Opt+]` / `Ctrl+Shift+]`
+- **Fold All**: `Cmd+K Cmd+0` / `Ctrl+K Ctrl+0`
+- **Unfold All**: `Cmd+K Cmd+J` / `Ctrl+K Ctrl+J`
+
+---
+
+## All Features Complete
+
+All planned language server features have been implemented for the Kite VS Code extension.
