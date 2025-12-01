@@ -18,6 +18,7 @@ import { checkUnusedImports } from './unused-imports';
 import { checkUnusedVariables } from './unused-variables';
 import { checkUndefinedSymbols } from './undefined-symbols';
 import { checkMissingProperties } from './missing-properties';
+import { checkReservedNames } from './reserved-names';
 import { isInComment } from '../../utils/text-utils';
 import { findSymbolInWorkspace } from '../../utils/workspace-utils';
 
@@ -556,6 +557,10 @@ export function validateDocument(document: TextDocument, ctx: ValidationContext)
     // Check for missing required properties
     const missingPropertyDiagnostics = checkMissingProperties(document);
     diagnostics.push(...missingPropertyDiagnostics);
+
+    // Check for reserved names used as property/input/output names
+    const reservedNameDiagnostics = checkReservedNames(document);
+    diagnostics.push(...reservedNameDiagnostics);
 
     return diagnostics;
 }

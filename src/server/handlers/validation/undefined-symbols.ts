@@ -89,6 +89,9 @@ export function checkUndefinedSymbols(
         // Skip if it's an object literal key (e.g., { key: value })
         if (isObjectLiteralKey(text, offset, identifier)) continue;
 
+        // Skip if it's a schema property definition (e.g., string host inside schema)
+        if (isSchemaPropertyDefinition(text, offset, identifier)) continue;
+
         // This is an undefined symbol
         const startPos = document.positionAt(offset);
         const endPos = document.positionAt(offset + identifier.length);
@@ -267,6 +270,46 @@ function isForLoopVariableDefinition(text: string, offset: number, identifier: s
 
     // for (item or for item
     if (/\bfor\s*\(?\s*$/.test(beforeText)) {
+        return true;
+    }
+
+    return false;
+}
+
+/**
+ * Check if identifier is a schema property definition
+ * e.g., string host inside schema { }
+ */
+function isSchemaPropertyDefinition(text: string, offset: number, identifier: string): boolean {
+    // Check if we're inside a schema body
+    // Look backwards for 'schema Name {' with no matching '}'
+    const textBefore = text.substring(0, offset);
+
+    // Find the last schema declaration
+    const schemaMatch = textBefore.match(/\bschema\s+[\w.]+\s*\{/g);
+    if (!schemaMatch) return false;
+
+    // Get position of last schema opening brace
+    const lastSchemaStart = textBefore.lastIndexOf(schemaMatch[schemaMatch.length - 1]);
+    const bracePos = textBefore.indexOf('{', lastSchemaStart);
+
+    // Count braces to see if we're still inside the schema
+    let depth = 0;
+    for (let i = bracePos; i < offset; i++) {
+        if (text[i] === '{') depth++;
+        else if (text[i] === '}') depth--;
+    }
+
+    // If depth > 0, we're inside the schema body
+    if (depth <= 0) return false;
+
+    // Now check if this identifier follows a type (property name position)
+    // Pattern: type name or type[] name
+    const beforeText = text.substring(Math.max(0, offset - 50), offset).trim();
+
+    // Check for: type name pattern (type followed by this identifier)
+    // The type can be built-in (string, number, etc.) or custom (PascalCase)
+    if (/\b(string|number|boolean|any|object|void|[A-Z]\w*)(\[\])?\s*$/.test(beforeText)) {
         return true;
     }
 

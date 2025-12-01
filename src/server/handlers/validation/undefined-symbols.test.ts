@@ -304,6 +304,27 @@ var y = 10`);
     });
 
     describe('Schema and type references', () => {
+        it('should not report error for schema property definitions', () => {
+            const doc = createDocument(`schema ServerConfig {
+    string host
+    number port = 8080
+    boolean ssl
+}`);
+            const declarations = createDeclarations([
+                { name: 'ServerConfig', type: 'schema' },
+            ]);
+
+            const diagnostics = checkUndefinedSymbols(doc, declarations);
+
+            // host, port, ssl are property names - not undefined symbols
+            const hostErrors = diagnostics.filter(d => d.message.includes("'host'"));
+            const portErrors = diagnostics.filter(d => d.message.includes("'port'"));
+            const sslErrors = diagnostics.filter(d => d.message.includes("'ssl'"));
+            expect(hostErrors).toHaveLength(0);
+            expect(portErrors).toHaveLength(0);
+            expect(sslErrors).toHaveLength(0);
+        });
+
         it('should not report error for schema used as type', () => {
             const doc = createDocument(`schema User { string name }
 var User currentUser = { name: "John" }`);

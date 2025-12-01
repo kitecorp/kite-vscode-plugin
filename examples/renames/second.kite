@@ -8,3 +8,14 @@ resource Configs server {
 var number aaa = "asd"
 var number aaa = "asd"
 var number a = "asd"
+
+
+
+schema ServerConfig {
+    string host
+    number port = 8080
+}
+
+resource ServerConfig server {
+    host = ""
+}
