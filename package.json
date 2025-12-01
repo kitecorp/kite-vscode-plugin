@@ -2,9 +2,10 @@
   "name": "kite-language",
   "displayName": "Kite Language",
   "description": "Full language support for Kite - a modern Infrastructure as Code language. Includes syntax highlighting, smart autocomplete, go to definition, find references, rename symbol, hover docs, diagnostics, code formatting, and more.",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "publisher": "EchoStream",
   "license": "MIT",
+  "icon": "icons/logo.png",
   "repository": {
     "type": "git",
     "url": "https://github.com/kitelang/kite-vscode-plugin"
@@ -49,8 +50,8 @@
         ],
         "configuration": "./language-configuration.json",
         "icon": {
-          "light": "./icons/logo.png",
-          "dark": "./icons/logo.png"
+          "light": "./icons/extension.png",
+          "dark": "./icons/extension.png"
         }
       }
     ],
