@@ -526,10 +526,54 @@ var unusedVariable = "test"
 
 ---
 
+## 18. Workspace Symbols (Go to Symbol in Workspace)
+
+**Handler:** `connection.onWorkspaceSymbol`
+
+Provides global "Go to Symbol" (Cmd+T on Mac, Ctrl+T on Windows/Linux) to search across all workspace files.
+
+### How to Use
+
+1. Press **Cmd+T** (Mac) or **Ctrl+T** (Windows/Linux)
+2. Type to search for symbols
+3. Select a symbol to navigate to its definition
+
+### Supported Symbols
+
+| Symbol Type | Kind | Example |
+|-------------|------|---------|
+| Schema | Struct | `schema ServerConfig {}` |
+| Component definition | Class | `component WebServer {}` |
+| Component instance | Object | `component WebServer api {}` |
+| Resource | Object | `resource Config srv {}` |
+| Function | Function | `fun calculate() {}` |
+| Variable | Variable | `var baseUrl = "..."` |
+| Type alias | TypeParameter | `type Region = "..."` |
+
+### Features
+
+- **Case-insensitive search**: Type "config" to find "ServerConfig"
+- **Substring matching**: Type "conn" to find "DatabaseConnection"
+- **Cross-file search**: Searches all `.kite` files in workspace
+- **File context**: Shows which file each symbol is from
+- **Accurate positions**: Jump directly to the symbol's declaration
+
+### Example
+
+Searching for "server":
+
+```
+ServerConfig    (Struct)     config.kite
+WebServer       (Class)      components.kite
+webServer       (Object)     infra.kite
+serverEndpoint  (Variable)   constants.kite
+```
+
+---
+
 ## Future Features
 
 | Feature | Description | Priority |
 |---------|-------------|----------|
-| Workspace Symbols | Global "Go to Symbol" (Cmd+T) across all files | Medium |
 | Semantic Tokens | Enhanced syntax highlighting via LSP | Medium |
 | Folding Range | Custom folding regions via LSP | Low |

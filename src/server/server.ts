@@ -29,6 +29,8 @@ import {
     SelectionRangeParams,
     CodeLens,
     CodeLensParams,
+    SymbolInformation,
+    WorkspaceSymbolParams,
 } from 'vscode-languageserver/node';
 
 import { TextDocument } from 'vscode-languageserver-textdocument';
@@ -55,6 +57,7 @@ import { formatDocument } from './handlers/formatting';
 import { handleDocumentHighlight } from './handlers/document-highlight';
 import { handleSelectionRange } from './handlers/selection-range';
 import { handleCodeLens, CodeLensContext } from './handlers/code-lens';
+import { handleWorkspaceSymbols, WorkspaceSymbolsContext } from './handlers/workspace-symbols';
 import { scanDocumentAST } from '../parser';
 
 // Create a connection for the server using Node's IPC
@@ -134,7 +137,8 @@ connection.onInitialize((params: InitializeParams): InitializeResult => {
             selectionRangeProvider: true,
             codeLensProvider: {
                 resolveProvider: false
-            }
+            },
+            workspaceSymbolProvider: true
         }
     };
 });
@@ -372,6 +376,15 @@ connection.onCodeLens((params: CodeLensParams): CodeLens[] => {
         getFileContent,
     };
     return handleCodeLens(document, ctx);
+});
+
+// Workspace Symbols handler - provides global "Go to Symbol" (Cmd+T)
+connection.onWorkspaceSymbol((params: WorkspaceSymbolParams): SymbolInformation[] => {
+    const ctx: WorkspaceSymbolsContext = {
+        findKiteFilesInWorkspace,
+        getFileContent,
+    };
+    return handleWorkspaceSymbols(params.query, ctx);
 });
 
 // Start the server
