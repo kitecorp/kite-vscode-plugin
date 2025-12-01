@@ -937,3 +937,339 @@ resource Config myConfig {
         expect(labels).toContain('"eu-west-1"');
     });
 });
+
+describe('import symbol completions', () => {
+    it('should suggest schemas from imported file', () => {
+        const text = 'import | from "common.kite"';
+        const offset = text.indexOf('|');
+        const cleanText = text.replace('|', '');
+        const doc = createDocument(cleanText, 'file:///project/main.kite');
+        const position = positionFromOffset(cleanText, offset);
+
+        const ctx: CompletionContext = {
+            getDeclarations: () => [],
+            findKiteFilesInWorkspace: () => ['/project/common.kite'],
+            getFileContent: (filePath: string) => {
+                if (filePath === '/project/common.kite') {
+                    return 'schema Config { }\nschema Server { }';
+                }
+                return cleanText;
+            },
+            findEnclosingBlock: () => null,
+        };
+
+        const completions = handleCompletion(doc, position, ctx);
+        const labels = completions.map(c => c.label);
+
+        expect(labels).toContain('Config');
+        expect(labels).toContain('Server');
+    });
+
+    it('should suggest components from imported file', () => {
+        const text = 'import | from "components.kite"';
+        const offset = text.indexOf('|');
+        const cleanText = text.replace('|', '');
+        const doc = createDocument(cleanText, 'file:///project/main.kite');
+        const position = positionFromOffset(cleanText, offset);
+
+        const ctx: CompletionContext = {
+            getDeclarations: () => [],
+            findKiteFilesInWorkspace: () => ['/project/components.kite'],
+            getFileContent: (filePath: string) => {
+                if (filePath === '/project/components.kite') {
+                    return 'component WebServer { }\ncomponent Database { }';
+                }
+                return cleanText;
+            },
+            findEnclosingBlock: () => null,
+        };
+
+        const completions = handleCompletion(doc, position, ctx);
+        const labels = completions.map(c => c.label);
+
+        expect(labels).toContain('WebServer');
+        expect(labels).toContain('Database');
+    });
+
+    it('should suggest functions from imported file', () => {
+        const text = 'import | from "utils.kite"';
+        const offset = text.indexOf('|');
+        const cleanText = text.replace('|', '');
+        const doc = createDocument(cleanText, 'file:///project/main.kite');
+        const position = positionFromOffset(cleanText, offset);
+
+        const ctx: CompletionContext = {
+            getDeclarations: () => [],
+            findKiteFilesInWorkspace: () => ['/project/utils.kite'],
+            getFileContent: (filePath: string) => {
+                if (filePath === '/project/utils.kite') {
+                    return 'fun calculateCost(number x) number { return x }\nfun formatName(string s) string { return s }';
+                }
+                return cleanText;
+            },
+            findEnclosingBlock: () => null,
+        };
+
+        const completions = handleCompletion(doc, position, ctx);
+        const labels = completions.map(c => c.label);
+
+        expect(labels).toContain('calculateCost');
+        expect(labels).toContain('formatName');
+    });
+
+    it('should suggest type aliases from imported file', () => {
+        const text = 'import | from "types.kite"';
+        const offset = text.indexOf('|');
+        const cleanText = text.replace('|', '');
+        const doc = createDocument(cleanText, 'file:///project/main.kite');
+        const position = positionFromOffset(cleanText, offset);
+
+        const ctx: CompletionContext = {
+            getDeclarations: () => [],
+            findKiteFilesInWorkspace: () => ['/project/types.kite'],
+            getFileContent: (filePath: string) => {
+                if (filePath === '/project/types.kite') {
+                    return 'type Region = "us-east-1" | "eu-west-1"\ntype Environment = "dev" | "prod"';
+                }
+                return cleanText;
+            },
+            findEnclosingBlock: () => null,
+        };
+
+        const completions = handleCompletion(doc, position, ctx);
+        const labels = completions.map(c => c.label);
+
+        expect(labels).toContain('Region');
+        expect(labels).toContain('Environment');
+    });
+
+    it('should suggest all symbol types from imported file', () => {
+        const text = 'import | from "all.kite"';
+        const offset = text.indexOf('|');
+        const cleanText = text.replace('|', '');
+        const doc = createDocument(cleanText, 'file:///project/main.kite');
+        const position = positionFromOffset(cleanText, offset);
+
+        const ctx: CompletionContext = {
+            getDeclarations: () => [],
+            findKiteFilesInWorkspace: () => ['/project/all.kite'],
+            getFileContent: (filePath: string) => {
+                if (filePath === '/project/all.kite') {
+                    return `schema Config { }
+component WebServer { }
+fun helper() { }
+type Region = "us-east-1"`;
+                }
+                return cleanText;
+            },
+            findEnclosingBlock: () => null,
+        };
+
+        const completions = handleCompletion(doc, position, ctx);
+        const labels = completions.map(c => c.label);
+
+        expect(labels).toContain('Config');
+        expect(labels).toContain('WebServer');
+        expect(labels).toContain('helper');
+        expect(labels).toContain('Region');
+    });
+
+    it('should work with partial symbol name', () => {
+        const text = 'import Conf| from "common.kite"';
+        const offset = text.indexOf('|');
+        const cleanText = text.replace('|', '');
+        const doc = createDocument(cleanText, 'file:///project/main.kite');
+        const position = positionFromOffset(cleanText, offset);
+
+        const ctx: CompletionContext = {
+            getDeclarations: () => [],
+            findKiteFilesInWorkspace: () => ['/project/common.kite'],
+            getFileContent: (filePath: string) => {
+                if (filePath === '/project/common.kite') {
+                    return 'schema Config { }\nschema Server { }';
+                }
+                return cleanText;
+            },
+            findEnclosingBlock: () => null,
+        };
+
+        const completions = handleCompletion(doc, position, ctx);
+        const labels = completions.map(c => c.label);
+
+        // Should still suggest all symbols (filtering is done by editor)
+        expect(labels).toContain('Config');
+        expect(labels).toContain('Server');
+    });
+
+    it('should return empty for non-existent import file', () => {
+        const text = 'import | from "nonexistent.kite"';
+        const offset = text.indexOf('|');
+        const cleanText = text.replace('|', '');
+        const doc = createDocument(cleanText, 'file:///project/main.kite');
+        const position = positionFromOffset(cleanText, offset);
+
+        const ctx: CompletionContext = {
+            getDeclarations: () => [],
+            findKiteFilesInWorkspace: () => [],
+            getFileContent: () => null,
+            findEnclosingBlock: () => null,
+        };
+
+        const completions = handleCompletion(doc, position, ctx);
+        // Should not have import symbol completions (may have other completions)
+        const labels = completions.map(c => c.label);
+        expect(labels).not.toContain('Config');
+    });
+
+    it('should have correct completion item kind for each symbol type', () => {
+        const text = 'import | from "all.kite"';
+        const offset = text.indexOf('|');
+        const cleanText = text.replace('|', '');
+        const doc = createDocument(cleanText, 'file:///project/main.kite');
+        const position = positionFromOffset(cleanText, offset);
+
+        const ctx: CompletionContext = {
+            getDeclarations: () => [],
+            findKiteFilesInWorkspace: () => ['/project/all.kite'],
+            getFileContent: (filePath: string) => {
+                if (filePath === '/project/all.kite') {
+                    return `schema Config { }
+component WebServer { }
+fun helper() { }
+type Region = "us-east-1"`;
+                }
+                return cleanText;
+            },
+            findEnclosingBlock: () => null,
+        };
+
+        const completions = handleCompletion(doc, position, ctx);
+
+        const configItem = completions.find(c => c.label === 'Config');
+        const componentItem = completions.find(c => c.label === 'WebServer');
+        const funcItem = completions.find(c => c.label === 'helper');
+        const typeItem = completions.find(c => c.label === 'Region');
+
+        expect(configItem?.kind).toBe(CompletionItemKind.Struct);
+        expect(componentItem?.kind).toBe(CompletionItemKind.Module);
+        expect(funcItem?.kind).toBe(CompletionItemKind.Function);
+        expect(typeItem?.kind).toBe(CompletionItemKind.TypeParameter);
+    });
+});
+
+describe('import path completions', () => {
+    it('should suggest .kite files from workspace after from "', () => {
+        const text = 'import * from "|"';
+        const offset = text.indexOf('|');
+        const cleanText = text.replace('|', '');
+        const doc = createDocument(cleanText, 'file:///project/main.kite');
+        const position = positionFromOffset(cleanText, offset);
+
+        const ctx: CompletionContext = {
+            getDeclarations: () => [],
+            findKiteFilesInWorkspace: () => [
+                '/project/common.kite',
+                '/project/utils.kite',
+                '/project/lib/helpers.kite',
+            ],
+            getFileContent: () => null,
+            findEnclosingBlock: () => null,
+        };
+
+        const completions = handleCompletion(doc, position, ctx);
+        const labels = completions.map(c => c.label);
+
+        expect(labels).toContain('common.kite');
+        expect(labels).toContain('utils.kite');
+        expect(labels).toContain('lib/helpers.kite');
+    });
+
+    it('should exclude current file from suggestions', () => {
+        const text = 'import * from "|"';
+        const offset = text.indexOf('|');
+        const cleanText = text.replace('|', '');
+        const doc = createDocument(cleanText, 'file:///project/main.kite');
+        const position = positionFromOffset(cleanText, offset);
+
+        const ctx: CompletionContext = {
+            getDeclarations: () => [],
+            findKiteFilesInWorkspace: () => [
+                '/project/main.kite',
+                '/project/common.kite',
+            ],
+            getFileContent: () => null,
+            findEnclosingBlock: () => null,
+        };
+
+        const completions = handleCompletion(doc, position, ctx);
+        const labels = completions.map(c => c.label);
+
+        expect(labels).not.toContain('main.kite');
+        expect(labels).toContain('common.kite');
+    });
+
+    it('should work with partial path typed', () => {
+        const text = 'import * from "com|"';
+        const offset = text.indexOf('|');
+        const cleanText = text.replace('|', '');
+        const doc = createDocument(cleanText, 'file:///project/main.kite');
+        const position = positionFromOffset(cleanText, offset);
+
+        const ctx: CompletionContext = {
+            getDeclarations: () => [],
+            findKiteFilesInWorkspace: () => [
+                '/project/common.kite',
+                '/project/utils.kite',
+            ],
+            getFileContent: () => null,
+            findEnclosingBlock: () => null,
+        };
+
+        const completions = handleCompletion(doc, position, ctx);
+        const labels = completions.map(c => c.label);
+
+        // Should still return all files (editor filters)
+        expect(labels).toContain('common.kite');
+        expect(labels).toContain('utils.kite');
+    });
+
+    it('should have File kind for path completions', () => {
+        const text = 'import * from "|"';
+        const offset = text.indexOf('|');
+        const cleanText = text.replace('|', '');
+        const doc = createDocument(cleanText, 'file:///project/main.kite');
+        const position = positionFromOffset(cleanText, offset);
+
+        const ctx: CompletionContext = {
+            getDeclarations: () => [],
+            findKiteFilesInWorkspace: () => ['/project/common.kite'],
+            getFileContent: () => null,
+            findEnclosingBlock: () => null,
+        };
+
+        const completions = handleCompletion(doc, position, ctx);
+        const fileItem = completions.find(c => c.label === 'common.kite');
+
+        expect(fileItem?.kind).toBe(CompletionItemKind.File);
+    });
+
+    it('should work with named imports', () => {
+        const text = 'import Config from "|"';
+        const offset = text.indexOf('|');
+        const cleanText = text.replace('|', '');
+        const doc = createDocument(cleanText, 'file:///project/main.kite');
+        const position = positionFromOffset(cleanText, offset);
+
+        const ctx: CompletionContext = {
+            getDeclarations: () => [],
+            findKiteFilesInWorkspace: () => ['/project/common.kite'],
+            getFileContent: () => null,
+            findEnclosingBlock: () => null,
+        };
+
+        const completions = handleCompletion(doc, position, ctx);
+        const labels = completions.map(c => c.label);
+
+        expect(labels).toContain('common.kite');
+    });
+});

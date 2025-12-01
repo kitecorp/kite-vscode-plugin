@@ -15,9 +15,12 @@
 
 import {
     CompletionItem,
+    CompletionItemKind,
 } from 'vscode-languageserver/node';
 import { TextDocument } from 'vscode-languageserver-textdocument';
 import { Position } from 'vscode-languageserver/node';
+import { URI } from 'vscode-uri';
+import * as path from 'path';
 import { BlockContext } from '../../types';
 import { getCursorContext, isInDecoratorContext, getDotAccessTarget } from '../../../parser';
 import { getSnippetCompletions } from './snippets';
@@ -54,6 +57,12 @@ export function handleCompletion(
     // Check if we're after @ (decorator context) - use AST utility
     if (isInDecoratorContext(text, offset)) {
         return getDecoratorCompletions(text, offset);
+    }
+
+    // Check if we're in an import statement symbol position
+    const importCompletions = getImportSymbolCompletions(text, offset, uri, ctx);
+    if (importCompletions !== null) {
+        return importCompletions;
     }
 
     // Check if we're after a dot (property access) - use AST utility
@@ -121,6 +130,165 @@ export function handleCompletion(
     // Add context-aware suggestions at the end for resource/component value context
     if (isValueContext && enclosingBlock) {
         addContextAwareSuggestions(completions, text, offset, enclosingBlock, uri, ctx);
+    }
+
+    return completions;
+}
+
+/**
+ * Get completions for import statement (symbol position or path position).
+ * Returns null if not in import context, empty array if in import but no completions.
+ */
+function getImportSymbolCompletions(
+    text: string,
+    offset: number,
+    currentDocUri: string,
+    ctx: CompletionContext
+): CompletionItem[] | null {
+    // Match: import <symbols> from "path" - with possibly empty/partial path
+    const importRegex = /\bimport\s+([\w\s,*]*)\s+from\s+(["'])([^"']*)\2?/g;
+
+    let match;
+    while ((match = importRegex.exec(text)) !== null) {
+        const importStart = match.index;
+        const importEnd = match.index + match[0].length;
+
+        // Check if cursor is within or right after this import statement
+        if (offset < importStart || offset > importEnd + 1) {
+            continue;
+        }
+
+        // Find positions
+        const importKeywordEnd = importStart + 'import '.length;
+        const fromIndex = text.indexOf(' from ', importStart);
+        if (fromIndex === -1) continue;
+
+        const fromKeywordEnd = fromIndex + ' from '.length;
+        const quoteChar = match[2];
+        const pathStart = fromKeywordEnd + 1; // After opening quote
+        const pathContent = match[3];
+        const pathEnd = pathStart + pathContent.length;
+
+        // Check if cursor is in the path string (between quotes after 'from')
+        if (offset >= pathStart && offset <= pathEnd) {
+            return getImportPathCompletions(currentDocUri, ctx);
+        }
+
+        // Check if cursor is in the symbol position (between 'import ' and ' from')
+        if (offset >= importKeywordEnd && offset <= fromIndex) {
+            return getSymbolsFromImportedFile(pathContent, currentDocUri, ctx);
+        }
+    }
+
+    return null; // Not in import context
+}
+
+/**
+ * Get file path completions for import statement.
+ */
+function getImportPathCompletions(
+    currentDocUri: string,
+    ctx: CompletionContext
+): CompletionItem[] {
+    const completions: CompletionItem[] = [];
+    const currentFilePath = URI.parse(currentDocUri).fsPath;
+    const currentDir = path.dirname(currentFilePath);
+
+    const kiteFiles = ctx.findKiteFilesInWorkspace();
+
+    for (const filePath of kiteFiles) {
+        // Skip current file
+        if (filePath === currentFilePath) {
+            continue;
+        }
+
+        // Get relative path from current directory
+        let relativePath = path.relative(currentDir, filePath);
+
+        // Normalize path separators for display
+        relativePath = relativePath.replace(/\\/g, '/');
+
+        completions.push({
+            label: relativePath,
+            kind: CompletionItemKind.File,
+            detail: 'Kite file',
+        });
+    }
+
+    return completions;
+}
+
+/**
+ * Resolve import path and get symbols from the file.
+ */
+function getSymbolsFromImportedFile(
+    importPath: string,
+    currentDocUri: string,
+    ctx: CompletionContext
+): CompletionItem[] {
+    const completions: CompletionItem[] = [];
+
+    // Resolve import path
+    const currentFilePath = URI.parse(currentDocUri).fsPath;
+    const currentDir = path.dirname(currentFilePath);
+
+    let resolvedPath: string;
+    if (importPath.startsWith('./') || importPath.startsWith('../')) {
+        resolvedPath = path.resolve(currentDir, importPath);
+    } else if (importPath.endsWith('.kite')) {
+        resolvedPath = path.resolve(currentDir, importPath);
+    } else {
+        // Package-style path
+        const packagePath = importPath.replace(/\./g, '/') + '.kite';
+        resolvedPath = path.resolve(currentDir, packagePath);
+    }
+
+    // Get file content
+    const fileContent = ctx.getFileContent(resolvedPath, currentDocUri);
+    if (!fileContent) {
+        return completions;
+    }
+
+    // Extract symbols from the file
+    // Schemas
+    const schemaRegex = /\bschema\s+(\w+)\s*\{/g;
+    let m;
+    while ((m = schemaRegex.exec(fileContent)) !== null) {
+        completions.push({
+            label: m[1],
+            kind: CompletionItemKind.Struct,
+            detail: 'schema',
+        });
+    }
+
+    // Components (definitions only - single name before {)
+    const componentRegex = /\bcomponent\s+(\w+)\s*\{/g;
+    while ((m = componentRegex.exec(fileContent)) !== null) {
+        completions.push({
+            label: m[1],
+            kind: CompletionItemKind.Module,
+            detail: 'component',
+        });
+    }
+
+    // Functions
+    const funcRegex = /\bfun\s+(\w+)\s*\(/g;
+    while ((m = funcRegex.exec(fileContent)) !== null) {
+        completions.push({
+            label: m[1],
+            kind: CompletionItemKind.Function,
+            detail: 'function',
+        });
+    }
+
+    // Type aliases
+    const typeRegex = /\btype\s+(\w+)\s*=/g;
+    while ((m = typeRegex.exec(fileContent)) !== null) {
+        completions.push({
+            label: m[1],
+            kind: CompletionItemKind.TypeParameter,
+            detail: 'type',
+        });
     }
 
     return completions;
