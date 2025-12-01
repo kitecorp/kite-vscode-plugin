@@ -25,7 +25,7 @@
     "configuration"
   ],
   "engines": {
-    "vscode": "^1.85.0"
+    "vscode": "^1.106.0"
   },
   "categories": [
     "Programming Languages",
@@ -77,21 +77,21 @@
     "generate-parser": "cd grammar && /opt/homebrew/bin/antlr -Dlanguage=TypeScript -visitor -o ../src/parser/grammar KiteLexer.g4 && /opt/homebrew/bin/antlr -Dlanguage=TypeScript -visitor -lib ../src/parser/grammar -o ../src/parser/grammar KiteParser.g4 && cd .. && node scripts/fix-lexer.js"
   },
   "devDependencies": {
-    "@types/node": "^20.0.0",
-    "@types/vscode": "^1.85.0",
-    "@typescript-eslint/eslint-plugin": "^6.0.0",
-    "@typescript-eslint/parser": "^6.0.0",
+    "@types/node": "^24.0.0",
+    "@types/vscode": "^1.106.0",
+    "@typescript-eslint/eslint-plugin": "^8.0.0",
+    "@typescript-eslint/parser": "^8.0.0",
     "@vitest/coverage-v8": "^4.0.14",
-    "@vscode/vsce": "^2.22.0",
-    "eslint": "^8.0.0",
-    "typescript": "^5.3.0",
+    "@vscode/vsce": "^3.7.1",
+    "eslint": "^9.0.0",
+    "typescript": "^5.9.0",
     "vitest": "^4.0.14"
   },
   "dependencies": {
     "antlr4": "^4.13.2",
     "vscode-languageclient": "^9.0.1",
     "vscode-languageserver": "^9.0.1",
-    "vscode-languageserver-textdocument": "^1.0.11",
-    "vscode-uri": "^3.0.8"
+    "vscode-languageserver-textdocument": "^1.0.12",
+    "vscode-uri": "^3.1.0"
   }
 }
