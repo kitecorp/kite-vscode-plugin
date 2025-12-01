@@ -20,6 +20,7 @@ import { checkUndefinedSymbols } from './undefined-symbols';
 import { checkMissingProperties } from './missing-properties';
 import { checkReservedNames } from './reserved-names';
 import { checkDuplicateProperties } from './duplicate-properties';
+import { checkDecoratorTargets } from './decorator-targets';
 import { isInComment } from '../../utils/text-utils';
 import { findSymbolInWorkspace } from '../../utils/workspace-utils';
 
@@ -566,6 +567,10 @@ export function validateDocument(document: TextDocument, ctx: ValidationContext)
     // Check for duplicate property names in schemas/resources
     const duplicatePropertyDiagnostics = checkDuplicateProperties(document);
     diagnostics.push(...duplicatePropertyDiagnostics);
+
+    // Check for decorator target mismatches
+    const decoratorTargetDiagnostics = checkDecoratorTargets(document);
+    diagnostics.push(...decoratorTargetDiagnostics);
 
     return diagnostics;
 }

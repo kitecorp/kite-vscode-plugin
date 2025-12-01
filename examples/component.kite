@@ -5,7 +5,6 @@ schema Instance {
   string[] private_ips
 }
 // asd
-@count(2)
 component WebServer {
   @unique
   @allowed(["dev", "prod"])
@@ -47,6 +46,7 @@ component WebServer {
 lalal
 
 */
+@count(2)
 component WebServer serviceA {
   instanceType = "t4g.normal"
 }
