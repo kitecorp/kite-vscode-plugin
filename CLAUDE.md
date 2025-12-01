@@ -453,6 +453,32 @@ Skip "Cannot resolve symbol" warnings for:
 
 The `any` keyword is a **type keyword**, not an identifier. Handle it specially in type positions alongside `string`, `number`, `boolean`, etc.
 
+### Component Inputs vs Schema Properties
+
+**Important semantic difference:**
+
+- **Schema properties** - Required unless they have a default value (`= value`). Resource instances must provide all required properties or get an error.
+- **Component inputs** - ALL inputs are optional. When not specified at instantiation, users are prompted at CLI runtime to enter values. Never flag missing inputs as errors.
+
+**Validation implications:**
+
+| Declaration | Missing Required Check | Unused Declaration Check |
+|-------------|----------------------|-------------------------|
+| Schema property (no default) | Error if missing in resource | N/A (not a variable) |
+| Schema property (with default) | No error (optional) | N/A (not a variable) |
+| Component input | Never an error (all optional) | Never flagged (part of API) |
+| Component output | N/A | Never flagged (exports values externally) |
+| `var` declaration | N/A | Warning if unused |
+| Function parameter | N/A | Warning if unused |
+| Loop variable (`for x in`) | N/A | Warning if unused |
+
+### Reserved Names
+
+Keywords and built-in types cannot be used as property names in schemas or input/output names in components. Reserved words include:
+
+- **Types:** `string`, `number`, `boolean`, `any`, `object`, `void`, `null`
+- **Keywords:** `if`, `else`, `for`, `while`, `in`, `return`, `var`, `fun`, `schema`, `component`, `resource`, `input`, `output`, `type`, `import`, `from`, `init`, `this`, `true`, `false`
+
 ## Architecture Patterns
 
 ### Dependency Injection via Context

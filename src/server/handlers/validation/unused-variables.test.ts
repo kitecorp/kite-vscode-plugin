@@ -58,41 +58,26 @@ var msg = "Hello, \${name}!"`);
     });
 
     describe('input declarations', () => {
-        it('should report warning for unused input', () => {
+        it('should NOT report warning for unused input (inputs are component API)', () => {
             const doc = createDocument(`component Server {
     input string name = "default"
 }`);
             const diagnostics = checkUnusedVariables(doc);
 
-            expect(diagnostics).toHaveLength(1);
-            expect(diagnostics[0].message).toContain('Input');
-            expect(diagnostics[0].message).toContain('name');
+            // Inputs are the component's public API - they're meant to be
+            // provided when instantiated, not necessarily used in the body
+            expect(diagnostics).toHaveLength(0);
         });
 
-        it('should not report warning for used input', () => {
+        it('should NOT check outputs either (outputs export values externally)', () => {
             const doc = createDocument(`component Server {
     input string name = "default"
-    output string greeting = "Hello, \${name}!"
+    output string greeting = "Hello, world!"
 }`);
             const diagnostics = checkUnusedVariables(doc);
 
-            // name is used, greeting is output (hint level)
-            expect(diagnostics).toHaveLength(1);
-            expect(diagnostics[0].message).toContain('greeting');
-        });
-    });
-
-    describe('output declarations', () => {
-        it('should report hint for unused output (lower severity)', () => {
-            const doc = createDocument(`component Server {
-    output string endpoint = "http://localhost"
-}`);
-            const diagnostics = checkUnusedVariables(doc);
-
-            // Outputs are consumed externally, so only hint
-            expect(diagnostics).toHaveLength(1);
-            expect(diagnostics[0].severity).toBe(DiagnosticSeverity.Hint);
-            expect(diagnostics[0].message).toContain('Output');
+            // Neither inputs nor outputs should be flagged
+            expect(diagnostics).toHaveLength(0);
         });
     });
 
@@ -247,14 +232,15 @@ fun bar() {
         it('should handle component with resources', () => {
             const doc = createDocument(`component Server {
     input string name = "default"
+    var serverName = name
 
     resource ServerConfig config {
-        serverName = name
+        serverName = serverName
     }
 }`);
             const diagnostics = checkUnusedVariables(doc);
 
-            // name is used in resource
+            // input 'name' is not checked (component API), var 'serverName' is used
             expect(diagnostics).toHaveLength(0);
         });
     });

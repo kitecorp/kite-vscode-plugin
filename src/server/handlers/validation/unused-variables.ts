@@ -16,7 +16,7 @@ import { TextDocument } from 'vscode-languageserver-textdocument';
  */
 interface VariableDecl {
     name: string;
-    type: 'var' | 'input' | 'output' | 'loop' | 'function-param';
+    type: 'var' | 'loop' | 'function-param';
     startOffset: number;
     endOffset: number;
     scopeStart: number;
@@ -43,15 +43,10 @@ export function checkUnusedVariables(document: TextDocument): Diagnostic[] {
 
         // Check if variable is used anywhere in scope (other than declaration)
         if (!isVariableUsed(scopeText, decl.name, declOffsetInScope, declTextLength)) {
-            // Output variables are expected to be consumed by callers, so only warn at hint level
-            const severity = decl.type === 'output'
-                ? DiagnosticSeverity.Hint
-                : DiagnosticSeverity.Warning;
-
             const prefix = getTypePrefix(decl.type);
 
             diagnostics.push({
-                severity,
+                severity: DiagnosticSeverity.Warning,
                 range: Range.create(
                     document.positionAt(decl.startOffset),
                     document.positionAt(decl.endOffset)
@@ -72,8 +67,6 @@ export function checkUnusedVariables(document: TextDocument): Diagnostic[] {
 function getTypePrefix(type: VariableDecl['type']): string {
     switch (type) {
         case 'var': return 'Variable ';
-        case 'input': return 'Input ';
-        case 'output': return 'Output ';
         case 'loop': return 'Loop variable ';
         case 'function-param': return 'Parameter ';
     }
@@ -109,49 +102,9 @@ function findVariableDeclarations(text: string): VariableDecl[] {
         });
     }
 
-    // Find input declarations: input type name
-    const inputRegex = /\binput\s+\w+(?:\[\])?\s+(\w+)/g;
-    while ((match = inputRegex.exec(text)) !== null) {
-        if (isInsideComment(text, match.index) || isInsideString(text, match.index)) continue;
-
-        const name = match[1];
-        const nameStart = match.index + match[0].lastIndexOf(name);
-        const nameEnd = nameStart + name.length;
-
-        // Input scope is the enclosing component
-        const scope = findEnclosingScope(text, match.index);
-
-        declarations.push({
-            name,
-            type: 'input',
-            startOffset: nameStart,
-            endOffset: nameEnd,
-            scopeStart: scope.start,
-            scopeEnd: scope.end,
-        });
-    }
-
-    // Find output declarations: output type name
-    const outputRegex = /\boutput\s+\w+(?:\[\])?\s+(\w+)/g;
-    while ((match = outputRegex.exec(text)) !== null) {
-        if (isInsideComment(text, match.index) || isInsideString(text, match.index)) continue;
-
-        const name = match[1];
-        const nameStart = match.index + match[0].lastIndexOf(name);
-        const nameEnd = nameStart + name.length;
-
-        // Output scope is the enclosing component
-        const scope = findEnclosingScope(text, match.index);
-
-        declarations.push({
-            name,
-            type: 'output',
-            startOffset: nameStart,
-            endOffset: nameEnd,
-            scopeStart: scope.start,
-            scopeEnd: scope.end,
-        });
-    }
+    // Note: Component inputs and outputs are NOT checked for unused.
+    // Inputs are the component's public API - provided when instantiated.
+    // Outputs are meant to export values - consumed by callers externally.
 
     // Find loop variables: for name in ...
     const forRegex = /\bfor\s+(\w+)\s+in\s+/g;
