@@ -35,6 +35,12 @@ import {
     SemanticTokensParams,
     FoldingRange,
     FoldingRangeParams,
+    CallHierarchyItem,
+    CallHierarchyIncomingCall,
+    CallHierarchyOutgoingCall,
+    CallHierarchyIncomingCallsParams,
+    CallHierarchyOutgoingCallsParams,
+    CallHierarchyPrepareParams,
 } from 'vscode-languageserver/node';
 
 import { TextDocument } from 'vscode-languageserver-textdocument';
@@ -64,6 +70,7 @@ import { handleCodeLens, CodeLensContext } from './handlers/code-lens';
 import { handleWorkspaceSymbols, WorkspaceSymbolsContext } from './handlers/workspace-symbols';
 import { handleSemanticTokens, semanticTokensLegend } from './handlers/semantic-tokens';
 import { handleFoldingRange } from './handlers/folding-range';
+import { prepareCallHierarchy, getIncomingCalls, getOutgoingCalls, CallHierarchyContext } from './handlers/call-hierarchy';
 import { scanDocumentAST } from '../parser';
 
 // Create a connection for the server using Node's IPC
@@ -149,7 +156,8 @@ connection.onInitialize((params: InitializeParams): InitializeResult => {
                 legend: semanticTokensLegend,
                 full: true,
             },
-            foldingRangeProvider: true
+            foldingRangeProvider: true,
+            callHierarchyProvider: true
         }
     };
 });
@@ -410,6 +418,33 @@ connection.onFoldingRanges((params: FoldingRangeParams): FoldingRange[] => {
     const document = documents.get(params.textDocument.uri);
     if (!document) return [];
     return handleFoldingRange(document);
+});
+
+// Call Hierarchy handlers - show incoming/outgoing calls for functions
+connection.onRequest('textDocument/prepareCallHierarchy', (params: CallHierarchyPrepareParams): CallHierarchyItem[] | null => {
+    const document = documents.get(params.textDocument.uri);
+    if (!document) return null;
+    return prepareCallHierarchy(document, params.position);
+});
+
+connection.onRequest('callHierarchy/incomingCalls', (params: CallHierarchyIncomingCallsParams): CallHierarchyIncomingCall[] => {
+    const document = documents.get(params.item.uri);
+    if (!document) return [];
+    const ctx: CallHierarchyContext = {
+        findKiteFilesInWorkspace,
+        getFileContent,
+    };
+    return getIncomingCalls(params.item, document, ctx);
+});
+
+connection.onRequest('callHierarchy/outgoingCalls', (params: CallHierarchyOutgoingCallsParams): CallHierarchyOutgoingCall[] => {
+    const document = documents.get(params.item.uri);
+    if (!document) return [];
+    const ctx: CallHierarchyContext = {
+        findKiteFilesInWorkspace,
+        getFileContent,
+    };
+    return getOutgoingCalls(params.item, document, ctx);
 });
 
 // Start the server

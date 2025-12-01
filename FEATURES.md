@@ -701,6 +701,63 @@ component WebServer {            ─┐
 
 ---
 
+## 21. Call Hierarchy
+
+**Handlers:** `textDocument/prepareCallHierarchy`, `callHierarchy/incomingCalls`, `callHierarchy/outgoingCalls`
+
+Shows incoming and outgoing function calls, enabling navigation through call relationships.
+
+### How to Use
+
+1. Place cursor on a function name (definition or call)
+2. Right-click and select **"Show Call Hierarchy"** or use `Shift+Alt+H`
+3. View incoming calls (who calls this function) or outgoing calls (what this function calls)
+
+### Features
+
+| Feature | Description |
+|---------|-------------|
+| **Prepare** | Identifies function at cursor position |
+| **Incoming Calls** | Shows all places that call the selected function |
+| **Outgoing Calls** | Shows all functions called from the selected function |
+| **Cross-file** | Works across all `.kite` files in workspace |
+| **Recursive** | Shows recursive calls (function calling itself) |
+| **Nested Calls** | Handles `b(a())` correctly, showing both `a` and `b` |
+
+### Example
+
+```kite
+fun helper() {           // <- 2 incoming calls (from processA, processB)
+    return 42
+}
+
+fun processA() {
+    helper()             // <- Outgoing: calls helper
+}
+
+fun processB() {
+    var x = helper()     // <- Outgoing: calls helper
+    processA()           // <- Outgoing: calls processA
+}
+```
+
+From `helper`:
+- **Incoming**: `processA`, `processB`
+- **Outgoing**: (none)
+
+From `processB`:
+- **Incoming**: (none)
+- **Outgoing**: `helper`, `processA`
+
+### Keyboard Shortcuts
+
+| Action | Mac | Windows/Linux |
+|--------|-----|---------------|
+| Show Call Hierarchy | `Shift+Alt+H` | `Shift+Alt+H` |
+| Peek Call Hierarchy | `Shift+Cmd+Alt+H` | `Shift+Ctrl+Alt+H` |
+
+---
+
 ## All Features Complete
 
 All planned language server features have been implemented for the Kite VS Code extension.
