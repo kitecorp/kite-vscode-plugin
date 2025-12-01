@@ -376,3 +376,111 @@ component Server { }`;
         expect(findComponentDefinition(text, 'Server', 'file:///test.kite')).not.toBeNull();
     });
 });
+
+describe('import path navigation', () => {
+    // Helper that provides file resolution for import tests
+    function findDefinitionWithFiles(
+        content: string,
+        line: number,
+        character: number,
+        files: Record<string, string> = {}
+    ): Location | null {
+        const doc = createDocument(content, 'file:///project/main.kite');
+        const declarations = scanDocumentAST(doc);
+
+        const ctx: DefinitionContext = {
+            findKiteFilesInWorkspace: () => Object.keys(files).map(f => `/project/${f}`),
+            getFileContent: (filePath: string) => {
+                const relativePath = filePath.replace('/project/', '');
+                return files[relativePath] || null;
+            },
+            extractImports: () => [],
+            isSymbolImported: () => false,
+            findEnclosingBlock: (t: string, offset: number) => findEnclosingBlock(t, offset),
+            getDeclarations: (uri: string) => uri === doc.uri ? declarations : undefined,
+        };
+
+        const result = handleDefinition(
+            { textDocument: { uri: doc.uri }, position: pos(line, character) },
+            doc,
+            ctx
+        );
+
+        if (Array.isArray(result)) {
+            return result[0] || null;
+        }
+        return result;
+    }
+
+    it('should navigate to file when clicking on import path string', () => {
+        const content = 'import * from "common.kite"';
+        // Click on "common.kite" (inside the quotes, around position 16-26)
+        const result = findDefinitionWithFiles(content, 0, 18, {
+            'common.kite': 'schema Config { }'
+        });
+
+        expect(result).not.toBeNull();
+        expect(result?.uri).toContain('common.kite');
+    });
+
+    it('should navigate to relative path import', () => {
+        const content = 'import * from "./lib/utils.kite"';
+        // Click inside the path string
+        const result = findDefinitionWithFiles(content, 0, 20, {
+            'lib/utils.kite': 'fun helper() { }'
+        });
+
+        expect(result).not.toBeNull();
+        expect(result?.uri).toContain('utils.kite');
+    });
+
+    it('should navigate to package-style import path', () => {
+        const content = 'import * from "aws.DatabaseConfig"';
+        // Click inside the path string
+        const result = findDefinitionWithFiles(content, 0, 20, {
+            'aws/DatabaseConfig.kite': 'schema DBConfig { }'
+        });
+
+        expect(result).not.toBeNull();
+        expect(result?.uri).toContain('DatabaseConfig.kite');
+    });
+
+    it('should return null for non-existent import file', () => {
+        const content = 'import * from "nonexistent.kite"';
+        const result = findDefinitionWithFiles(content, 0, 20, {});
+
+        expect(result).toBeNull();
+    });
+
+    it('should not navigate when clicking outside import path string', () => {
+        const content = 'import * from "common.kite"\nvar x = 1';
+        // Click on "var" keyword
+        const result = findDefinitionWithFiles(content, 1, 0, {
+            'common.kite': 'schema Config { }'
+        });
+
+        expect(result).toBeNull();
+    });
+
+    it('should work with named imports', () => {
+        const content = 'import Config from "common.kite"';
+        // Click inside the path string
+        const result = findDefinitionWithFiles(content, 0, 24, {
+            'common.kite': 'schema Config { }'
+        });
+
+        expect(result).not.toBeNull();
+        expect(result?.uri).toContain('common.kite');
+    });
+
+    it('should navigate to start of file (line 0, char 0)', () => {
+        const content = 'import * from "common.kite"';
+        const result = findDefinitionWithFiles(content, 0, 18, {
+            'common.kite': 'schema Config { }'
+        });
+
+        expect(result).not.toBeNull();
+        expect(result?.range.start.line).toBe(0);
+        expect(result?.range.start.character).toBe(0);
+    });
+});

@@ -19,6 +19,7 @@ import {
 } from 'vscode-languageserver/node';
 import { TextDocument } from 'vscode-languageserver-textdocument';
 import { URI } from 'vscode-uri';
+import * as path from 'path';
 import { escapeRegex } from '../../utils/rename-utils';
 import { getWordAtPosition } from '../../utils/text-utils';
 
@@ -43,6 +44,13 @@ export function handleDefinition(
 ): Definition | null {
     const text = document.getText();
     const offset = document.offsetAt(params.position);
+
+    // Check if cursor is on an import path string - only offer file navigation
+    const importPathResult = findImportPathDefinition(text, offset, params.textDocument.uri, ctx);
+    if (importPathResult.isImportPath) {
+        return importPathResult.location; // Return file location or null, don't look for symbols
+    }
+
     const word = getWordAtPosition(document, params.position);
     if (!word) return null;
 
@@ -274,4 +282,87 @@ function createLocation(fileContent: string, fileUri: string, nameStart: number,
     const startPos = offsetToPosition(fileContent, nameStart);
     const endPos = offsetToPosition(fileContent, nameStart + nameLength);
     return Location.create(fileUri, Range.create(startPos, endPos));
+}
+
+/**
+ * Result of checking for import path at cursor position.
+ */
+interface ImportPathResult {
+    isImportPath: boolean;
+    location: Location | null;
+}
+
+/**
+ * Check if cursor is inside an import path string and return location to that file.
+ * Returns { isImportPath: true } if cursor is in import path (even if file not found).
+ */
+function findImportPathDefinition(
+    text: string,
+    offset: number,
+    currentDocUri: string,
+    ctx: DefinitionContext
+): ImportPathResult {
+    // Find all import statements with their path string positions
+    // Match: import ... from "path" or import ... from 'path'
+    const importRegex = /\bimport\s+(?:\*|[\w\s,]+)\s+from\s+(["'])([^"']+)\1/g;
+
+    let match;
+    while ((match = importRegex.exec(text)) !== null) {
+        // match[1] is the quote character, match[2] is the path
+        const pathStart = match.index + match[0].indexOf(match[1]) + 1; // +1 to skip the quote
+        const pathEnd = pathStart + match[2].length;
+
+        // Check if cursor is within the path string
+        if (offset >= pathStart && offset <= pathEnd) {
+            const importPath = match[2];
+            const resolvedFile = resolveImportPath(importPath, currentDocUri, ctx);
+
+            if (resolvedFile) {
+                const fileUri = URI.file(resolvedFile).toString();
+                // Navigate to start of file
+                return {
+                    isImportPath: true,
+                    location: Location.create(fileUri, Range.create(Position.create(0, 0), Position.create(0, 0)))
+                };
+            }
+            // Cursor is in import path but file doesn't exist - don't look for symbols
+            return { isImportPath: true, location: null };
+        }
+    }
+
+    return { isImportPath: false, location: null };
+}
+
+/**
+ * Resolve an import path to an absolute file path.
+ */
+function resolveImportPath(
+    importPath: string,
+    currentDocUri: string,
+    ctx: DefinitionContext
+): string | null {
+    const currentFilePath = URI.parse(currentDocUri).fsPath;
+    const currentDir = path.dirname(currentFilePath);
+
+    let resolvedPath: string;
+
+    if (importPath.startsWith('./') || importPath.startsWith('../')) {
+        // Relative path
+        resolvedPath = path.resolve(currentDir, importPath);
+    } else if (importPath.endsWith('.kite')) {
+        // Simple filename relative to current directory
+        resolvedPath = path.resolve(currentDir, importPath);
+    } else {
+        // Package-style path like "aws.DatabaseConfig" -> aws/DatabaseConfig.kite
+        const packagePath = importPath.replace(/\./g, '/') + '.kite';
+        resolvedPath = path.resolve(currentDir, packagePath);
+    }
+
+    // Check if file exists via context
+    const fileContent = ctx.getFileContent(resolvedPath, currentDocUri);
+    if (fileContent !== null) {
+        return resolvedPath;
+    }
+
+    return null;
 }
