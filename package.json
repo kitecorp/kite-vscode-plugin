@@ -1,8 +1,8 @@
 {
   "name": "kite-language",
   "displayName": "Kite Language",
-  "description": "Full language support for Kite - a modern Infrastructure as Code language. Features: syntax highlighting, smart autocomplete with DevOps-aware suggestions (ports, regions, instance types), go to definition (cross-file, properties, loop variables), find references, hover documentation, signature help, rename symbol, document symbols, inlay hints, code formatting, semantic tokens, code lens, workspace symbols, document highlight, folding ranges, call hierarchy, linked editing (for loops, comprehensions, inputs/outputs, string interpolation), clickable import links, on-type formatting, type mismatch diagnostics, unused variable detection, go to type definition, and code actions (add import, convert wildcards).",
-  "version": "0.2.0",
+  "description": "Full language support for Kite - a modern Infrastructure as Code language. Includes syntax highlighting, smart autocomplete, go to definition, find references, rename symbol, hover docs, diagnostics, code formatting, and more.",
+  "version": "0.3.0",
   "publisher": "EchoStream",
   "license": "MIT",
   "repository": {
@@ -49,8 +49,8 @@
         ],
         "configuration": "./language-configuration.json",
         "icon": {
-          "light": "./icons/kite-light.png",
-          "dark": "./icons/kite-dark.png"
+          "light": "./icons/logo.png",
+          "dark": "./icons/logo.png"
         }
       }
     ],
