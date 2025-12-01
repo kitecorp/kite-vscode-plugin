@@ -3,13 +3,8 @@
  */
 
 import { describe, it, expect } from 'vitest';
-import { TextDocument } from 'vscode-languageserver-textdocument';
 import { formatDocument, FormatOptions } from '.';
-
-// Helper to create a mock TextDocument
-function createDocument(content: string, uri = 'file:///test.kite'): TextDocument {
-    return TextDocument.create(uri, 'kite', 1, content);
-}
+import { createDocument } from '../../test-utils';
 
 // Helper to format and return the result as a string
 function format(content: string, options?: Partial<FormatOptions>): string {

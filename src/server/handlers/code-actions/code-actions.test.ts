@@ -3,16 +3,13 @@
  */
 
 import { describe, it, expect } from 'vitest';
+import { createDocument } from '../../test-utils';
 import { TextDocument } from 'vscode-languageserver-textdocument';
 import { CodeActionKind, CodeActionTriggerKind, DiagnosticSeverity, DiagnosticTag, Range, Position } from 'vscode-languageserver/node';
 import { handleCodeAction } from '.';
 import { ImportSuggestion } from '../../types';
 import { UnusedImportData } from '../validation/unused-imports';
 
-// Helper to create a mock TextDocument
-function createDocument(content: string, uri = 'file:///test.kite'): TextDocument {
-    return TextDocument.create(uri, 'kite', 1, content);
-}
 
 // Helper to create diagnostic data
 function createDiagnosticData(

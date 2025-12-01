@@ -3,8 +3,8 @@
  */
 
 import { describe, it, expect } from 'vitest';
-import { TextDocument } from 'vscode-languageserver-textdocument';
 import { CompletionItemKind, Position } from 'vscode-languageserver/node';
+import { createDocument } from '../test-utils';
 import {
     offsetToPosition,
     getWordAtPosition,
@@ -13,10 +13,6 @@ import {
     findMatchingBracket,
     findEnclosingBlock,
 } from './text-utils';
-
-function createDocument(content: string): TextDocument {
-    return TextDocument.create('file:///test.kite', 'kite', 1, content);
-}
 
 describe('offsetToPosition', () => {
     it('returns line 0, character 0 for offset 0', () => {

@@ -3,14 +3,11 @@
  */
 
 import { describe, it, expect } from 'vitest';
+import { createDocument } from '../../test-utils';
 import { TextDocument } from 'vscode-languageserver-textdocument';
 import { DiagnosticSeverity } from 'vscode-languageserver/node';
 import { checkTypeMismatches, inferValueType, isTypeCompatible } from './type-checking';
 
-// Helper to create a mock TextDocument
-function createDocument(content: string, uri = 'file:///test.kite'): TextDocument {
-    return TextDocument.create(uri, 'kite', 1, content);
-}
 
 describe('inferValueType', () => {
     it('should infer string type from double-quoted string', () => {

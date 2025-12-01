@@ -3,6 +3,7 @@
  */
 
 import { describe, it, expect } from 'vitest';
+import { createDocument } from '../../test-utils';
 import { TextDocument } from 'vscode-languageserver-textdocument';
 import { Position, Location } from 'vscode-languageserver/node';
 import {
@@ -16,10 +17,6 @@ import { Declaration, ImportInfo, BlockContext } from '../../types';
 import { findEnclosingBlock } from '../../utils/text-utils';
 import { scanDocumentAST } from '../../../parser';
 
-// Helper to create a mock TextDocument
-function createDocument(content: string, uri = 'file:///test.kite'): TextDocument {
-    return TextDocument.create(uri, 'kite', 1, content);
-}
 
 // Helper to get position from line and character
 function pos(line: number, character: number): Position {

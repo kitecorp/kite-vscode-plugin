@@ -4,15 +4,12 @@
 
 import { describe, it, expect } from 'vitest';
 import { TextDocument } from 'vscode-languageserver-textdocument';
+import { createDocument } from '../../test-utils';
 import {
     findComponentPropertyReferences,
     findSchemaPropertyReferences,
 } from './property-references';
 import { ReferencesContext } from './types';
-
-function createDocument(content: string, uri = 'file:///test.kite'): TextDocument {
-    return TextDocument.create(uri, 'kite', 1, content);
-}
 
 function createContext(files: Record<string, string>): ReferencesContext {
     const docs = new Map<string, TextDocument>();

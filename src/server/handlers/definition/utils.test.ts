@@ -3,17 +3,13 @@
  */
 
 import { describe, it, expect } from 'vitest';
+import { createDocument } from '../../test-utils';
 import { TextDocument } from 'vscode-languageserver-textdocument';
 import {
     getPropertyAccessContext,
     findEnclosingBrackets,
     findPropertyInRange,
 } from './utils';
-
-function createDocument(content: string, uri = 'file:///test.kite'): TextDocument {
-    return TextDocument.create(uri, 'kite', 1, content);
-}
-
 describe('getPropertyAccessContext', () => {
     describe('simple property access', () => {
         it('returns chain for object.property', () => {

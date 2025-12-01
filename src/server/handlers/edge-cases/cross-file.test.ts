@@ -5,6 +5,7 @@
  */
 
 import { describe, it, expect } from 'vitest';
+import { createDocument } from '../../test-utils';
 import { TextDocument } from 'vscode-languageserver-textdocument';
 
 // Import handlers
@@ -15,11 +16,6 @@ import { Declaration } from '../../types';
 
 // Import utilities for testing imports
 import { extractImports, isSymbolImported } from '../../utils/import-utils';
-
-function createDocument(content: string, uri = 'file:///project/main.kite'): TextDocument {
-    return TextDocument.create(uri, 'kite', 1, content);
-}
-
 function createCompletionContext(overrides: Partial<CompletionContext> = {}): CompletionContext {
     return {
         getDeclarations: () => [],

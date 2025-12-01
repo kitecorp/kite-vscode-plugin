@@ -3,17 +3,13 @@
  */
 
 import { describe, it, expect } from 'vitest';
+import { createDocument } from '../../test-utils';
 import { TextDocument } from 'vscode-languageserver-textdocument';
 import {
     findSchemaPropertyLocation,
     findComponentInputLocation,
     findPropertyInChain,
 } from './property-definitions';
-
-function createDocument(content: string, uri = 'file:///test.kite'): TextDocument {
-    return TextDocument.create(uri, 'kite', 1, content);
-}
-
 describe('findSchemaPropertyLocation', () => {
     describe('basic property lookup', () => {
         it('finds property in schema', () => {

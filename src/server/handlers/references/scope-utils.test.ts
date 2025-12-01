@@ -4,15 +4,12 @@
 
 import { describe, it, expect } from 'vitest';
 import { TextDocument } from 'vscode-languageserver-textdocument';
+import { createDocument } from '../../test-utils';
 import {
     isInStringLiteral,
     isInInterpolation,
     findReferencesInScope,
 } from './scope-utils';
-
-function createDocument(content: string, uri = 'file:///test.kite'): TextDocument {
-    return TextDocument.create(uri, 'kite', 1, content);
-}
 
 describe('isInStringLiteral', () => {
     describe('double-quoted strings', () => {

@@ -3,15 +3,10 @@
  */
 
 import { describe, it, expect } from 'vitest';
-import { TextDocument } from 'vscode-languageserver-textdocument';
 import { MarkupKind, Position, Range } from 'vscode-languageserver/node';
 import { handleHover } from '.';
 import { Declaration } from '../../types';
-
-// Helper to create a mock TextDocument
-function createDocument(content: string, uri = 'file:///test.kite'): TextDocument {
-    return TextDocument.create(uri, 'kite', 1, content);
-}
+import { createDocument } from '../../test-utils';
 
 describe('handleHover', () => {
     describe('keyword hover', () => {

@@ -3,15 +3,11 @@
  */
 
 import { describe, it, expect } from 'vitest';
-import { TextDocument } from 'vscode-languageserver-textdocument';
+import { createDocument } from '../../test-utils';
 import { Position, Range } from 'vscode-languageserver/node';
 import { handleSignatureHelp, findFunctionCallAtPosition } from '.';
 import { Declaration } from '../../types';
 
-// Helper to create a mock TextDocument
-function createDocument(content: string, uri = 'file:///test.kite'): TextDocument {
-    return TextDocument.create(uri, 'kite', 1, content);
-}
 
 // Helper to create a function declaration
 function createFunctionDecl(

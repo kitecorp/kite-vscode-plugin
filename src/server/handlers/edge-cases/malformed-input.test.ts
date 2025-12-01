@@ -5,6 +5,7 @@
  */
 
 import { describe, it, expect } from 'vitest';
+import { createDocument } from '../../test-utils';
 import { TextDocument } from 'vscode-languageserver-textdocument';
 import { Position } from 'vscode-languageserver/node';
 
@@ -13,11 +14,6 @@ import { handleCompletion, CompletionContext } from '../completion';
 import { handleDocumentSymbol } from '../document-symbols';
 import { handleHover } from '../hover';
 import { Declaration } from '../../types';
-
-function createDocument(content: string, uri = 'file:///test.kite'): TextDocument {
-    return TextDocument.create(uri, 'kite', 1, content);
-}
-
 function createCompletionContext(): CompletionContext {
     return {
         getDeclarations: () => [],
