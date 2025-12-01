@@ -33,6 +33,7 @@ Navigate to the definition of symbols with Ctrl+Click or F12.
 - **Resources** - Jump to `resource` declaration
 - **Imports** - Cross-file navigation for imported symbols
 - **Property navigation** - Ctrl+click on property name in resource body jumps to schema property
+- **Import paths** - Ctrl+click on `"common.kite"` opens that file directly
 
 ### Cross-file Resolution:
 1. First checks current file
@@ -197,6 +198,12 @@ Provides the outline view in VS Code's sidebar.
 - **Add Import**: When using symbol from non-imported file
   - Creates new import: `import SymbolName from "file.kite"`
   - Or adds to existing: `import Existing, SymbolName from "file.kite"`
+- **Remove Unused Import**: Removes single unused import
+- **Remove All Unused Imports**: Removes all unused imports at once
+- **Convert to Named Import**: Converts `import * from "file"` to `import UsedA, UsedB from "file"`
+  - Analyzes which symbols are actually used
+  - Only includes symbols that are referenced in the file
+  - Alphabetically sorted symbol list
 
 ---
 
@@ -263,6 +270,89 @@ Enable inlay hints: **Settings → Editor → Inlay Hints → Enabled**
 
 ---
 
+## 11. Rename Symbol
+
+**Handler:** `connection.onRenameRequest` + `connection.onPrepareRename`
+
+Rename symbols across the entire file with F2.
+
+### Supported:
+- Variables
+- Functions
+- Schemas
+- Components
+- Resources
+- Inputs/Outputs
+- Loop variables (`for item in items`)
+
+### Features:
+- **Prepare rename** - Validates the symbol can be renamed before showing dialog
+- **Scope-aware** - Only renames within appropriate scope (e.g., loop variables only within loop)
+- **Cross-file rename** - Renames symbol in all files where it's used
+- **Conflict detection** - Warns if new name conflicts with existing symbol
+
+---
+
+## 12. Code Formatting
+
+**Handler:** `connection.onDocumentFormatting`
+
+Auto-format Kite files with consistent indentation.
+
+### Formatting Rules:
+- **Indentation**: 4 spaces per level
+- **Braces**: Opening brace on same line, closing brace on own line
+- **Spacing**: Consistent spacing around operators and after keywords
+- **Blank lines**: Preserved between top-level declarations
+- **Comments**: Preserved in place
+
+### Supported Constructs:
+- Schemas, components, resources
+- Functions with parameters
+- Control flow (`if`, `else`, `for`, `while`)
+- Object literals and arrays
+- Decorators
+
+---
+
+## 13. Type Checking
+
+**Handler:** `validateDocument` (part of diagnostics)
+
+Validates type consistency throughout the code.
+
+### Checks:
+- **Schema property types** - Verifies values match declared types
+- **Function parameter types** - Checks argument types in function calls
+- **Return type consistency** - Validates function return statements
+- **Assignment compatibility** - Checks variable assignments match declared types
+
+### Error Messages:
+- "Type 'X' is not assignable to type 'Y'"
+- "Expected N arguments but got M"
+- "Property 'X' does not exist on type 'Y'"
+
+---
+
+## 14. Unused Import Detection
+
+**Handler:** `validateDocument` + `connection.onCodeAction`
+
+Detects and helps remove unused imports.
+
+### Features:
+- **Warning diagnostic** - Shows warning for unused imports
+- **Quick fix: Remove import** - Removes single unused import
+- **Quick fix: Remove all unused** - Removes all unused imports at once
+- **Smart removal** - For multi-symbol imports, only removes unused symbol
+
+### Detection:
+- Tracks all symbols from import statements
+- Scans file for symbol usage (including string interpolation)
+- Reports imports where no symbols are used
+
+---
+
 ## Configuration Files
 
 ### `language-configuration.json`
@@ -298,13 +388,51 @@ Enable inlay hints: **Settings → Editor → Inlay Hints → Enabled**
 - `isInsideComponentDefinition()` - Checks if inside component definition
 - `isAfterEquals()` - Checks if in value context
 
+### Utility Functions (consolidated 2024-12-01)
+- `escapeRegex()` - Escape special regex characters (text-utils.ts)
+- `wordBoundaryRegex()` - Create word boundary regex (text-utils.ts)
+- `isInComment()` - Check if position is inside comment (text-utils.ts)
+- `findBraceEnd()` - Find matching closing brace (text-utils.ts)
+- `resolveImportPath()` - Resolve import to file path (import-utils.ts)
+- `findSymbolInWorkspace()` - Search symbol across files (workspace-utils.ts)
+
+---
+
+## 15. Document Highlight
+
+**Handler:** `connection.onDocumentHighlight`
+
+Highlights all occurrences of the symbol under the cursor.
+
+### Features:
+- **Word boundary matching** - Only matches complete words, not partial matches
+- **Write vs Read detection** - Declarations and assignments shown differently from reads
+- **Comment filtering** - Ignores occurrences inside comments
+- **String filtering** - Ignores occurrences inside single-quoted strings (non-interpolated)
+- **Interpolation support** - Highlights variables inside `${var}` and `$var` in double-quoted strings
+
+### Write Detection (shown with different highlight):
+- Variable declarations (`var x = ...`)
+- Function declarations (`fun name(...)`)
+- Schema/component definitions (`schema Name`, `component Name`)
+- Input/output declarations
+- Loop variables (`for item in items`)
+- Assignment targets (`x = ...`, `x += ...`)
+
+### Read Detection:
+- Variable references in expressions
+- Function calls
+- Type references (`resource TypeName instance`)
+- Property access
+
 ---
 
 ## Future Features
 
-| Feature | Description | Status |
-|---------|-------------|--------|
-| Code Formatting | Auto-format Kite files with consistent indentation | Planned |
-| Rename Symbol | Rename variables/functions across file | Planned |
-| Type Checking | Warn on type mismatches in assignments | Planned |
-| Unused Variable Warnings | Highlight declared but unused variables | Planned |
+| Feature | Description | Priority |
+|---------|-------------|----------|
+| Workspace Symbols | Global "Go to Symbol" (Cmd+T) across all files | Medium |
+| Selection Range | Smart expand selection (Cmd+Shift+→) | Medium |
+| Semantic Tokens | Enhanced syntax highlighting via LSP | Medium |
+| Code Lens | Show "X references" above declarations | Low |
+| Folding Range | Custom folding regions via LSP | Low |

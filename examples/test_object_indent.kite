@@ -1,4 +1,6 @@
-import Region from "common.kite"
+import defaultRegion from "common.kite"
+
+var x = defaultRegion
 
 @tags({
 Name: "test",

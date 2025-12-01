@@ -376,7 +376,7 @@ function findImportDefinition(
 }
 
 /**
- * Find a symbol definition (schema, component, function, type) in file content.
+ * Find a symbol definition (schema, component, function, type, variable, resource) in file content.
  */
 function findSymbolDefinitionInFile(fileContent: string, symbol: string, fileUri: string): Location | null {
     // Check for schema definition
@@ -387,11 +387,27 @@ function findSymbolDefinitionInFile(fileContent: string, symbol: string, fileUri
         return createLocation(fileContent, fileUri, nameStart, symbol.length);
     }
 
-    // Check for component definition
-    const componentRegex = new RegExp(`\\bcomponent\\s+(${escapeRegex(symbol)})\\s*\\{`);
-    const componentMatch = componentRegex.exec(fileContent);
-    if (componentMatch) {
-        const nameStart = componentMatch.index + componentMatch[0].indexOf(symbol);
+    // Check for component definition: component Name {
+    const componentDefRegex = new RegExp(`\\bcomponent\\s+(${escapeRegex(symbol)})\\s*\\{`);
+    const componentDefMatch = componentDefRegex.exec(fileContent);
+    if (componentDefMatch) {
+        // Verify it's a definition (only one word between 'component' and '{')
+        const betweenKeywordAndBrace = fileContent.substring(
+            componentDefMatch.index + 10,
+            componentDefMatch.index + componentDefMatch[0].length - 1
+        ).trim();
+        const parts = betweenKeywordAndBrace.split(/\s+/).filter(s => s);
+        if (parts.length === 1) {
+            const nameStart = componentDefMatch.index + componentDefMatch[0].indexOf(symbol);
+            return createLocation(fileContent, fileUri, nameStart, symbol.length);
+        }
+    }
+
+    // Check for component instance: component Type instanceName {
+    const componentInstRegex = new RegExp(`\\bcomponent\\s+\\w+(?:\\.\\w+)*\\s+(${escapeRegex(symbol)})\\s*\\{`);
+    const componentInstMatch = componentInstRegex.exec(fileContent);
+    if (componentInstMatch) {
+        const nameStart = componentInstMatch.index + componentInstMatch[0].indexOf(symbol);
         return createLocation(fileContent, fileUri, nameStart, symbol.length);
     }
 
@@ -408,6 +424,22 @@ function findSymbolDefinitionInFile(fileContent: string, symbol: string, fileUri
     const typeMatch = typeRegex.exec(fileContent);
     if (typeMatch) {
         const nameStart = typeMatch.index + typeMatch[0].indexOf(symbol);
+        return createLocation(fileContent, fileUri, nameStart, symbol.length);
+    }
+
+    // Check for variable definition: var [type] name =
+    const varRegex = new RegExp(`\\bvar\\s+(?:\\w+\\s+)?(${escapeRegex(symbol)})\\s*=`);
+    const varMatch = varRegex.exec(fileContent);
+    if (varMatch) {
+        const nameStart = varMatch.index + varMatch[0].indexOf(symbol);
+        return createLocation(fileContent, fileUri, nameStart, symbol.length);
+    }
+
+    // Check for resource instance: resource Type name {
+    const resourceRegex = new RegExp(`\\bresource\\s+\\w+(?:\\.\\w+)*\\s+(${escapeRegex(symbol)})\\s*\\{`);
+    const resourceMatch = resourceRegex.exec(fileContent);
+    if (resourceMatch) {
+        const nameStart = resourceMatch.index + resourceMatch[0].indexOf(symbol);
         return createLocation(fileContent, fileUri, nameStart, symbol.length);
     }
 

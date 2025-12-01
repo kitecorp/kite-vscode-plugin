@@ -551,4 +551,52 @@ describe('import path navigation', () => {
 
         expect(result).toBeNull();
     });
+
+    it('should navigate to variable definition when clicking on imported symbol', () => {
+        const content = 'import defaultRegion from "common.kite"';
+        // Click on "defaultRegion"
+        const result = findDefinitionWithFiles(content, 0, 10, {
+            'common.kite': 'var defaultRegion = "us-east-1"'
+        });
+
+        expect(result).not.toBeNull();
+        expect(result?.uri).toContain('common.kite');
+        expect(result?.range.start.character).toBe(4); // "var defaultRegion" - defaultRegion starts at 4
+    });
+
+    it('should navigate to typed variable definition when clicking on imported symbol', () => {
+        const content = 'import port from "config.kite"';
+        // Click on "port"
+        const result = findDefinitionWithFiles(content, 0, 8, {
+            'config.kite': 'var number port = 8080'
+        });
+
+        expect(result).not.toBeNull();
+        expect(result?.uri).toContain('config.kite');
+        expect(result?.range.start.character).toBe(11); // "var number port" - port starts at 11
+    });
+
+    it('should navigate to resource definition when clicking on imported symbol', () => {
+        const content = 'import mainServer from "infra.kite"';
+        // Click on "mainServer"
+        const result = findDefinitionWithFiles(content, 0, 10, {
+            'infra.kite': 'resource Server.Config mainServer {\n    name = "main"\n}'
+        });
+
+        expect(result).not.toBeNull();
+        expect(result?.uri).toContain('infra.kite');
+        expect(result?.range.start.character).toBe(23); // After "resource Server.Config "
+    });
+
+    it('should navigate to component instance when clicking on imported symbol', () => {
+        const content = 'import api from "services.kite"';
+        // Click on "api"
+        const result = findDefinitionWithFiles(content, 0, 8, {
+            'services.kite': 'component WebServer api {\n    name = "api"\n}'
+        });
+
+        expect(result).not.toBeNull();
+        expect(result?.uri).toContain('services.kite');
+        expect(result?.range.start.character).toBe(20); // After "component WebServer "
+    });
 });

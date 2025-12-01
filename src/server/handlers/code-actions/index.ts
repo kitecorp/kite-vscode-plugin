@@ -22,6 +22,10 @@ import {
     findLastImportLineAST,
 } from '../../../parser';
 import { UnusedImportData } from '../validation/unused-imports';
+import { createWildcardConversionAction, findWildcardImportAtPosition, WildcardConversionContext } from './wildcard-conversion';
+
+// Re-export for external use
+export { WildcardConversionContext } from './wildcard-conversion';
 
 /**
  * Handle code action request
@@ -41,13 +45,36 @@ function isUnusedImportData(data: unknown): data is UnusedImportData {
 export function handleCodeAction(
     params: CodeActionParams,
     document: TextDocument,
-    diagnosticData: Map<string, ImportSuggestion>
+    diagnosticData: Map<string, ImportSuggestion>,
+    wildcardCtx?: WildcardConversionContext
 ): CodeAction[] {
     const actions: CodeAction[] = [];
     const text = document.getText();
 
     // Parse document for AST-based import detection
     const parseResult = parseKite(text);
+
+    // Check for wildcard import conversion (refactoring action, not diagnostic-based)
+    if (wildcardCtx) {
+        const startLine = params.range.start.line;
+        const endLine = params.range.end.line;
+
+        // Check each line in the selection for wildcard imports
+        for (let line = startLine; line <= endLine; line++) {
+            const wildcardImport = findWildcardImportAtPosition(document, line);
+            if (wildcardImport) {
+                const conversionAction = createWildcardConversionAction(
+                    document,
+                    wildcardImport.range,
+                    wildcardCtx
+                );
+                if (conversionAction) {
+                    actions.push(conversionAction);
+                    break; // Only one conversion action per request
+                }
+            }
+        }
+    }
 
     // Collect all unused import diagnostics for "Remove all" action
     const unusedImportDiagnostics: { diagnostic: typeof params.context.diagnostics[0]; data: UnusedImportData }[] = [];

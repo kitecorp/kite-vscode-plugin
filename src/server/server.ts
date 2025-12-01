@@ -23,6 +23,8 @@ import {
     PrepareRenameParams,
     DocumentFormattingParams,
     TextEdit,
+    DocumentHighlight,
+    DocumentHighlightParams,
 } from 'vscode-languageserver/node';
 
 import { TextDocument } from 'vscode-languageserver-textdocument';
@@ -46,6 +48,7 @@ import { handleReferences, ReferencesContext } from './handlers/references';
 import { handlePrepareRename, handleRename, RenameContext } from './handlers/rename';
 import { handleCompletion, CompletionContext } from './handlers/completion';
 import { formatDocument } from './handlers/formatting';
+import { handleDocumentHighlight } from './handlers/document-highlight';
 import { scanDocumentAST } from '../parser';
 
 // Create a connection for the server using Node's IPC
@@ -120,7 +123,8 @@ connection.onInitialize((params: InitializeParams): InitializeResult => {
             renameProvider: {
                 prepareProvider: true
             },
-            documentFormattingProvider: true
+            documentFormattingProvider: true,
+            documentHighlightProvider: true
         }
     };
 });
@@ -310,9 +314,12 @@ connection.onRequest('textDocument/inlayHint', (params: InlayHintParams): InlayH
 connection.onCodeAction((params: CodeActionParams): CodeAction[] => {
     const document = documents.get(params.textDocument.uri);
     if (!document) return [];
-    const docDiagnosticData = diagnosticData.get(params.textDocument.uri);
-    if (!docDiagnosticData) return [];
-    return handleCodeAction(params, document, docDiagnosticData);
+    const docDiagnosticData = diagnosticData.get(params.textDocument.uri) || new Map();
+    const wildcardCtx = {
+        findKiteFilesInWorkspace,
+        getFileContent
+    };
+    return handleCodeAction(params, document, docDiagnosticData, wildcardCtx);
 });
 
 // Document Symbol handler - provides outline view
@@ -330,6 +337,13 @@ connection.onDocumentFormatting((params: DocumentFormattingParams): TextEdit[] =
         tabSize: params.options.tabSize,
         insertSpaces: params.options.insertSpaces
     });
+});
+
+// Document Highlight handler - highlights all occurrences of symbol under cursor
+connection.onDocumentHighlight((params: DocumentHighlightParams): DocumentHighlight[] => {
+    const document = documents.get(params.textDocument.uri);
+    if (!document) return [];
+    return handleDocumentHighlight(document, params.position);
 });
 
 // Start the server
