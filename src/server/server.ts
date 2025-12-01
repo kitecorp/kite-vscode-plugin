@@ -25,6 +25,8 @@ import {
     TextEdit,
     DocumentHighlight,
     DocumentHighlightParams,
+    SelectionRange,
+    SelectionRangeParams,
 } from 'vscode-languageserver/node';
 
 import { TextDocument } from 'vscode-languageserver-textdocument';
@@ -49,6 +51,7 @@ import { handlePrepareRename, handleRename, RenameContext } from './handlers/ren
 import { handleCompletion, CompletionContext } from './handlers/completion';
 import { formatDocument } from './handlers/formatting';
 import { handleDocumentHighlight } from './handlers/document-highlight';
+import { handleSelectionRange } from './handlers/selection-range';
 import { scanDocumentAST } from '../parser';
 
 // Create a connection for the server using Node's IPC
@@ -124,7 +127,8 @@ connection.onInitialize((params: InitializeParams): InitializeResult => {
                 prepareProvider: true
             },
             documentFormattingProvider: true,
-            documentHighlightProvider: true
+            documentHighlightProvider: true,
+            selectionRangeProvider: true
         }
     };
 });
@@ -344,6 +348,13 @@ connection.onDocumentHighlight((params: DocumentHighlightParams): DocumentHighli
     const document = documents.get(params.textDocument.uri);
     if (!document) return [];
     return handleDocumentHighlight(document, params.position);
+});
+
+// Selection Range handler - provides smart expand selection (Cmd+Shift+→)
+connection.onSelectionRanges((params: SelectionRangeParams): SelectionRange[] => {
+    const document = documents.get(params.textDocument.uri);
+    if (!document) return [];
+    return handleSelectionRange(document, params.positions);
 });
 
 // Start the server

@@ -427,12 +427,63 @@ Highlights all occurrences of the symbol under the cursor.
 
 ---
 
+## 16. Selection Range (Smart Expand Selection)
+
+**Handler:** `connection.onSelectionRanges`
+
+Provides smart expand/shrink selection using Cmd+Shift+→ (Mac) or Ctrl+Shift+→ (Windows/Linux).
+
+### Hierarchy
+
+Selection expands through these levels (from smallest to largest):
+
+1. **Word/Identifier** - The token under cursor
+2. **String Interpolation** - `${expression}` inside strings
+3. **String Literal** - Full quoted string
+4. **Expression** - Property access chains (`a.b.c`), function calls
+5. **Parentheses Content** - Inside `(...)` (function parameters, conditions)
+6. **Full Parentheses** - Including `(` and `)`
+7. **Statement** - Single line statement
+8. **Block Content** - Inside `{...}`
+9. **Full Block** - Including `{` and `}`
+10. **Declaration** - Schema, component, function, resource
+11. **Whole Document**
+
+### Supported Constructs
+
+- **Variables**: `var name = value`
+- **Schemas**: `schema Name { properties }`
+- **Components**: `component Name { inputs/outputs }`
+- **Resources**: `resource Type name { properties }`
+- **Functions**: `fun name(params) { body }`
+- **Control Flow**: `if`, `for`, `while` blocks
+- **Imports**: `import symbols from "path"`
+- **Decorators**: `@name(args)`
+- **Nested Structures**: Objects, arrays, nested blocks
+
+### Example
+
+```kite
+schema Config {
+    string host = "localhost"
+}
+```
+
+With cursor in `localhost`:
+1. → `localhost` (word)
+2. → `"localhost"` (string)
+3. → `string host = "localhost"` (statement)
+4. → `string host = "localhost"` (block content)
+5. → `schema Config { ... }` (declaration)
+6. → entire file
+
+---
+
 ## Future Features
 
 | Feature | Description | Priority |
 |---------|-------------|----------|
 | Workspace Symbols | Global "Go to Symbol" (Cmd+T) across all files | Medium |
-| Selection Range | Smart expand selection (Cmd+Shift+→) | Medium |
 | Semantic Tokens | Enhanced syntax highlighting via LSP | Medium |
 | Code Lens | Show "X references" above declarations | Low |
 | Folding Range | Custom folding regions via LSP | Low |
