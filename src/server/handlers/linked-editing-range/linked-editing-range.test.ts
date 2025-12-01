@@ -76,6 +76,67 @@ var x = item`);
         });
     });
 
+    describe('For comprehensions', () => {
+        it('should link for comprehension variable declaration and uses', () => {
+            const doc = createDocument(`[for env in environments]
+resource S3.Bucket data {
+    name = "data-\${env}"
+    some = env
+}`);
+            // On "env" in [for env in environments]
+            const result = handleLinkedEditingRange(doc, Position.create(0, 5));
+
+            expect(result).not.toBeNull();
+            expect(result?.ranges).toHaveLength(3);
+            expect(result?.ranges[0].start.line).toBe(0); // declaration
+            expect(result?.ranges[1].start.line).toBe(2); // use in string interpolation
+            expect(result?.ranges[2].start.line).toBe(3); // use in assignment
+        });
+
+        it('should link when cursor is on for comprehension variable use', () => {
+            const doc = createDocument(`[for item in items]
+resource Config cfg {
+    value = item
+}`);
+            // On "item" in use (line 2)
+            const result = handleLinkedEditingRange(doc, Position.create(2, 12));
+
+            expect(result).not.toBeNull();
+            expect(result?.ranges).toHaveLength(2);
+        });
+
+        it('should handle for comprehension with string interpolation only', () => {
+            const doc = createDocument(`[for region in regions]
+resource S3.Bucket bucket {
+    name = "bucket-\${region}"
+}`);
+            // On "region" in declaration
+            const result = handleLinkedEditingRange(doc, Position.create(0, 5));
+
+            expect(result).not.toBeNull();
+            expect(result?.ranges).toHaveLength(2);
+            expect(result?.ranges[0].start.line).toBe(0); // declaration
+            expect(result?.ranges[1].start.line).toBe(2); // use in interpolation
+        });
+
+        it('should not link comprehension variable outside its scope', () => {
+            const doc = createDocument(`var env = "production"
+[for env in environments]
+resource S3.Bucket data {
+    name = env
+}
+var x = env`);
+            // On "env" in comprehension declaration
+            const result = handleLinkedEditingRange(doc, Position.create(1, 5));
+
+            expect(result).not.toBeNull();
+            // Should only include declaration and use inside resource, not outside
+            expect(result?.ranges).toHaveLength(2);
+            expect(result?.ranges[0].start.line).toBe(1); // declaration
+            expect(result?.ranges[1].start.line).toBe(3); // use inside resource
+        });
+    });
+
     describe('Function parameters', () => {
         it('should link function parameter and uses in body', () => {
             const doc = createDocument(`fun calculate(number x) number {

@@ -598,3 +598,4 @@ The IntelliJ plugin at `../kite-intellij-plugin` is the reference. Key mappings:
 | `KiteStructureViewElement`   | `handlers/document-symbols.ts`     |
 - Always reffer to the grammar files *.g4 as those are the references for our programming language
 - keep in mind, the grammar can change so don't modify generated files
+- we reuse as much as possible code

@@ -62,6 +62,7 @@ export function handleLinkedEditingRange(
 
 /**
  * Find all occurrences of a loop variable within its loop scope
+ * Handles both `for var in expr { }` and `[for var in expr]` comprehension syntax
  */
 function findLoopVariableRanges(
     text: string,
@@ -70,6 +71,25 @@ function findLoopVariableRanges(
 ): Range[] | null {
     const lines = text.split('\n');
 
+    // Try standard for loop first
+    const standardResult = findStandardForLoopRanges(lines, word, position);
+    if (standardResult) return standardResult;
+
+    // Try for comprehension [for var in expr]
+    const comprehensionResult = findForComprehensionRanges(lines, word, position);
+    if (comprehensionResult) return comprehensionResult;
+
+    return null;
+}
+
+/**
+ * Find ranges for standard for loop: `for var in expr { }`
+ */
+function findStandardForLoopRanges(
+    lines: string[],
+    word: string,
+    position: Position
+): Range[] | null {
     // Find if we're inside a for loop and the word is the loop variable
     for (let i = 0; i <= position.line; i++) {
         const line = lines[i];
@@ -125,7 +145,85 @@ function findLoopVariableRanges(
             if (position.line > loopEndLine) continue;
 
             // Recursively get ranges with position on declaration line
-            return findLoopVariableRanges(text, word, Position.create(i, 0));
+            return findStandardForLoopRanges(lines, word, Position.create(i, 0));
+        }
+    }
+
+    return null;
+}
+
+/**
+ * Find ranges for for comprehension: `[for var in expr]` followed by a block
+ */
+function findForComprehensionRanges(
+    lines: string[],
+    word: string,
+    position: Position
+): Range[] | null {
+    // Search for [for var in expr] pattern
+    for (let i = 0; i <= position.line; i++) {
+        const line = lines[i];
+        // Match [for var in expr] - comprehension syntax
+        const compMatch = line.match(/\[for\s+(\w+)\s+in\s+[^\]]+\]/);
+
+        if (compMatch && compMatch[1] === word) {
+            const loopVarName = compMatch[1];
+            const compStartLine = i;
+
+            // Find the end of the comprehension scope (next block after the [for...])
+            const blockEndLine = findBlockEnd(lines, compStartLine);
+            if (blockEndLine === -1) return null;
+
+            // Check if position is within this comprehension scope
+            if (position.line < compStartLine || position.line > blockEndLine) {
+                continue;
+            }
+
+            // Find all occurrences of the variable
+            const ranges: Range[] = [];
+
+            // Add declaration (find position in the [for var in ...] line)
+            const forIndex = line.indexOf('[for');
+            const declPos = line.indexOf(loopVarName, forIndex + 4);
+            ranges.push(Range.create(
+                Position.create(compStartLine, declPos),
+                Position.create(compStartLine, declPos + loopVarName.length)
+            ));
+
+            // Find uses in comprehension body (including the same line after ])
+            for (let j = compStartLine; j <= blockEndLine; j++) {
+                const bodyLine = lines[j];
+                const useRanges = findWordOccurrences(bodyLine, loopVarName, j);
+
+                for (const range of useRanges) {
+                    // Skip the declaration itself
+                    if (j === compStartLine && range.start.character === declPos) {
+                        continue;
+                    }
+                    ranges.push(range);
+                }
+            }
+
+            return ranges;
+        }
+    }
+
+    // Search backwards if we're on a use
+    for (let i = position.line; i >= 0; i--) {
+        const line = lines[i];
+        const compMatch = line.match(/\[for\s+(\w+)\s+in\s+[^\]]+\]/);
+
+        if (compMatch && compMatch[1] === word) {
+            const compStartLine = i;
+            const blockEndLine = findBlockEnd(lines, compStartLine);
+
+            if (blockEndLine === -1) return null;
+
+            // Check if position is within this comprehension
+            if (position.line > blockEndLine) continue;
+
+            // Recursively get ranges with position on declaration line
+            return findForComprehensionRanges(lines, word, Position.create(i, 0));
         }
     }
 
