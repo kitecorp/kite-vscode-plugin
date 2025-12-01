@@ -354,6 +354,53 @@ var Region r = "us-east-1"`);
         });
     });
 
+    describe('Decorators', () => {
+        it('should not report error for decorator names', () => {
+            const doc = createDocument(`
+@allowed(["us-east-1", "us-west-2"])
+@description("Server configuration")
+@tags({Environment: "production"})
+schema Config {
+    string region
+}
+`);
+            const declarations = createDeclarations([
+                { name: 'Config', type: 'schema' },
+            ]);
+
+            const diagnostics = checkUndefinedSymbols(doc, declarations);
+
+            // Decorator names should not be flagged as undefined
+            const allowedErrors = diagnostics.filter(d => d.message.includes("'allowed'"));
+            const descErrors = diagnostics.filter(d => d.message.includes("'description'"));
+            const tagsErrors = diagnostics.filter(d => d.message.includes("'tags'"));
+            expect(allowedErrors).toHaveLength(0);
+            expect(descErrors).toHaveLength(0);
+            expect(tagsErrors).toHaveLength(0);
+        });
+
+        it('should not report error for any decorator name after @', () => {
+            const doc = createDocument(`
+@customDecorator("value")
+@provider(["aws"])
+resource Config server {
+    name = "test"
+}
+`);
+            const declarations = createDeclarations([
+                { name: 'Config', type: 'schema' },
+                { name: 'server', type: 'resource' },
+            ]);
+
+            const diagnostics = checkUndefinedSymbols(doc, declarations);
+
+            const customErrors = diagnostics.filter(d => d.message.includes("'customDecorator'"));
+            const providerErrors = diagnostics.filter(d => d.message.includes("'provider'"));
+            expect(customErrors).toHaveLength(0);
+            expect(providerErrors).toHaveLength(0);
+        });
+    });
+
     describe('Edge cases', () => {
         it('should handle empty document', () => {
             const doc = createDocument('');

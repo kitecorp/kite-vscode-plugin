@@ -19,6 +19,7 @@ import { checkUnusedVariables } from './unused-variables';
 import { checkUndefinedSymbols } from './undefined-symbols';
 import { checkMissingProperties } from './missing-properties';
 import { checkReservedNames } from './reserved-names';
+import { checkDuplicateProperties } from './duplicate-properties';
 import { isInComment } from '../../utils/text-utils';
 import { findSymbolInWorkspace } from '../../utils/workspace-utils';
 
@@ -561,6 +562,10 @@ export function validateDocument(document: TextDocument, ctx: ValidationContext)
     // Check for reserved names used as property/input/output names
     const reservedNameDiagnostics = checkReservedNames(document);
     diagnostics.push(...reservedNameDiagnostics);
+
+    // Check for duplicate property names in schemas/resources
+    const duplicatePropertyDiagnostics = checkDuplicateProperties(document);
+    diagnostics.push(...duplicatePropertyDiagnostics);
 
     return diagnostics;
 }

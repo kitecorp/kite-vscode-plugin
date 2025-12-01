@@ -92,6 +92,9 @@ export function checkUndefinedSymbols(
         // Skip if it's a schema property definition (e.g., string host inside schema)
         if (isSchemaPropertyDefinition(text, offset, identifier)) continue;
 
+        // Skip if it's a decorator name (after @)
+        if (isDecoratorName(text, offset)) continue;
+
         // This is an undefined symbol
         const startPos = document.positionAt(offset);
         const endPos = document.positionAt(offset + identifier.length);
@@ -314,4 +317,16 @@ function isSchemaPropertyDefinition(text: string, offset: number, identifier: st
     }
 
     return false;
+}
+
+/**
+ * Check if identifier is a decorator name (immediately after @)
+ * e.g., @allowed, @description, @tags
+ */
+function isDecoratorName(text: string, offset: number): boolean {
+    // Look backwards for @ immediately before this identifier (allowing no whitespace)
+    let i = offset - 1;
+    // Skip any whitespace (shouldn't be any, but be safe)
+    while (i >= 0 && /\s/.test(text[i])) i--;
+    return i >= 0 && text[i] === '@';
 }
