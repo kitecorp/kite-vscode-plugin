@@ -20,12 +20,6 @@ interface SchemaProperty {
     hasDefault: boolean;
 }
 
-/** Component input with default info */
-interface ComponentInput {
-    name: string;
-    typeName: string;
-    hasDefault: boolean;
-}
 
 /**
  * Extract schema definitions from document text.
@@ -84,65 +78,6 @@ function parseSchemaProperties(bodyText: string): SchemaProperty[] {
     }
 
     return properties;
-}
-
-/**
- * Extract component definitions from document text.
- * Returns a map of component name -> array of inputs with hasDefault info.
- */
-function extractComponents(text: string): Map<string, ComponentInput[]> {
-    const components = new Map<string, ComponentInput[]>();
-
-    // Match component definitions: component Name { (without instance name)
-    const compStartRegex = /\bcomponent\s+(\w+)\s*\{/g;
-    let match;
-
-    while ((match = compStartRegex.exec(text)) !== null) {
-        if (isInComment(text, match.index)) continue;
-
-        const componentName = match[1];
-        const braceStart = match.index + match[0].length - 1;
-
-        // Check if this is a definition or instantiation
-        // Definitions: component Name { (name directly followed by {)
-        // Instantiations: component Type instanceName { (type followed by instance name)
-        const beforeBrace = text.substring(match.index, braceStart).trim();
-        const parts = beforeBrace.split(/\s+/);
-
-        // Definition has exactly 2 parts: "component" and "Name"
-        if (parts.length !== 2) continue;
-
-        const braceEnd = findMatchingBrace(text, braceStart);
-        if (braceEnd === -1) continue;
-
-        const bodyText = text.substring(braceStart + 1, braceEnd);
-        const inputs = parseComponentInputs(bodyText);
-
-        components.set(componentName, inputs);
-    }
-
-    return components;
-}
-
-/**
- * Parse component inputs from body text.
- */
-function parseComponentInputs(bodyText: string): ComponentInput[] {
-    const inputs: ComponentInput[] = [];
-
-    // Match input declarations: input type name [= default]
-    const inputRegex = /\binput\s+(any|\w+)(\[\])?\s+(\w+)(\s*=)?/g;
-    let inputMatch;
-
-    while ((inputMatch = inputRegex.exec(bodyText)) !== null) {
-        const typeName = inputMatch[1] + (inputMatch[2] || '');
-        const name = inputMatch[3];
-        const hasDefault = inputMatch[4] !== undefined;
-
-        inputs.push({ name, typeName, hasDefault });
-    }
-
-    return inputs;
 }
 
 /**
@@ -209,9 +144,8 @@ export function checkMissingProperties(document: TextDocument): Diagnostic[] {
     const diagnostics: Diagnostic[] = [];
     const text = document.getText();
 
-    // Extract definitions
+    // Extract schema definitions
     const schemas = extractSchemas(text);
-    const components = extractComponents(text);
 
     // Check resource instances: resource SchemaName instanceName {
     const resourceRegex = /\bresource\s+([\w.]+)\s+(\w+)\s*\{/g;
@@ -264,65 +198,8 @@ export function checkMissingProperties(document: TextDocument): Diagnostic[] {
         }
     }
 
-    // Check component instances: component TypeName instanceName {
-    const compInstRegex = /\bcomponent\s+(\w+)\s+(\w+)\s*\{/g;
-    let compMatch;
-
-    while ((compMatch = compInstRegex.exec(text)) !== null) {
-        if (isInComment(text, compMatch.index)) continue;
-
-        const componentType = compMatch[1];
-        const instanceName = compMatch[2];
-
-        // Skip if this is a component definition (TypeName and instanceName same position check)
-        const fullMatch = compMatch[0];
-        const parts = fullMatch.trim().split(/\s+/);
-
-        // Instantiation has 4 parts: "component", "Type", "instance", "{"
-        // Definition has 3 parts: "component", "Name", "{"
-        if (parts.length < 4) continue;
-
-        const braceStart = compMatch.index + compMatch[0].length - 1;
-        const braceEnd = findMatchingBrace(text, braceStart);
-
-        if (braceEnd === -1) continue;
-
-        // Get component inputs
-        const compInputs = components.get(componentType);
-        if (!compInputs) continue;
-
-        // Find provided properties
-        const bodyText = text.substring(braceStart + 1, braceEnd);
-        const provided = findProvidedProperties(bodyText);
-
-        // Check for missing required inputs
-        for (const input of compInputs) {
-            if (!input.hasDefault && !provided.has(input.name)) {
-                // Find position of instance name for error highlighting
-                const instanceNameStart = compMatch.index + compMatch[0].lastIndexOf(instanceName);
-                const instanceNameEnd = instanceNameStart + instanceName.length;
-
-                const data: MissingPropertyData = {
-                    type: 'missing-property',
-                    propertyName: input.name,
-                    propertyType: input.typeName,
-                    instanceType: 'component',
-                    braceOffset: braceStart
-                };
-
-                diagnostics.push({
-                    severity: DiagnosticSeverity.Error,
-                    range: Range.create(
-                        document.positionAt(instanceNameStart),
-                        document.positionAt(instanceNameEnd)
-                    ),
-                    message: `Missing required input '${input.name}' in component '${componentType}'`,
-                    source: 'kite',
-                    data
-                });
-            }
-        }
-    }
+    // Note: Component inputs are NOT checked here because all inputs are optional.
+    // When not specified, users are prompted at runtime via CLI.
 
     return diagnostics;
 }

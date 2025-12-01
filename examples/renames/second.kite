@@ -11,11 +11,11 @@ var number a = "asd"
 
 
 
-schema ServerConfig {
-    string host
-    number port = 8080
+component WebServer {
+    input string name
+    input number replicas = 1
 }
 
-resource ServerConfig server {
-    host = ""
+component WebServer api {
+
 }

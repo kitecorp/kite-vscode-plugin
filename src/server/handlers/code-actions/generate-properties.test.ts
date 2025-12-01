@@ -262,38 +262,8 @@ resource Config cfg {
         });
     });
 
-    describe('Component instances', () => {
-        it('should create action for missing component input', () => {
-            const doc = createDocument(`
-component WebServer {
-    input string name
-    input number replicas = 1
-}
-
-component WebServer api {
-}
-`);
-            const diagnostic = createDiagnostic(
-                "Missing required input 'name' in component 'WebServer'",
-                6, 20, 6, 23,
-                {
-                    type: 'missing-property',
-                    propertyName: 'name',
-                    propertyType: 'string',
-                    instanceType: 'component',
-                    braceOffset: doc.getText().lastIndexOf('{')
-                }
-            );
-
-            const action = createGenerateMissingPropertiesAction(doc, [diagnostic]);
-
-            expect(action).not.toBeNull();
-            expect(action!.title).toContain('name');
-
-            const edit = action!.edit!.changes![doc.uri][0];
-            expect(edit.newText).toContain('name = ""');
-        });
-    });
+    // Note: Component inputs are all optional (users are prompted at CLI runtime)
+    // so we don't generate missing-property diagnostics for them.
 
     describe('Insertion position', () => {
         it('should insert after opening brace for empty body', () => {

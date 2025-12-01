@@ -150,7 +150,7 @@ resource Config cfg {
     });
 
     describe('Component instances', () => {
-        it('should report error for missing required input', () => {
+        it('should not check component inputs (all inputs are optional - prompted at runtime)', () => {
             const doc = createDocument(`
 component WebServer {
     input string name
@@ -158,65 +158,13 @@ component WebServer {
 }
 
 component WebServer api {
-    // missing 'name' which is required
+    // inputs not provided - user will be prompted at runtime
 }
 `);
             const diagnostics = checkMissingProperties(doc);
 
-            expect(diagnostics).toHaveLength(1);
-            expect(diagnostics[0].message).toContain("Missing required input 'name'");
-            expect(diagnostics[0].message).toContain('WebServer');
-        });
-
-        it('should not report error when all required inputs are provided', () => {
-            const doc = createDocument(`
-component WebServer {
-    input string name
-    input number replicas = 1
-}
-
-component WebServer api {
-    name = "api-server"
-}
-`);
-            const diagnostics = checkMissingProperties(doc);
-
+            // No errors for missing component inputs
             expect(diagnostics).toHaveLength(0);
-        });
-
-        it('should not report error for component definitions', () => {
-            const doc = createDocument(`
-component WebServer {
-    input string name
-    input number replicas
-    output string endpoint = "http://example.com"
-}
-`);
-            // This is a definition, not an instantiation
-            const diagnostics = checkMissingProperties(doc);
-
-            expect(diagnostics).toHaveLength(0);
-        });
-
-        it('should report multiple missing required inputs', () => {
-            const doc = createDocument(`
-component Database {
-    input string host
-    input number port
-    input string dbName
-    input string user = "admin"
-}
-
-component Database myDb {
-    // missing host, port, dbName
-}
-`);
-            const diagnostics = checkMissingProperties(doc);
-
-            expect(diagnostics).toHaveLength(3);
-            expect(diagnostics.some(d => d.message.includes("'host'"))).toBe(true);
-            expect(diagnostics.some(d => d.message.includes("'port'"))).toBe(true);
-            expect(diagnostics.some(d => d.message.includes("'dbName'"))).toBe(true);
         });
     });
 
@@ -338,7 +286,7 @@ resource Config myInstance {
     });
 
     describe('Mixed schemas and components', () => {
-        it('should handle both schema resources and component instances', () => {
+        it('should only check schema resources, not component instances', () => {
             const doc = createDocument(`
 schema DatabaseConfig {
     string host
@@ -351,19 +299,20 @@ component WebServer {
 }
 
 resource DatabaseConfig db {
-    // missing host and port
+    // missing host and port - should report errors
 }
 
 component WebServer api {
-    // missing name
+    // missing inputs - no error (inputs are optional)
 }
 `);
             const diagnostics = checkMissingProperties(doc);
 
-            expect(diagnostics).toHaveLength(3);
+            // Only schema resource errors, not component input errors
+            expect(diagnostics).toHaveLength(2);
             expect(diagnostics.some(d => d.message.includes("'host'"))).toBe(true);
             expect(diagnostics.some(d => d.message.includes("'port'"))).toBe(true);
-            expect(diagnostics.some(d => d.message.includes("'name'"))).toBe(true);
+            expect(diagnostics.some(d => d.message.includes("'name'"))).toBe(false);
         });
     });
 });
