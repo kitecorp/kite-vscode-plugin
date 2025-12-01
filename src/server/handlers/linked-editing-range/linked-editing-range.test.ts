@@ -319,7 +319,166 @@ var y = x`);
         });
     });
 
+    describe('Input/Output declarations', () => {
+        it('should link top-level input declaration and uses', () => {
+            const doc = createDocument(`input string bucketNames
+
+@tags({Environment: "production"})
+resource Storage backup {
+    name = bucketNames
+    replication = true
+}`);
+            // On "bucketNames" in input declaration
+            const result = handleLinkedEditingRange(doc, Position.create(0, 13));
+
+            expect(result).not.toBeNull();
+            expect(result?.ranges).toHaveLength(2);
+            expect(result?.ranges[0].start.line).toBe(0); // declaration
+            expect(result?.ranges[1].start.line).toBe(4); // use in resource
+        });
+
+        it('should link when cursor is on input use in resource', () => {
+            const doc = createDocument(`input string bucketNames
+
+resource Storage backup {
+    name = bucketNames
+}`);
+            // On "bucketNames" in resource
+            const result = handleLinkedEditingRange(doc, Position.create(3, 11));
+
+            expect(result).not.toBeNull();
+            expect(result?.ranges).toHaveLength(2);
+        });
+
+        it('should link input with multiple uses', () => {
+            const doc = createDocument(`input string prefix
+
+resource Storage primary {
+    name = prefix
+}
+
+resource Storage secondary {
+    name = prefix
+}`);
+            // On "prefix" in declaration
+            const result = handleLinkedEditingRange(doc, Position.create(0, 13));
+
+            expect(result).not.toBeNull();
+            expect(result?.ranges).toHaveLength(3);
+        });
+
+        it('should link output declaration and uses', () => {
+            const doc = createDocument(`output string endpoint
+
+resource API api {
+    url = endpoint
+}`);
+            // On "endpoint" in output declaration
+            const result = handleLinkedEditingRange(doc, Position.create(0, 14));
+
+            expect(result).not.toBeNull();
+            expect(result?.ranges).toHaveLength(2);
+        });
+
+        it('should link input inside component', () => {
+            const doc = createDocument(`component WebServer {
+    input string name
+    output string endpoint = "http://\${name}.example.com"
+}`);
+            // On "name" in input declaration
+            const result = handleLinkedEditingRange(doc, Position.create(1, 17));
+
+            expect(result).not.toBeNull();
+            expect(result?.ranges).toHaveLength(2);
+            expect(result?.ranges[0].start.line).toBe(1); // declaration
+            expect(result?.ranges[1].start.line).toBe(2); // use in interpolation
+        });
+
+        it('should link input with default value', () => {
+            const doc = createDocument(`input number port = 8080
+
+resource Server srv {
+    listenPort = port
+}`);
+            // On "port" in declaration
+            const result = handleLinkedEditingRange(doc, Position.create(0, 13));
+
+            expect(result).not.toBeNull();
+            expect(result?.ranges).toHaveLength(2);
+        });
+
+        it('should link input used in string interpolation', () => {
+            const doc = createDocument(`input string bucketNames
+
+resource Storage backup {
+    name = "prefix-\${bucketNames}"
+    tag = bucketNames
+}`);
+            // On "bucketNames" in declaration
+            const result = handleLinkedEditingRange(doc, Position.create(0, 13));
+
+            expect(result).not.toBeNull();
+            expect(result?.ranges).toHaveLength(3);
+            expect(result?.ranges[0].start.line).toBe(0); // declaration
+            expect(result?.ranges[1].start.line).toBe(3); // use in string interpolation
+            expect(result?.ranges[2].start.line).toBe(4); // direct use
+        });
+
+        it('should link when cursor is on input inside string interpolation', () => {
+            const doc = createDocument(`input string env
+
+resource S3.Bucket data {
+    name = "data-\${env}-bucket"
+}`);
+            // On "env" inside the string interpolation (line 3, inside ${env})
+            // Line 3: `    name = "data-${env}-bucket"`
+            //          0123456789...    17 18 19-21
+            // $ is at 17, { at 18, env starts at 19
+            const result = handleLinkedEditingRange(doc, Position.create(3, 19));
+
+            expect(result).not.toBeNull();
+            expect(result?.ranges).toHaveLength(2);
+        });
+    });
+
     describe('String interpolation', () => {
+        it('should link input with simple $var interpolation', () => {
+            const doc = createDocument(`component WebServer {
+    input string env = "dev"
+
+    resource Instance server {
+        tag = {
+            Environment: "$env"
+        }
+    }
+}`);
+            // On "env" in input declaration
+            const result = handleLinkedEditingRange(doc, Position.create(1, 17));
+
+            expect(result).not.toBeNull();
+            expect(result?.ranges).toHaveLength(2);
+            expect(result?.ranges[0].start.line).toBe(1); // declaration
+            expect(result?.ranges[1].start.line).toBe(5); // use in $env
+        });
+
+        it('should link when cursor is on $var interpolation', () => {
+            const doc = createDocument(`component WebServer {
+    input string env = "dev"
+
+    resource Instance server {
+        tag = "$env-server"
+    }
+}`);
+            // On "env" inside "$env" (line 4)
+            // Line: `        tag = "$env-server"`
+            //        01234567890123456
+            // $ is at 15, env starts at 16
+            const result = handleLinkedEditingRange(doc, Position.create(4, 16));
+
+            expect(result).not.toBeNull();
+            expect(result?.ranges).toHaveLength(2);
+        });
+
         it('should link variable used in string interpolation', () => {
             const doc = createDocument(`fun greet(string name) string {
     return "Hello, \${name}!"

@@ -27,8 +27,8 @@ export function handleLinkedEditingRange(
     // Skip keywords
     if (isKeyword(word)) return null;
 
-    // Check if inside string
-    if (isInsideString(text, offset)) return null;
+    // Check if inside string (but allow string interpolation)
+    if (isInsideString(text, offset) && !isInsideStringInterpolationAtOffset(text, offset)) return null;
 
     // Check if this is a loop variable
     const loopRanges = findLoopVariableRanges(text, word, position);
@@ -53,6 +53,15 @@ export function handleLinkedEditingRange(
     if (localVarRanges && localVarRanges.length > 1) {
         return {
             ranges: localVarRanges,
+            wordPattern: '[a-zA-Z_]\\w*',
+        };
+    }
+
+    // Check if this is an input/output declaration
+    const inputRanges = findInputOutputRanges(text, word, position);
+    if (inputRanges && inputRanges.length > 1) {
+        return {
+            ranges: inputRanges,
             wordPattern: '[a-zA-Z_]\\w*',
         };
     }
@@ -290,6 +299,84 @@ function findFunctionParameterRanges(
 }
 
 /**
+ * Find all occurrences of an input/output declaration and its uses
+ * Handles top-level inputs and inputs inside components
+ */
+function findInputOutputRanges(
+    text: string,
+    word: string,
+    position: Position
+): Range[] | null {
+    const lines = text.split('\n');
+
+    // Find input/output declaration: input type name or output type name
+    let declarationLine = -1;
+    let declarationCol = -1;
+    let scopeEnd = lines.length - 1;
+
+    // Check if we're inside a component
+    const componentScope = findComponentScope(lines, position.line);
+    const searchStart = componentScope ? componentScope.startLine : 0;
+    scopeEnd = componentScope ? componentScope.endLine : lines.length - 1;
+
+    // Search for input/output declaration
+    for (let i = searchStart; i <= scopeEnd; i++) {
+        const line = lines[i];
+        // Match: input type name or output type name (with optional = default)
+        const inputMatch = line.match(new RegExp(`^\\s*(input|output)\\s+\\w+\\s+(${escapeRegex(word)})(?:\\s*=|\\s*$)`));
+        if (inputMatch) {
+            const nameIndex = line.lastIndexOf(word);
+            declarationLine = i;
+            declarationCol = nameIndex;
+            break;
+        }
+    }
+
+    if (declarationLine === -1) return null;
+
+    // Find all occurrences within the scope
+    const ranges: Range[] = [];
+
+    // Add declaration
+    ranges.push(Range.create(
+        Position.create(declarationLine, declarationCol),
+        Position.create(declarationLine, declarationCol + word.length)
+    ));
+
+    // Find uses after declaration within scope
+    for (let j = declarationLine; j <= scopeEnd; j++) {
+        const bodyLine = lines[j];
+        const useRanges = findWordOccurrences(bodyLine, word, j);
+
+        for (const range of useRanges) {
+            // Skip the declaration itself
+            if (j === declarationLine && range.start.character === declarationCol) {
+                continue;
+            }
+            ranges.push(range);
+        }
+    }
+
+    return ranges;
+}
+
+/**
+ * Find enclosing component scope
+ */
+function findComponentScope(lines: string[], currentLine: number): { startLine: number; endLine: number } | null {
+    for (let i = currentLine; i >= 0; i--) {
+        const line = lines[i];
+        if (line.match(/^\s*component\s+\w+\s*\{/)) {
+            const endLine = findBlockEnd(lines, i);
+            if (endLine >= currentLine) {
+                return { startLine: i, endLine };
+            }
+        }
+    }
+    return null;
+}
+
+/**
  * Find all occurrences of a local variable within its scope (function body or block)
  * Handles variables used in while loops, if blocks, etc.
  */
@@ -473,7 +560,7 @@ function findBlockEnd(lines: string[], startLine: number): number {
 
 /**
  * Find all occurrences of a word in a line (respecting word boundaries)
- * Includes occurrences inside string interpolation ${...}
+ * Includes occurrences inside string interpolation ${...} and $var
  */
 function findWordOccurrences(line: string, word: string, lineNum: number): Range[] {
     const ranges: Range[] = [];
@@ -481,8 +568,12 @@ function findWordOccurrences(line: string, word: string, lineNum: number): Range
     let match;
 
     while ((match = regex.exec(line)) !== null) {
-        // Include if not inside string OR inside string interpolation
-        if (!isInsideStringInLine(line, match.index) || isInsideStringInterpolation(line, match.index)) {
+        // Include if not inside string OR inside string interpolation (${...} or $var)
+        const insideString = isInsideStringInLine(line, match.index);
+        const insideInterpolation = isInsideStringInterpolation(line, match.index) ||
+                                    isSimpleInterpolation(line, match.index, word);
+
+        if (!insideString || insideInterpolation) {
             ranges.push(Range.create(
                 Position.create(lineNum, match.index),
                 Position.create(lineNum, match.index + word.length)
@@ -494,7 +585,23 @@ function findWordOccurrences(line: string, word: string, lineNum: number): Range
 }
 
 /**
- * Check if position is inside a string interpolation ${...}
+ * Check if position is a simple string interpolation $var (not ${...})
+ */
+function isSimpleInterpolation(line: string, pos: number, word: string): boolean {
+    // Check if there's a $ immediately before the word
+    if (pos > 0 && line[pos - 1] === '$') {
+        // Make sure it's not ${
+        if (pos > 1 && line[pos - 2] === '$') {
+            return false; // escaped $$
+        }
+        // Check that it's inside a string
+        return isInsideStringInLine(line, pos);
+    }
+    return false;
+}
+
+/**
+ * Check if position is inside a string interpolation ${...} (line-based)
  */
 function isInsideStringInterpolation(line: string, pos: number): boolean {
     // Find all ${...} regions and check if pos is inside one
@@ -520,6 +627,51 @@ function isInsideStringInterpolation(line: string, pos: number): boolean {
         }
     }
     return false;
+}
+
+/**
+ * Check if offset in full text is inside a string interpolation ${...} or $var
+ */
+function isInsideStringInterpolationAtOffset(text: string, offset: number): boolean {
+    // Find the line containing this offset
+    let lineStart = offset;
+    while (lineStart > 0 && text[lineStart - 1] !== '\n') {
+        lineStart--;
+    }
+    let lineEnd = offset;
+    while (lineEnd < text.length && text[lineEnd] !== '\n') {
+        lineEnd++;
+    }
+    const line = text.substring(lineStart, lineEnd);
+    const posInLine = offset - lineStart;
+
+    // Check ${...} interpolation
+    if (isInsideStringInterpolation(line, posInLine)) {
+        return true;
+    }
+
+    // Check $var interpolation - find the word at position and check if preceded by $
+    const word = getWordAtPositionInLine(line, posInLine);
+    if (word && isSimpleInterpolation(line, line.indexOf(word, posInLine > word.length ? posInLine - word.length : 0), word)) {
+        return true;
+    }
+
+    return false;
+}
+
+/**
+ * Get word at position in a line
+ */
+function getWordAtPositionInLine(line: string, pos: number): string | null {
+    const before = line.substring(0, pos);
+    const after = line.substring(pos);
+
+    const beforeMatch = before.match(/[a-zA-Z_]\w*$/);
+    const afterMatch = after.match(/^\w*/);
+
+    if (!beforeMatch && !afterMatch?.[0]) return null;
+
+    return (beforeMatch?.[0] || '') + (afterMatch?.[0] || '');
 }
 
 /**
