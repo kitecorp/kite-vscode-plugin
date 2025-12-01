@@ -213,6 +213,28 @@ Provides the outline view in VS Code's sidebar.
 - Errors for duplicate names within component definitions
 - Checks: inputs, outputs, variables, resources, nested components
 
+### Missing Value Validation:
+
+**File:** `src/server/handlers/validation/missing-value.ts`
+
+Reports error when an assignment has no value after `=`.
+
+- Detects incomplete assignments in var, input, output, schema properties, resource properties
+- Ignores comparison operators (`==`, `!=`, `<=`, `>=`)
+- Ignores compound assignments (`+=`, `-=`, `*=`, `/=`)
+- Ignores `=` in comments or strings
+
+**Example:**
+```kite
+var x =              // Error: Missing value after '='
+var y = 5            // OK
+
+resource Config db {
+    name =           // Error: Missing value after '='
+    port = 3306      // OK
+}
+```
+
 ---
 
 ## 9. Code Actions (Quick Fixes)
@@ -234,6 +256,7 @@ Provides the outline view in VS Code's sidebar.
   - Sorts imports alphabetically by path
   - Sorts symbols within imports alphabetically
   - Example: `import B from "x"` + `import A from "x"` → `import A, B from "x"`
+  - **Also runs automatically on save** (via `willSaveWaitUntil`)
 - **Add All Missing Imports**: Bulk import action (useful after paste)
   - Appears when multiple undefined symbols are detected
   - Adds all missing imports in one action

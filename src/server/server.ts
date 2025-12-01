@@ -82,6 +82,7 @@ import { handleOnTypeFormatting } from './handlers/on-type-formatting';
 import { handleTypeDefinition, TypeDefinitionContext } from './handlers/type-definition';
 import { handleImplementation, ImplementationContext } from './handlers/implementation';
 import { handleAutoImport, cleanupAutoImport, AutoImportContext } from './handlers/auto-import';
+import { organizeImports } from './handlers/code-actions/organize-imports';
 import { scanDocumentAST } from '../parser';
 
 // Create a connection for the server using Node's IPC
@@ -136,7 +137,11 @@ connection.onInitialize((params: InitializeParams): InitializeResult => {
 
     return {
         capabilities: {
-            textDocumentSync: TextDocumentSyncKind.Incremental,
+            textDocumentSync: {
+                openClose: true,
+                change: TextDocumentSyncKind.Incremental,
+                willSaveWaitUntil: true,
+            },
             completionProvider: {
                 resolveProvider: false,
                 triggerCharacters: ['.', '@']
@@ -204,6 +209,21 @@ documents.onDidChangeContent(change => {
 documents.onDidClose(e => {
     declarationCache.delete(e.document.uri);
     cleanupAutoImport(e.document.uri);
+});
+
+// Will Save Wait Until handler - organize imports on save
+documents.onWillSaveWaitUntil(event => {
+    const document = event.document;
+    const result = organizeImports(document);
+
+    if (result && result.hasChanges) {
+        return [{
+            range: result.range,
+            newText: result.newText,
+        }];
+    }
+
+    return [];
 });
 
 // Completion handler

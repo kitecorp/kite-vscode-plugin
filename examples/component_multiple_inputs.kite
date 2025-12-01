@@ -12,10 +12,6 @@ component WebServer {
   output string fromOutputs = "t2.micro"
 }
 
-resource CommonConfig name {
-    name = 
-}
-
 component WebServer serviceA {
   instanceType = "t4g.normal"
 }
