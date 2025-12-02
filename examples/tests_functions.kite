@@ -1,7 +1,8 @@
-var name = "asd"
-var x = "Hello ${name}"      // Error: Unclosed string interpolation '${'
-var y = "Value: ${a.b}"      // Error: Unclosed string interpolation '${'
+schema ServerConfig {
+    string host             // Required (no default)
+    number port = 8080      // Optional (has default)
+}
 
-var z = "Hello ${name}"     // OK - properly closed
-var w = "Price: $100"       // OK - simple $ not interpolation
-var v = 'No ${interp}'      // OK - single quotes don't interpolate
+resource ServerConfig db {
+    host = "localhost"      // OK - required property provided
+}

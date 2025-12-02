@@ -385,5 +385,52 @@ schema Config {
                 expect(range.end.character).toBeGreaterThanOrEqual(range.start.character);
             }
         });
+
+        it('should provide helpful message when keyword used as property name', () => {
+            const doc = createDoc(`
+schema Config {
+    string if
+}
+`);
+            const diagnostics = checkSyntaxErrors(doc);
+
+            expect(diagnostics.length).toBeGreaterThan(0);
+            const msg = diagnostics[0].message;
+            expect(msg).toContain('if');
+            expect(msg.toLowerCase()).toContain('keyword');
+            expect(msg.toLowerCase()).toContain('property name');
+        });
+
+        it('should provide helpful message when type used as property name', () => {
+            // Note: 'string string' parses fine syntactically
+            // The semantic error is caught by reserved-names.ts validator
+            // But 'number if' fails to parse because 'if' is a keyword
+            const doc = createDoc(`
+schema Config {
+    number if
+}
+`);
+            const diagnostics = checkSyntaxErrors(doc);
+
+            expect(diagnostics.length).toBeGreaterThan(0);
+            const msg = diagnostics[0].message;
+            expect(msg).toContain('if');
+            expect(msg.toLowerCase()).toContain('property name');
+        });
+
+        it('should provide helpful message when keyword used in component input', () => {
+            const doc = createDoc(`
+component Server {
+    input string return
+}
+`);
+            const diagnostics = checkSyntaxErrors(doc);
+
+            expect(diagnostics.length).toBeGreaterThan(0);
+            const msg = diagnostics[0].message;
+            expect(msg).toContain('return');
+            expect(msg.toLowerCase()).toContain('keyword');
+            expect(msg.toLowerCase()).toContain('property name');
+        });
     });
 });

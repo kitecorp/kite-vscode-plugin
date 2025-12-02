@@ -240,6 +240,16 @@ function getMismatchedInputMessage(actual: string, expected: string, lineText: s
         return "Missing keyword. Variable declarations need 'var': var name = value";
     }
 
+    // Check if a keyword/type was used as a property name in schema/component
+    if (expectedClean.includes('IDENTIFIER') && isReservedWord(actual)) {
+        const inSchema = lineText.includes('schema') || /\b(?:string|number|boolean|any|object)\s+/.test(lineText);
+        const inComponent = lineText.includes('input') || lineText.includes('output');
+
+        if (inSchema || inComponent) {
+            return `Found keyword '${actual}' but expected a property name. Keywords and type names cannot be used as property names.`;
+        }
+    }
+
     // Build a helpful message with suggestions
     if (expectedClean.length > 0) {
         const suggestions = expectedClean.join("', '");
@@ -247,6 +257,20 @@ function getMismatchedInputMessage(actual: string, expected: string, lineText: s
     }
 
     return `Unexpected '${actual}' at this position.`;
+}
+
+/**
+ * Check if a word is a reserved keyword or type name
+ */
+function isReservedWord(word: string): boolean {
+    const keywords = new Set([
+        'if', 'else', 'for', 'while', 'in', 'return',
+        'var', 'fun', 'schema', 'component', 'resource',
+        'input', 'output', 'type', 'import', 'from', 'init', 'this',
+        'true', 'false', 'null',
+        'string', 'number', 'boolean', 'any', 'object', 'void'
+    ]);
+    return keywords.has(word);
 }
 
 /**
