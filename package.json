@@ -1,8 +1,8 @@
 {
   "name": "kite-language",
   "displayName": "Kite Language",
-  "description": "Full language support for Kite - a modern Infrastructure as Code language. Includes syntax highlighting, smart autocomplete, go to definition, find references, rename symbol, hover docs, diagnostics, code formatting, and more.",
-  "version": "0.4.0",
+  "description": "Full language support for Kite - a modern Infrastructure as Code language. Features 27 IDE capabilities including syntax highlighting, smart autocomplete, go to definition, find references, rename symbol, hover docs, code formatting, auto-import, call hierarchy, and 38 validation checks for error detection and code quality.",
+  "version": "0.5.0",
   "publisher": "EchoStream",
   "license": "MIT",
   "icon": "icons/logo.png",
