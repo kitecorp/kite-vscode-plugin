@@ -239,9 +239,9 @@ Key tokens from the ANTLR lexer (`../kite-intellij-plugin/src/main/antlr/cloud/k
 - Double-quoted strings support `${expr}` and `$identifier`
 - Single-quoted strings are literal (no interpolation)
 
-## Features to Implement
+## Implemented Features
 
-### Completed: Basic Language Support
+### Basic Language Support
 | Feature | IntelliJ File | LSP Method | Status |
 |---------|--------------|------------|--------|
 | Syntax Highlighting | `KiteSyntaxHighlighter.java` | TextMate grammar | ✅ |
@@ -249,7 +249,7 @@ Key tokens from the ANTLR lexer (`../kite-intellij-plugin/src/main/antlr/cloud/k
 | Comment Toggling | Built-in | `language-configuration.json` | ✅ |
 | Code Folding | Built-in | TextMate regions | ✅ |
 
-### Completed: Semantic Features
+### Semantic Features
 | Feature | IntelliJ File | LSP Method | Status |
 |---------|--------------|------------|--------|
 | Go to Definition | `KiteGotoDeclarationHandler.java` | `textDocument/definition` | ✅ |
@@ -260,7 +260,7 @@ Key tokens from the ANTLR lexer (`../kite-intellij-plugin/src/main/antlr/cloud/k
 | Cross-file Navigation | `KiteGotoDeclarationHandler.java` | `textDocument/definition` | ✅ |
 | Property Navigation | - | `textDocument/definition` | ✅ |
 
-### Completed: Diagnostics & Validation
+### Diagnostics & Validation
 | Feature | IntelliJ File | LSP Method | Status |
 |---------|--------------|------------|--------|
 | Import Validation | `KiteTypeCheckingAnnotator.java` | `textDocument/publishDiagnostics` | ✅ |
@@ -268,7 +268,7 @@ Key tokens from the ANTLR lexer (`../kite-intellij-plugin/src/main/antlr/cloud/k
 | Duplicate Name Detection | `KiteTypeCheckingAnnotator.java` | `textDocument/publishDiagnostics` | ✅ |
 | Quick Fix: Add Import | - | `textDocument/codeAction` | ✅ |
 
-### Completed: Smart Autocomplete
+### Smart Autocomplete
 | Feature | Description | Status |
 |---------|-------------|--------|
 | Scope-aware Variables | Only shows variables in current scope | ✅ |
@@ -279,22 +279,26 @@ Key tokens from the ANTLR lexer (`../kite-intellij-plugin/src/main/antlr/cloud/k
 | Context-aware in Schemas | Type-appropriate suggestions for defaults | ✅ |
 | Context-aware in Components | Type-appropriate suggestions for input/output defaults | ✅ |
 
-### Completed: Navigation & Structure
+### Navigation & Structure
 | Feature | IntelliJ File | LSP Method | Status |
 |---------|--------------|------------|--------|
 | Document Symbols | `KiteStructureViewElement.java` | `textDocument/documentSymbol` | ✅ |
 | Inlay Hints | `KiteInlayHintsProvider.java` | `textDocument/inlayHint` | ✅ |
 
-### Completed: Refactoring
+### Refactoring
 | Feature | IntelliJ File | LSP Method | Status |
 |---------|--------------|------------|--------|
 | Rename Symbol | - | `textDocument/rename` | ✅ |
 
-### Priority 1: Remaining Features
+### Core Features
 | Feature | IntelliJ File | LSP Method | Status |
 |---------|--------------|------------|--------|
 | Code Formatting | `KiteBlock.java` | `textDocument/formatting` | ✅ |
 | Type Checking | `KiteTypeCheckingAnnotator.java` | `textDocument/publishDiagnostics` | ✅ |
+
+### All Features Complete
+
+All planned LSP features have been implemented. See `docs/features.md` for detailed documentation of all 27 features and 44+ validation checks.
 
 ## Project Structure
 
@@ -506,17 +510,15 @@ Each LSP feature has a dedicated handler file:
 - Returns LSP-compliant response
 - No direct access to server state (injected via context)
 
-### Scanner vs ANTLR
+### Parser Architecture
 
-Currently using regex-based parsing in `scanner.ts`. ANTLR grammar files exist in `/grammar/` but are not integrated. Benefits of ANTLR:
-- More robust parsing
-- Better error recovery
-- Matches IntelliJ implementation
+The extension uses a dual approach:
+- **ANTLR parser** (`src/parser/`) - Full AST parsing for validation and semantic analysis
+- **Scanner** (`scanner.ts`) - Lightweight regex-based scanning for quick declaration lookup
 
-To integrate ANTLR (future work):
+The ANTLR grammar files in `grammar/` are the source of truth. Regenerate after changes:
 ```bash
-npm install antlr4ts
-npx antlr4ts -visitor grammar/KiteLexer.g4 grammar/KiteParser.g4
+npm run generate-parser
 ```
 
 ## Quick Start - Running the Extension

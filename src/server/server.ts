@@ -100,6 +100,10 @@ const declarationCache: Map<string, Declaration[]> = new Map();
 // Workspace folders for cross-file resolution
 let workspaceFolders: string[] = [];
 
+// Cache for workspace .kite files (invalidated on file changes)
+let kiteFilesCache: string[] | null = null;
+const fileWatchers: fs.FSWatcher[] = [];
+
 // Diagnostic data for code actions (stores import suggestions)
 const diagnosticData: Map<string, Map<string, ImportSuggestion>> = new Map(); // uri -> (diagnosticKey -> suggestion)
 
@@ -134,6 +138,9 @@ connection.onInitialize((params: InitializeParams): InitializeResult => {
     } else if (params.rootPath) {
         workspaceFolders = [params.rootPath];
     }
+
+    // Set up file watchers for cache invalidation
+    setupFileWatchers();
 
     return {
         capabilities: {
@@ -239,8 +246,42 @@ connection.onCompletion((params: TextDocumentPositionParams): CompletionItem[] =
     return handleCompletion(document, params.position, ctx);
 });
 
-// Helper: Find all Kite files in the workspace
+// Helper: Invalidate the workspace files cache
+function invalidateKiteFilesCache() {
+    kiteFilesCache = null;
+}
+
+// Helper: Set up file watchers to invalidate cache on .kite file changes
+function setupFileWatchers() {
+    // Clean up existing watchers
+    for (const watcher of fileWatchers) {
+        watcher.close();
+    }
+    fileWatchers.length = 0;
+
+    // Watch each workspace folder for changes
+    for (const folder of workspaceFolders) {
+        try {
+            const watcher = fs.watch(folder, { recursive: true }, (eventType, filename) => {
+                // Invalidate cache when .kite files are added/removed/renamed
+                if (filename && (filename.endsWith('.kite') || eventType === 'rename')) {
+                    invalidateKiteFilesCache();
+                }
+            });
+            fileWatchers.push(watcher);
+        } catch {
+            // Ignore errors (e.g., folder doesn't exist)
+        }
+    }
+}
+
+// Helper: Find all Kite files in the workspace (cached)
 function findKiteFilesInWorkspace(): string[] {
+    // Return cached result if available
+    if (kiteFilesCache !== null) {
+        return kiteFilesCache;
+    }
+
     const kiteFiles: string[] = [];
 
     function scanDirectory(dir: string) {
@@ -266,6 +307,8 @@ function findKiteFilesInWorkspace(): string[] {
         scanDirectory(folder);
     }
 
+    // Cache the result
+    kiteFilesCache = kiteFiles;
     return kiteFiles;
 }
 
