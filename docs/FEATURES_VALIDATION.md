@@ -151,6 +151,47 @@ fun noType() {                    // OK - no return type declared
 
 ---
 
+## Return Type Mismatch
+
+**File:** `return-type-mismatch.ts`
+
+Reports error when a function's return value type doesn't match its declared return type.
+
+```kite
+fun calculate() string {
+    return 42  // Error: Return type mismatch: expected 'string' but got 'number'
+}
+
+fun getPort() number {
+    return "8080"  // Error: Return type mismatch: expected 'number' but got 'string'
+}
+
+fun isEnabled() boolean {
+    return 1  // Error: Return type mismatch: expected 'boolean' but got 'number'
+}
+
+fun valid() number {
+    return 42  // OK - types match
+}
+
+fun flexible() any {
+    return 42  // OK - 'any' accepts all types
+}
+
+fun nullable() string {
+    return null  // OK - null is compatible with any type
+}
+
+fun withVariable() number {
+    var result = 42
+    return result  // OK - can't infer identifier type, so no error
+}
+```
+
+**Note:** This validation only checks literal values (numbers, strings, booleans, arrays, objects, null). Variable and function call returns are not checked since their types cannot be easily inferred.
+
+---
+
 ## Unreachable Code
 
 **File:** `unreachable-code.ts`

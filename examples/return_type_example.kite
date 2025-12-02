@@ -1,0 +1,49 @@
+// Return Type Mismatch Examples
+
+// Error: returning number instead of string
+fun calculate() string {
+    return 42
+}
+
+// Error: returning string instead of number
+fun getPort() number {
+    return "8080"
+}
+
+// OK: types match
+fun getName() string {
+    return "Alice"
+}
+
+fun getAge() number {
+    return 25
+}
+
+fun isValid() boolean {
+    return true
+}
+
+// OK: any accepts all types
+fun getValue() any {
+    return 42
+}
+
+// OK: null is compatible with any type
+fun getNullable() string {
+    return null
+}
+
+// OK: variable return (can't infer type)
+fun withVariable() number {
+    var result = 42
+    return result
+}
+
+// Multiple returns - one error
+fun conditional(boolean flag) string {
+    if (flag) {
+        return 123      // Error: expected string, got number
+    } else {
+        return "hello"  // OK
+    }
+}

@@ -55,6 +55,7 @@ import { checkLongFunction } from './long-function';
 import { checkUnusedParameter } from './unused-parameter';
 import { checkImplicitAny } from './implicit-any';
 import { checkSyntaxErrors } from './syntax-errors';
+import { checkReturnTypeMismatch } from './return-type-mismatch';
 import { isInComment } from '../../utils/text-utils';
 import { findSymbolInWorkspace } from '../../utils/workspace-utils';
 
@@ -741,6 +742,10 @@ export function validateDocument(document: TextDocument, ctx: ValidationContext)
     // Check for implicit any
     const implicitAnyDiagnostics = checkImplicitAny(document);
     diagnostics.push(...implicitAnyDiagnostics);
+
+    // Check for return type mismatches
+    const returnTypeDiagnostics = checkReturnTypeMismatch(document);
+    diagnostics.push(...returnTypeDiagnostics);
 
     return diagnostics;
 }
