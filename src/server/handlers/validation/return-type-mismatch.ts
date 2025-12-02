@@ -34,7 +34,6 @@ export function checkReturnTypeMismatch(document: TextDocument): Diagnostic[] {
     while ((match = funcRegex.exec(text)) !== null) {
         if (isInComment(text, match.index)) continue;
 
-        const funcName = match[1];
         const returnType = match[3] + (match[4] || ''); // Include [] for array types
 
         // Skip void functions
@@ -56,8 +55,27 @@ export function checkReturnTypeMismatch(document: TextDocument): Diagnostic[] {
         for (const returnStmt of returnStatements) {
             const returnValue = returnStmt.value.trim();
 
-            // First, try to infer the type directly from the value
-            let valueType = inferValueType(returnValue);
+            let valueType: string | null = null;
+
+            // Special case: array literal with variable references like [result]
+            // Check this BEFORE inferValueType, because [result] would return generic 'array'
+            const arrayLiteralMatch = returnValue.match(/^\[([^\]]+)\]$/);
+            if (arrayLiteralMatch) {
+                const arrayContent = arrayLiteralMatch[1].trim();
+                // Check if it's a single identifier (not a literal or complex expression)
+                if (/^[a-zA-Z_]\w*$/.test(arrayContent)) {
+                    const varInfo = variableTypes.find(v => v.name === arrayContent);
+                    if (varInfo) {
+                        // Array of that variable's type
+                        valueType = varInfo.type + '[]';
+                    }
+                }
+            }
+
+            // If not an array with variable, try to infer the type directly from the value
+            if (!valueType) {
+                valueType = inferValueType(returnValue);
+            }
 
             // If it's an identifier (not a literal), check variable types
             if (!valueType && /^[a-zA-Z_]\w*$/.test(returnValue)) {
@@ -178,7 +196,6 @@ function findReturnStatements(code: string): ReturnStatement[] {
     let stringChar = '';
     let inComment = false;
     let inBlockComment = false;
-    let nestedFunctionDepth = 0; // Track nested function brace depth
 
     while (i < code.length) {
         const char = code[i];

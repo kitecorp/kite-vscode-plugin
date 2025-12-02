@@ -74,8 +74,31 @@ export function isTypeCompatible(declaredType: string, valueType: string): boole
 
     // Array types (e.g., string[], number[], any[]) require array values
     if (normalizedDeclared.endsWith('[]')) {
-        // Array type MUST have an array value
-        return normalizedValue === 'array' || normalizedValue === 'null';
+        // null is compatible with any array type
+        if (normalizedValue === 'null') {
+            return true;
+        }
+
+        // Generic 'array' is compatible with any typed array (we don't know the element type)
+        if (normalizedValue === 'array') {
+            return true;
+        }
+
+        // If valueType is also a typed array, check if element types match
+        if (normalizedValue.endsWith('[]')) {
+            const declaredElementType = normalizedDeclared.slice(0, -2);
+            const valueElementType = normalizedValue.slice(0, -2);
+
+            // any[] accepts any array
+            if (declaredElementType === 'any') {
+                return true;
+            }
+
+            // Element types must match
+            return declaredElementType === valueElementType;
+        }
+
+        return false;
     }
 
     // null is compatible with any type (nullable)

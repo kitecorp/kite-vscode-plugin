@@ -71,6 +71,22 @@ fun multipleVarsError() string {
     return x  // Error: expected string, got number
 }
 
+// Array element type checking
+fun arrayWithVariable() number[] {
+    var count = 42
+    return [count]  // OK - number[] matches
+}
+
+fun arrayElementMismatch() number[] {
+    var name = "Alice"
+    return [name]  // Error: expected number[], got string[]
+}
+
+fun stringArrayCorrect() string[] {
+    var greeting = "Hello"
+    return [greeting]  // OK - string[] matches
+}
+
 // Multiple returns - one error
 fun conditional(boolean flag) string {
     if (flag) {

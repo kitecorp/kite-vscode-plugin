@@ -196,17 +196,24 @@ fun withExplicitType() string {
     var number port = 8080
     return port  // Error: Return type mismatch: expected 'string' but got 'number'
 }
+
+fun arrayElementMismatch() number[] {
+    var name = "Alice"
+    return [name]  // Error: Return type mismatch: expected 'number[]' but got 'string[]'
+}
 ```
 
 **Features:**
 - Validates literal return values (numbers, strings, booleans, arrays, objects, null)
 - **Infers variable types** from their assignments and explicit type annotations
 - Checks variable returns against function return type
+- **Validates array element types** for arrays containing single variables (e.g., `[varName]`)
 - Supports both `var name = value` and `var type name = value` syntax
 
 **Limitations:**
 - Does not track variable reassignments (uses first assignment only)
 - Cannot infer types from function calls or complex expressions
+- Array element checking only works for single-variable arrays (e.g., `[x]`, not `[x, y]`)
 
 ---
 

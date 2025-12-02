@@ -255,6 +255,43 @@ fun calculate() string {
         expect(diagnostics[0].message).toContain("expected 'string' but got 'number'");
     });
 
+    it('should infer array type from variable inside array literal', () => {
+        const doc = createDoc(`
+fun test() number[] {
+    var result = "4"
+    return [result]
+}
+        `);
+        const diagnostics = checkReturnTypeMismatch(doc);
+
+        expect(diagnostics).toHaveLength(1);
+        expect(diagnostics[0].message).toContain("expected 'number[]' but got 'string[]'");
+    });
+
+    it('should validate array element type matches', () => {
+        const doc = createDoc(`
+fun test() number[] {
+    var count = 42
+    return [count]
+}
+        `);
+        const diagnostics = checkReturnTypeMismatch(doc);
+
+        expect(diagnostics).toHaveLength(0);
+    });
+
+    it('should validate array of strings vs array of numbers', () => {
+        const doc = createDoc(`
+fun test() string[] {
+    var name = "Alice"
+    return [name]
+}
+        `);
+        const diagnostics = checkReturnTypeMismatch(doc);
+
+        expect(diagnostics).toHaveLength(0);
+    });
+
     it('should check multiple return statements', () => {
         const doc = createDoc(`
 fun getValue(boolean flag) string {

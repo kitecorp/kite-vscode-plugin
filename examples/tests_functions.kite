@@ -1,11 +1,11 @@
 // Duplicate function names - should show duplicate declaration error
 fun calculate() string[] {
-    return [123]       // Error: array contains numbers but function returns string[]
+    return [123]       // 'return' statement outside of function
 }
 
 // This will also show duplicate declaration error (same name as above)
 // AND show return type mismatch for variable 'result'
-fun calculate() number {
-    var result = "42"   // result is inferred as string
-    return result       // Error: expected 'number' but got 'string'
+fun calculate() number[] {
+    var result = "4"
+    return [result]    // Error: Return type mismatch: expected 'number[]' but got 'string[]'
 }
