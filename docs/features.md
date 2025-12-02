@@ -2,7 +2,7 @@
 
 This document provides an overview of all implemented features in the Kite Language VS Code extension.
 
-**Total: 27 features + 31 validation checks**
+**Total: 27 features + 38 validation checks**
 
 ---
 
@@ -41,6 +41,7 @@ Features for exploring and navigating code.
 | 18 | Workspace Symbols | Global symbol search (Cmd+T / Ctrl+T) |
 | 19 | Semantic Tokens | Enhanced syntax highlighting via LSP |
 | 20 | Folding Range | Collapse/expand code blocks |
+| 21 | Go to Implementation | Find all resources/instances of a schema/component |
 
 ### [Refactoring & Editing](./FEATURES_REFACTORING.md)
 
@@ -48,20 +49,20 @@ Advanced editing and refactoring tools.
 
 | # | Feature | Description |
 |---|---------|-------------|
-| 21 | Call Hierarchy | View incoming/outgoing function calls |
-| 22 | Linked Editing Range | Simultaneous editing of related identifiers |
-| 23 | Document Links | Clickable import paths |
-| 24 | On Type Formatting | Auto-format as you type |
-| 25 | Unused Variables | Detect unused variables, inputs, parameters |
-| 26 | Go to Type Definition | Navigate to schema/component definition |
+| 22 | Call Hierarchy | View incoming/outgoing function calls |
+| 23 | Linked Editing Range | Simultaneous editing of related identifiers |
+| 24 | Document Links | Clickable import paths |
+| 25 | On Type Formatting | Auto-format as you type |
+| 26 | Unused Variables | Detect unused variables, inputs, parameters |
+| 27 | Go to Type Definition | Navigate to schema/component definition |
 
 ### [Diagnostics & Validation](./FEATURES_VALIDATION.md)
 
-31 validation rules for detecting errors and code quality issues.
+38 validation rules for detecting errors and code quality issues.
 
 | Category | Count | Examples |
 |----------|-------|----------|
-| Error | 12 | Duplicate parameters, unknown decorator, unclosed string |
+| Error | 19 | Duplicate parameters, decorator validation, circular imports |
 | Warning | 16 | Empty block, variable shadowing, infinite loop |
 | Hint | 3 | Empty string check, negated comparison, implicit any |
 

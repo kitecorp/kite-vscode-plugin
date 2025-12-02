@@ -4,7 +4,7 @@ This document covers refactoring and advanced editing features of the Kite Langu
 
 ---
 
-## 21. Call Hierarchy
+## 22. Call Hierarchy
 
 **Handlers:** `textDocument/prepareCallHierarchy`, `callHierarchy/incomingCalls`, `callHierarchy/outgoingCalls`
 
@@ -61,7 +61,7 @@ From `processB`:
 
 ---
 
-## 22. Linked Editing Range
+## 23. Linked Editing Range
 
 **Handler:** `textDocument/linkedEditingRange`
 
@@ -119,7 +119,7 @@ Linked editing respects scope boundaries:
 
 ---
 
-## 23. Document Links
+## 24. Document Links
 
 **Handler:** `textDocument/documentLink`
 
@@ -167,7 +167,7 @@ import * from "aws.Lambda"         // <- Ctrl+Click to open aws/Lambda.kite
 
 ---
 
-## 24. On Type Formatting
+## 25. On Type Formatting
 
 **Handler:** `textDocument/onTypeFormatting`
 
@@ -229,7 +229,7 @@ Set your preferred indentation in VS Code settings:
 
 ---
 
-## 25. Unused Variables Detection
+## 26. Unused Variables Detection
 
 **Diagnostic Type:** Warning with `DiagnosticTag.Unnecessary` (shows as faded text)
 
@@ -277,7 +277,7 @@ fun process(number n) {  // Warning: Parameter 'n' is declared but never used
 
 ---
 
-## 26. Go to Type Definition
+## 27. Go to Type Definition
 
 **Handler:** `textDocument/typeDefinition`
 

@@ -657,6 +657,178 @@ Reports user-friendly error messages for parse errors, providing clearer guidanc
 
 ---
 
+## Duplicate Properties
+
+**File:** `duplicate-properties.ts`
+
+Reports error when property names are duplicated in schemas, resources, or component instances.
+
+```kite
+schema Config {
+    string host
+    number host      // Error: Duplicate property 'host' in schema 'Config'
+}
+
+resource Config web {
+    host = "localhost"
+    host = "127.0.0.1"  // Error: Duplicate property 'host' assignment
+}
+```
+
+Checked in:
+- Schema property definitions
+- Resource property assignments
+- Component instance input assignments
+
+---
+
+## Decorator Arguments
+
+**File:** `decorator-arguments.ts`
+
+Validates that decorator arguments match expected types.
+
+| Decorator | Expected Type | Error Message |
+|-----------|---------------|---------------|
+| @minValue, @maxValue | number or variable | requires a number argument |
+| @minLength, @maxLength | number or variable | requires a number argument |
+| @count | number or variable | requires a number argument |
+| @description | string | requires a string argument |
+| @existing | string | requires a string argument |
+| @allowed | array | requires an array argument |
+| @nonEmpty, @sensitive, @unique | none | takes no arguments |
+| @tags | object, array, or string | requires an object, array, or string |
+| @provider | string or array | requires a string or array argument |
+| @dependsOn | identifier or array | requires a resource reference |
+| @validate | named (regex: or preset:) | requires named argument |
+
+```kite
+@minValue("10")      // Error: @minValue requires a number argument
+@nonEmpty(true)      // Error: @nonEmpty takes no arguments
+@description(42)     // Error: @description requires a string argument
+
+@minValue(10)        // OK
+@description("...")  // OK
+@nonEmpty            // OK
+@count(replicas)     // OK - variable references allowed
+```
+
+---
+
+## Decorator Targets
+
+**File:** `decorator-targets.ts`
+
+Reports error when decorators are applied to invalid targets.
+
+| Decorator | Valid Targets |
+|-----------|---------------|
+| @minValue, @maxValue | input, output |
+| @minLength, @maxLength | input, output |
+| @validate | input, output |
+| @sensitive | input, output |
+| @nonEmpty | input |
+| @allowed | input |
+| @unique | input |
+| @existing | resource |
+| @dependsOn | resource, component instance |
+| @tags | resource, component instance |
+| @provider | resource, component instance |
+| @count | resource, component instance |
+| @description | all (universal) |
+
+```kite
+@nonEmpty                    // Error: @nonEmpty can only be applied to input
+schema Config { }
+
+@existing("arn:aws:...")     // Error: @existing can only be applied to resource
+component Server { }
+
+@tags({ Team: "platform" })  // Error: @tags can only be applied to resource or component instance
+component WebServer {
+    input string name
+}
+
+@nonEmpty                    // OK - applied to input
+input string name
+```
+
+---
+
+## Reserved Names
+
+**File:** `reserved-names.ts`
+
+Reports error when keywords or type names are used as property/input/output names.
+
+**Reserved words include:**
+- **Types:** `string`, `number`, `boolean`, `any`, `object`, `void`, `null`
+- **Keywords:** `if`, `else`, `for`, `while`, `in`, `return`, `var`, `fun`, `schema`, `component`, `resource`, `input`, `output`, `type`, `import`, `from`, `init`, `this`, `true`, `false`
+
+```kite
+schema Config {
+    string string     // Error: 'string' is a reserved word
+    number if         // Error: 'if' is a reserved word
+}
+
+component Server {
+    input string var  // Error: 'var' is a reserved word
+    output number return  // Error: 'return' is a reserved word
+}
+```
+
+---
+
+## Missing Properties
+
+**File:** `missing-properties.ts`
+
+Reports error when resource instances are missing required schema properties.
+
+**Required property** = property declared without a default value.
+
+```kite
+schema ServerConfig {
+    string host             // Required (no default)
+    number port = 8080      // Optional (has default)
+}
+
+resource ServerConfig web { }     // Error: Missing required property 'host'
+
+resource ServerConfig db {
+    host = "localhost"      // OK - required property provided
+}
+```
+
+**Note:** Component inputs are NOT checked - all inputs are optional (prompted at CLI runtime).
+
+---
+
+## Circular Imports
+
+**File:** `circular-imports.ts`
+
+Detects when files import each other in a circular manner.
+
+```kite
+// a.kite
+import * from "b.kite"     // Error: Circular import: a.kite -> b.kite -> a.kite
+
+// b.kite
+import * from "a.kite"
+
+// self-import
+import * from "current.kite"  // Error: Circular import: File imports itself
+```
+
+**Features:**
+- Detects direct circular imports (A → B → A)
+- Detects indirect cycles (A → B → C → A)
+- Detects self-imports
+- Shows full cycle chain in error message
+
+---
+
 ## Summary Table
 
 | Validation | Severity | File |
@@ -693,3 +865,9 @@ Reports user-friendly error messages for parse errors, providing clearer guidanc
 | Unused parameter | Warning | `unused-parameter.ts` |
 | Implicit any | Hint | `implicit-any.ts` |
 | Syntax errors | Error | `syntax-errors.ts` |
+| Duplicate properties | Error | `duplicate-properties.ts` |
+| Decorator arguments | Error | `decorator-arguments.ts` |
+| Decorator targets | Error | `decorator-targets.ts` |
+| Reserved names | Error | `reserved-names.ts` |
+| Missing properties | Error | `missing-properties.ts` |
+| Circular imports | Error | `circular-imports.ts` |

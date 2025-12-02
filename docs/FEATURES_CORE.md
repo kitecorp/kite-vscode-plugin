@@ -139,6 +139,55 @@ import Config from "█"  // Shows: common.kite, utils.kite, etc.
 - Excludes current file from suggestions
 - Works for both named and wildcard imports
 
+### Code Snippets
+
+**File:** `src/server/handlers/completion/snippets.ts`
+
+Pre-built code templates for common Kite patterns. Snippets appear as completions and expand with tab stops for easy editing.
+
+#### Top-Level Snippets
+
+| Prefix | Description | Expands To |
+|--------|-------------|------------|
+| `schema` | Schema definition | `schema Name { string property }` |
+| `schemad` | Schema with defaults | `schema Name { string name = "default" ... }` |
+| `component` | Component definition | `component Name { input string name; output string result }` |
+| `compinst` | Component instance | `component Type instanceName { property = value }` |
+| `resource` | Resource declaration | `resource SchemaType name { property = value }` |
+| `resourcet` | Resource with tags | `@tags({ Environment: "prod" }) resource ...` |
+| `fun` | Function with return | `fun name(type param) returnType { return result }` |
+| `funv` | Void function | `fun name(type param) { ... }` |
+| `import` | Wildcard import | `import * from "filename.kite"` |
+| `importn` | Named import | `import Symbol from "filename.kite"` |
+| `type` | Type alias | `type Name = "option1" \| "option2"` |
+
+#### Control Flow Snippets (Any Context)
+
+| Prefix | Description | Expands To |
+|--------|-------------|------------|
+| `if` | If statement | `if (condition) { ... }` |
+| `ife` | If-else statement | `if (condition) { ... } else { ... }` |
+| `for` | For loop | `for (item in items) { ... }` |
+| `while` | While loop | `while (condition) { ... }` |
+| `var` | Variable (inferred type) | `var name = value` |
+| `vart` | Variable (explicit type) | `var type name = value` |
+
+#### Component Body Snippets
+
+| Prefix | Description | Expands To |
+|--------|-------------|------------|
+| `input` | Input declaration | `input string name = default` |
+| `output` | Output declaration | `output string name = value` |
+
+#### Using Snippets
+
+1. Type the prefix (e.g., `schema`)
+2. Select the snippet from completions
+3. Press Tab to move between placeholders
+4. Edit each placeholder as needed
+
+Snippets use VS Code's snippet syntax with numbered tab stops (`$1`, `$2`, etc.).
+
 ---
 
 ## 5. Hover Documentation
@@ -242,6 +291,8 @@ resource Config db {
 **Handler:** `connection.onCodeAction`
 
 ### Available Quick Fixes:
+
+#### Import Management
 - **Add Import**: When using symbol from non-imported file
   - Creates new import: `import SymbolName from "file.kite"`
   - Or adds to existing: `import Existing, SymbolName from "file.kite"`
@@ -262,6 +313,25 @@ resource Config db {
   - Adds all missing imports in one action
   - Groups symbols from same file into single import
   - Sorts symbols alphabetically
+
+#### Code Generation
+- **Generate Missing Properties**: Adds required properties to resource instances
+  - Triggered when resource is missing required schema properties
+  - Inserts properties with type-appropriate placeholder values:
+    - `string` → `""`
+    - `number` → `0`
+    - `boolean` → `false`
+    - `array` → `[]`
+    - `object` → `{}`
+    - Custom types → `null`
+  - Handles multiple missing properties at once
+  - Example: `Add 3 missing properties`
+
+#### Cleanup
+- **Remove Unused Variable**: Removes unused `var` declarations
+  - Deletes entire line for unused variables
+  - For loop variables: Renames to `_` (convention for intentionally unused)
+  - For parameters: Renames to `_` (preserves function signature)
 
 ### Auto-Import on Paste
 

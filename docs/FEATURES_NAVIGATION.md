@@ -304,3 +304,67 @@ component WebServer {            ─┐
 - **Unfold**: Click the `+` icon, or use `Cmd+Opt+]` / `Ctrl+Shift+]`
 - **Fold All**: `Cmd+K Cmd+0` / `Ctrl+K Ctrl+0`
 - **Unfold All**: `Cmd+K Cmd+J` / `Ctrl+K Ctrl+J`
+
+---
+
+## 21. Go to Implementation
+
+**Handler:** `textDocument/implementation`
+
+Navigate from a schema or component definition to all its implementations (resources/instances). This is the inverse of "Go to Type Definition" - from type to implementations.
+
+### How to Use
+
+1. Place cursor on a schema or component definition name
+2. Right-click → "Go to Implementations" (or use shortcut)
+3. See all resources using that schema or component instantiations
+
+### Supported Scenarios
+
+| From | Navigates To |
+|------|--------------|
+| Schema definition | All `resource SchemaName instance { }` |
+| Component definition | All `component TypeName instanceName { }` |
+
+### Example
+
+```kite
+schema ServerConfig {        // <- Click here for implementations
+    string host
+    number port
+}
+
+resource ServerConfig web {  // <- Found: implementation #1
+    host = "localhost"
+    port = 8080
+}
+
+resource ServerConfig api {  // <- Found: implementation #2
+    host = "api.example.com"
+    port = 3000
+}
+```
+
+From `schema ServerConfig`:
+- Finds: `resource ServerConfig web { ... }`
+- Finds: `resource ServerConfig api { ... }`
+
+From `component WebServer`:
+- Finds: `component WebServer api { ... }`
+- Finds: `component WebServer admin { ... }`
+
+### Features
+
+| Feature | Description |
+|---------|-------------|
+| **Cross-file search** | Searches all `.kite` files in workspace |
+| **Dotted names** | Handles `schema AWS.S3.Bucket` |
+| **Definition only** | Only triggers on definitions, not instances |
+| **Accurate ranges** | Highlights full resource/component block |
+
+### Keyboard Shortcuts
+
+| Action | Mac | Windows/Linux |
+|--------|-----|---------------|
+| Go to Implementations | `Cmd+F12` | `Ctrl+F12` |
+| Peek Implementations | `Shift+Cmd+F12` | `Shift+Ctrl+F12` |
