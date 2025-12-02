@@ -66,6 +66,7 @@
 - [x] Long function - warning for functions with 50+ lines
 - [x] Unused parameter - warning for function parameters never used
 - [x] Implicit any - hint for variables where type can't be inferred
+- [x] Syntax errors - improved, user-friendly error messages for parse errors
 
 ## Pending Features
 

@@ -54,6 +54,7 @@ import { checkUselessExpression } from './useless-expression';
 import { checkLongFunction } from './long-function';
 import { checkUnusedParameter } from './unused-parameter';
 import { checkImplicitAny } from './implicit-any';
+import { checkSyntaxErrors } from './syntax-errors';
 import { isInComment } from '../../utils/text-utils';
 import { findSymbolInWorkspace } from '../../utils/workspace-utils';
 
@@ -83,6 +84,10 @@ export interface ValidationContext extends BaseContext {
 export function validateDocument(document: TextDocument, ctx: ValidationContext): Diagnostic[] {
     const diagnostics: Diagnostic[] = [];
     const text = document.getText();
+
+    // Check for syntax errors first (parsing errors)
+    const syntaxDiagnostics = checkSyntaxErrors(document);
+    diagnostics.push(...syntaxDiagnostics);
 
     // Find all decorator usages: @decoratorName or @decoratorName(args)
     const decoratorRegex = /@(\w+)(\s*\(([^)]*)\))?/g;

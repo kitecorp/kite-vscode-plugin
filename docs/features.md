@@ -1747,6 +1747,7 @@ var string name = getData() // OK - explicit type annotation
 | Long function | Warning | `long-function.ts` |
 | Unused parameter | Warning | `unused-parameter.ts` |
 | Implicit any | Hint | `implicit-any.ts` |
+| Syntax errors | Error | `syntax-errors.ts` |
 
 ---
 
