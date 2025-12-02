@@ -169,6 +169,23 @@ component WebServer api {
     });
 
     describe('Edge cases', () => {
+        it('should not match words from comments as properties', () => {
+            const doc = createDocument(`
+schema ServerConfig {
+    string host             // Required (no default)
+    number port = 8080      // Optional (has default)
+}
+
+resource ServerConfig db {
+    host = "localhost"      // OK - required property provided
+}
+`);
+            const diagnostics = checkMissingProperties(doc);
+
+            // Should not report error about missing 'default' property from comments
+            expect(diagnostics).toHaveLength(0);
+        });
+
         it('should handle empty document', () => {
             const doc = createDocument('');
             const diagnostics = checkMissingProperties(doc);

@@ -58,13 +58,16 @@ function extractSchemas(text: string): Map<string, SchemaProperty[]> {
 function parseSchemaProperties(bodyText: string): SchemaProperty[] {
     const properties: SchemaProperty[] = [];
 
+    // Remove comments to avoid matching text in comments
+    const bodyWithoutComments = removeComments(bodyText);
+
     // Match property declarations: [decorators] type name [= default]
     // Type must start with a letter (not a number) to avoid matching values like "8080"
     // Handle 'any' keyword and array types
     const propRegex = /(?:@\w+(?:\([^)]*\))?\s*)*\b(any|[a-zA-Z]\w*)(\[\])?\s+([a-zA-Z_]\w*)(\s*=)?/g;
     let propMatch;
 
-    while ((propMatch = propRegex.exec(bodyText)) !== null) {
+    while ((propMatch = propRegex.exec(bodyWithoutComments)) !== null) {
         const typeName = propMatch[1] + (propMatch[2] || '');
         const name = propMatch[3];
         const hasDefault = propMatch[4] !== undefined;
@@ -78,6 +81,76 @@ function parseSchemaProperties(bodyText: string): SchemaProperty[] {
     }
 
     return properties;
+}
+
+/**
+ * Remove comments from text
+ */
+function removeComments(text: string): string {
+    let result = '';
+    let inString = false;
+    let stringChar = '';
+    let inLineComment = false;
+    let inBlockComment = false;
+
+    for (let i = 0; i < text.length; i++) {
+        const char = text[i];
+        const prevChar = i > 0 ? text[i - 1] : '';
+        const nextChar = i < text.length - 1 ? text[i + 1] : '';
+
+        // Handle strings
+        if ((char === '"' || char === "'") && prevChar !== '\\') {
+            if (!inLineComment && !inBlockComment) {
+                if (!inString) {
+                    inString = true;
+                    stringChar = char;
+                } else if (char === stringChar) {
+                    inString = false;
+                }
+                result += char;
+            }
+            continue;
+        }
+
+        if (inString) {
+            result += char;
+            continue;
+        }
+
+        // Handle line comments
+        if (!inBlockComment && char === '/' && nextChar === '/') {
+            inLineComment = true;
+            i++; // Skip next char
+            continue;
+        }
+
+        if (inLineComment) {
+            if (char === '\n') {
+                inLineComment = false;
+                result += char; // Keep newline
+            }
+            continue;
+        }
+
+        // Handle block comments
+        if (!inLineComment && char === '/' && nextChar === '*') {
+            inBlockComment = true;
+            i++; // Skip next char
+            continue;
+        }
+
+        if (inBlockComment) {
+            if (char === '*' && nextChar === '/') {
+                inBlockComment = false;
+                i++; // Skip next char
+            }
+            continue;
+        }
+
+        result += char;
+    }
+
+    return result;
 }
 
 /**

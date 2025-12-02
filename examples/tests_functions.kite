@@ -4,5 +4,6 @@ schema ServerConfig {
 }
 
 resource ServerConfig db {
-    host = "localhost"      // OK - required property provided
+    host = ""
+
 }
