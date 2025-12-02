@@ -24,8 +24,9 @@ fun calculate(number x, string x) {  // Error: Duplicate parameter 'x'
 
 **File:** `duplicate-declarations.ts`
 
-Reports error when multiple top-level declarations have the same name.
+Reports error when multiple top-level declarations have the same name, or when variables within a function scope are duplicated.
 
+### Top-level duplicates
 ```kite
 schema Config { }
 schema Config { }  // Error: Duplicate declaration 'Config'
@@ -33,6 +34,22 @@ schema Config { }  // Error: Duplicate declaration 'Config'
 fun process() { }
 fun process() { }  // Error: Duplicate declaration 'process'
 ```
+
+### Function-scope duplicates
+```kite
+fun calculate(number x) {
+    var x = 12  // Error: Variable 'x' is already declared as parameter
+    return x
+}
+
+fun test() {
+    var y = 10
+    var y = 20  // Error: Duplicate variable 'y'
+    return y
+}
+```
+
+**Note:** Variables with the same name in different functions are allowed, as they are in different scopes.
 
 ---
 

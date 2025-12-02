@@ -85,4 +85,61 @@ describe('Duplicate declarations validation', () => {
 
         expect(diagnostics).toHaveLength(0);
     });
+
+    it('should report error when variable has same name as parameter', () => {
+        const doc = createDoc(`
+            fun calculate(number x) {
+                var x = 12
+                return x
+            }
+        `);
+        const diagnostics = checkDuplicateDeclarations(doc);
+
+        expect(diagnostics).toHaveLength(1);
+        expect(diagnostics[0].message).toContain("'x' is already declared as parameter");
+    });
+
+    it('should report error for duplicate variables in same scope', () => {
+        const doc = createDoc(`
+            fun test() {
+                var y = 10
+                var y = 20
+                return y
+            }
+        `);
+        const diagnostics = checkDuplicateDeclarations(doc);
+
+        expect(diagnostics).toHaveLength(1);
+        expect(diagnostics[0].message).toContain("Duplicate variable 'y'");
+    });
+
+    it('should allow variable with same name in different functions', () => {
+        const doc = createDoc(`
+            fun test1() {
+                var x = 10
+                return x
+            }
+            fun test2() {
+                var x = 20
+                return x
+            }
+        `);
+        const diagnostics = checkDuplicateDeclarations(doc);
+
+        expect(diagnostics).toHaveLength(0);
+    });
+
+    it('should report multiple errors for parameter and duplicates', () => {
+        const doc = createDoc(`
+            fun test(number x) {
+                var x = 10
+                var x = 20
+                return x
+            }
+        `);
+        const diagnostics = checkDuplicateDeclarations(doc);
+
+        expect(diagnostics.length).toBeGreaterThanOrEqual(1);
+        expect(diagnostics[0].message).toContain("'x'");
+    });
 });
