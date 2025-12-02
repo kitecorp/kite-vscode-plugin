@@ -1,11 +1,7 @@
-// Duplicate function names - should show duplicate declaration error
-fun calculate() string[] {
-    return ["ok"]       // Error: Return type mismatch: expected 'string[]' but got 'number[]'
-}
+var name = "asd"
+var x = "Hello ${name}"      // Error: Unclosed string interpolation '${'
+var y = "Value: ${a.b}"      // Error: Unclosed string interpolation '${'
 
-// This will also show duplicate declaration error (same name as above)
-// AND show return type mismatch for variable 'result'
-fun calculate() any[] {
-    var result = "4"
-    return [result]    // Error: Return type mismatch: expected 'number[]' but got 'string[]'
-}
+var z = "Hello ${name}"     // OK - properly closed
+var w = "Price: $100"       // OK - simple $ not interpolation
+var v = 'No ${interp}'      // OK - single quotes don't interpolate

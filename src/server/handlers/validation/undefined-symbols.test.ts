@@ -309,6 +309,53 @@ var y = 10`);
             const errors = diagnostics.filter(d => d.message.includes("'undefinedVar'"));
             expect(errors).toHaveLength(0);
         });
+
+        it('should ignore text before interpolation in double-quoted strings', () => {
+            const doc = createDocument(`var name = "test"
+var x = "Hello \${name}"`);
+            const declarations = createDeclarations([
+                { name: 'name', type: 'variable' },
+                { name: 'x', type: 'variable' }
+            ]);
+
+            const diagnostics = checkUndefinedSymbols(doc, declarations);
+
+            // "Hello" is just text, not a variable reference
+            const helloErrors = diagnostics.filter(d => d.message.includes("'Hello'"));
+            expect(helloErrors).toHaveLength(0);
+        });
+
+        it('should check variables inside interpolation', () => {
+            const doc = createDocument(`var x = "Value: \${undefinedVar}"`);
+            const declarations = createDeclarations([{ name: 'x', type: 'variable' }]);
+
+            const diagnostics = checkUndefinedSymbols(doc, declarations);
+
+            // undefinedVar inside ${} should be flagged
+            const errors = diagnostics.filter(d => d.message.includes("'undefinedVar'"));
+            expect(errors).toHaveLength(1);
+        });
+
+        it('should not check interpolation syntax in single-quoted strings', () => {
+            const doc = createDocument(`var x = 'No \${interp}'`);
+            const declarations = createDeclarations([{ name: 'x', type: 'variable' }]);
+
+            const diagnostics = checkUndefinedSymbols(doc, declarations);
+
+            // Single quotes don't support interpolation, so 'interp' is just text
+            const errors = diagnostics.filter(d => d.message.includes("'interp'") || d.message.includes("'No'"));
+            expect(errors).toHaveLength(0);
+        });
+
+        it('should handle simple $ without braces', () => {
+            const doc = createDocument(`var x = "Price: $100"`);
+            const declarations = createDeclarations([{ name: 'x', type: 'variable' }]);
+
+            const diagnostics = checkUndefinedSymbols(doc, declarations);
+
+            // $ without {} is not interpolation
+            expect(diagnostics).toHaveLength(0);
+        });
     });
 
     describe('Schema and type references', () => {

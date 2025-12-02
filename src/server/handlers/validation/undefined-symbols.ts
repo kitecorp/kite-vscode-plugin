@@ -133,22 +133,63 @@ function isInStringNotInterpolation(text: string, offset: number): boolean {
     // First check if we're in a string at all
     if (!isInString(text, offset)) return false;
 
-    // Check if we're inside an interpolation ${...}
-    // Look backwards for ${ and forwards for }
-    let depth = 0;
-    for (let i = offset; i >= 0; i--) {
-        if (text[i] === '}' && i < offset) depth++;
-        if (text[i] === '{' && i > 0 && text[i - 1] === '$') {
-            if (depth === 0) {
-                // We're inside an interpolation, check if we're still in it
+    // Find which quote character started this string
+    let stringChar = '';
+    let inString = false;
+
+    for (let i = 0; i < offset && i < text.length; i++) {
+        const char = text[i];
+        const prevChar = i > 0 ? text[i - 1] : '';
+
+        // Skip escaped characters
+        if (prevChar === '\\') continue;
+
+        if ((char === '"' || char === "'")) {
+            if (!inString) {
+                inString = true;
+                stringChar = char;
+            } else if (char === stringChar) {
+                inString = false;
+                stringChar = '';
+            }
+        }
+    }
+
+    // Single-quoted strings don't support interpolation in Kite
+    if (stringChar === "'") {
+        return true; // In string but not in interpolation
+    }
+
+    // For double-quoted strings, check if we're inside ${...}
+    // Scan backwards from offset to find if we're between ${ and }
+    let braceDepth = 0;
+    for (let i = offset - 1; i >= 0; i--) {
+        const char = text[i];
+        const prevChar = i > 0 ? text[i - 1] : '';
+
+        // Stop at the opening quote of this string
+        if (char === '"' && prevChar !== '\\') {
+            break;
+        }
+
+        // Track brace nesting
+        if (char === '}') {
+            braceDepth++;
+        } else if (char === '{' && prevChar === '$') {
+            if (braceDepth === 0) {
+                // Found ${, check if there's a matching } after offset
                 for (let j = offset; j < text.length; j++) {
                     if (text[j] === '}') {
-                        return false; // Inside interpolation
+                        return false; // We're inside ${...}
                     }
-                    if (text[j] === '"' || text[j] === '\n') break;
+                    if (text[j] === '"' || text[j] === '\n') {
+                        break;
+                    }
                 }
+                // No matching }, so we're not in interpolation
+                return true;
             }
-            depth--;
+            braceDepth--;
         }
     }
 
