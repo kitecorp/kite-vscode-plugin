@@ -1,6 +1,58 @@
 /**
  * AST-based document scanner for the Kite language server.
- * Uses the ANTLR parser to extract declarations from Kite source code.
+ *
+ * ## Purpose
+ *
+ * This module serves as a **bridge** between the ANTLR parser (generated code) and the
+ * language server's needs. It walks the parse tree and extracts a simplified list of
+ * declarations that the language server can efficiently query.
+ *
+ * ## Why This Exists
+ *
+ * 1. **Performance**: The language server needs fast access to declarations for features like
+ *    autocomplete, go-to-definition, and validation. Storing a pre-scanned list in a cache
+ *    is much faster than re-parsing on every request.
+ *
+ * 2. **Simplification**: The ANTLR parse tree is complex and deeply nested. This scanner
+ *    flattens it into a simple array of Declaration objects with just the info we need:
+ *    name, type, location, scope bounds, parameters, etc.
+ *
+ * 3. **Scope Tracking**: The scanner calculates and stores scope information (scopeStart/scopeEnd)
+ *    for variables, parameters, and other scoped declarations. This enables scope-aware
+ *    symbol resolution in validation and autocomplete.
+ *
+ * ## How It's Used
+ *
+ * Called by the language server on every document change (server.ts:200):
+ * ```typescript
+ * documents.onDidChangeContent(change => {
+ *     const declarations = scanDocumentAST(change.document);
+ *     declarationCache.set(change.document.uri, declarations);
+ *     // ... declarations are then used by validation, autocomplete, etc.
+ * });
+ * ```
+ *
+ * The resulting Declaration[] is cached and consumed by:
+ * - Validation (undefined symbols, type checking, etc.)
+ * - Autocomplete (suggest available symbols)
+ * - Go-to-definition (find declaration location)
+ * - Find references (find all usages)
+ * - Hover (show declaration info)
+ *
+ * ## Architecture
+ *
+ * - **ANTLR Grammar** (grammar/*.g4) → defines the language syntax
+ * - **ANTLR Generator** → produces KiteLexer.ts, KiteParser.ts (generated code)
+ * - **parse-utils.ts** → wraps the parser with error handling
+ * - **ast-scanner.ts** (this file) → walks parse tree, extracts declarations
+ * - **Language Server** → uses cached declarations for LSP features
+ *
+ * ## Important Notes
+ *
+ * - This is **NOT generated code** - it's hand-written and can be modified
+ * - It uses the **Visitor pattern** to traverse the ANTLR parse tree
+ * - When grammar changes, regenerate parser with `npm run generate-parser`
+ * - This scanner code may need updates if grammar structure changes significantly
  */
 
 import { TextDocument } from 'vscode-languageserver-textdocument';
@@ -258,18 +310,22 @@ function visitFunctionDeclaration(
 
     // Process function body for nested declarations and parameters as variables
     const blockExpr = ctx.blockExpression();
-    if (blockExpr && paramList) {
+    if (blockExpr) {
         const funcScope = getScopeFromBlock(blockExpr);
 
-        // Add parameters as scoped variables
-        for (const param of paramList.parameter_list()) {
-            const paramDecl = createParameterDeclaration(param, uri, text, funcScope, decl.name);
-            if (paramDecl) {
-                declarations.push(paramDecl);
+        // Add parameters as scoped variables (if any)
+        if (paramList) {
+            for (const param of paramList.parameter_list()) {
+                const paramDecl = createParameterDeclaration(param, uri, text, funcScope, decl.name);
+                if (paramDecl) {
+                    declarations.push(paramDecl);
+                }
             }
         }
 
-        // Visit body for nested declarations
+        // IMPORTANT: Always visit function body to scan local variables, even if no parameters.
+        // Bug fixed: Previously this was only called if `paramList` existed, causing functions
+        // without parameters to never scan their local variables (e.g., `var result = 42`).
         visitBlockExpression(blockExpr, declarations, uri, text, funcScope);
     }
 }

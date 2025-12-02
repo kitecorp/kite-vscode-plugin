@@ -12,13 +12,21 @@ function createDocument(content: string, uri = 'file:///workspace/test.kite'): T
     return TextDocument.create(uri, 'kite', 1, content);
 }
 
-function createDeclarations(names: { name: string; type: Declaration['type'] }[]): Declaration[] {
+function createDeclarations(names: {
+    name: string;
+    type: Declaration['type'];
+    scopeStart?: number;
+    scopeEnd?: number;
+    nameRange?: Range;
+}[]): Declaration[] {
     return names.map((n, i) => ({
         name: n.name,
         type: n.type,
         range: Range.create(i, 0, i, 10),
-        nameRange: Range.create(i, 0, i, n.name.length),
+        nameRange: n.nameRange || Range.create(i, 0, i, n.name.length),
         uri: 'file:///workspace/test.kite',
+        scopeStart: n.scopeStart,
+        scopeEnd: n.scopeEnd,
     }));
 }
 
@@ -457,6 +465,110 @@ resource CommonConfig config { name = "test" }`);
             const diagnostics = checkUndefinedSymbols(doc, declarations);
 
             expect(diagnostics).toHaveLength(0);
+        });
+    });
+
+    describe('Scoped variables', () => {
+        it('should resolve local variables in function scope', () => {
+            const content = `fun calculate() number {
+    var result = 42
+    return result
+}`;
+            const doc = createDocument(content);
+
+            // Simulate scanner output: variable 'result' declared in function scope
+            const funcStart = content.indexOf('{');
+            const funcEnd = content.lastIndexOf('}');
+            const declarations = createDeclarations([
+                {
+                    name: 'calculate',
+                    type: 'function',
+                },
+                {
+                    name: 'result',
+                    type: 'variable',
+                    scopeStart: funcStart,
+                    scopeEnd: funcEnd,
+                },
+            ]);
+
+            const diagnostics = checkUndefinedSymbols(doc, declarations);
+
+            // 'result' should be resolved within the function
+            const resultErrors = diagnostics.filter(d => d.message.includes("'result'"));
+            expect(resultErrors).toHaveLength(0);
+        });
+
+        it('should not resolve variable used before declaration', () => {
+            const content = `fun test() {
+    return x
+    var x = 10
+}`;
+            const doc = createDocument(content);
+
+            const funcStart = content.indexOf('{');
+            const funcEnd = content.lastIndexOf('}');
+            const varDeclOffset = content.indexOf('var x');
+
+            const declarations = createDeclarations([
+                {
+                    name: 'test',
+                    type: 'function',
+                },
+                {
+                    name: 'x',
+                    type: 'variable',
+                    scopeStart: funcStart,
+                    scopeEnd: funcEnd,
+                    // Override nameRange to position it at 'var x'
+                    nameRange: {
+                        start: doc.positionAt(varDeclOffset + 4), // Position of 'x' in 'var x'
+                        end: doc.positionAt(varDeclOffset + 5),
+                    },
+                },
+            ]);
+
+            const diagnostics = checkUndefinedSymbols(doc, declarations);
+
+            // 'x' should not be resolved before its declaration
+            const xErrors = diagnostics.filter(d => d.message.includes("'x'"));
+            expect(xErrors).toHaveLength(1);
+        });
+
+        it('should not resolve variable from different function scope', () => {
+            const content = `fun foo() {
+    var x = 10
+}
+fun bar() {
+    return x
+}`;
+            const doc = createDocument(content);
+
+            const firstFuncStart = content.indexOf('{');
+            const firstFuncEnd = content.indexOf('}');
+
+            const declarations = createDeclarations([
+                {
+                    name: 'foo',
+                    type: 'function',
+                },
+                {
+                    name: 'bar',
+                    type: 'function',
+                },
+                {
+                    name: 'x',
+                    type: 'variable',
+                    scopeStart: firstFuncStart,
+                    scopeEnd: firstFuncEnd,
+                },
+            ]);
+
+            const diagnostics = checkUndefinedSymbols(doc, declarations);
+
+            // 'x' in bar() should not be resolved (different scope)
+            const xErrors = diagnostics.filter(d => d.message.includes("'x'"));
+            expect(xErrors).toHaveLength(1);
         });
     });
 });

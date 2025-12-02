@@ -42,8 +42,22 @@ export function checkUndefinedSymbols(
     const diagnostics: Diagnostic[] = [];
     const text = document.getText();
 
-    // Build a set of declared names for quick lookup
-    const declaredNames = new Set(declarations.map(d => d.name));
+    /**
+     * Check if a declaration is in scope at the given offset
+     */
+    function isDeclarationInScope(decl: Declaration, offset: number): boolean {
+        // Global scope declarations (no scopeStart/scopeEnd) are always in scope
+        if (decl.scopeStart === undefined || decl.scopeEnd === undefined) {
+            return true;
+        }
+
+        // Get the declaration's offset from its range
+        const declOffset = document.offsetAt(decl.nameRange.start);
+
+        // Check if offset is within the declaration's scope
+        // Also need to check that the reference comes after the declaration
+        return offset >= declOffset && offset >= decl.scopeStart && offset <= decl.scopeEnd;
+    }
 
     // Find all identifier references
     // An identifier is a word that starts with a letter or underscore
@@ -65,8 +79,10 @@ export function checkUndefinedSymbols(
         if (BUILTIN_TYPES.has(identifier)) continue;
         if (BUILTIN_FUNCTIONS.has(identifier)) continue;
 
-        // Skip if it's a declared name
-        if (declaredNames.has(identifier)) continue;
+        // Check if it's a declared name that's in scope at this location
+        const matchingDeclarations = declarations.filter(d => d.name === identifier);
+        const hasInScopeDeclaration = matchingDeclarations.some(d => isDeclarationInScope(d, offset));
+        if (hasInScopeDeclaration) continue;
 
         // Skip if it's a declaration context (after var, input, output, etc.)
         if (isDeclarationContext(text, offset, identifier)) continue;

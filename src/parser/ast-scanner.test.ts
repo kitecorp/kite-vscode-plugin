@@ -258,4 +258,64 @@ resource DatabaseConfig db {
             expect(decls.find(d => d.name === 'db' && d.type === 'resource')).toBeDefined();
         });
     });
+
+    describe('Local variables in functions', () => {
+        it('should scan local variables in function without parameters', () => {
+            const doc = createDocument(`
+fun calculate() number {
+    var result = 42
+    return result
+}
+`);
+            const decls = scanDocumentAST(doc);
+
+            const funcDecl = decls.find(d => d.name === 'calculate' && d.type === 'function');
+            expect(funcDecl).toBeDefined();
+
+            const varDecl = decls.find(d => d.name === 'result' && d.type === 'variable');
+            expect(varDecl).toBeDefined();
+            expect(varDecl?.scopeStart).toBeDefined();
+            expect(varDecl?.scopeEnd).toBeDefined();
+        });
+
+        it('should scan local variables in function with parameters', () => {
+            const doc = createDocument(`
+fun process(number x) number {
+    var result = x * 2
+    return result
+}
+`);
+            const decls = scanDocumentAST(doc);
+
+            const funcDecl = decls.find(d => d.name === 'process' && d.type === 'function');
+            expect(funcDecl).toBeDefined();
+
+            // Parameter as scoped variable
+            const paramDecl = decls.find(d => d.name === 'x' && d.type === 'variable');
+            expect(paramDecl).toBeDefined();
+            expect(paramDecl?.scopeStart).toBeDefined();
+
+            // Local variable
+            const varDecl = decls.find(d => d.name === 'result' && d.type === 'variable');
+            expect(varDecl).toBeDefined();
+            expect(varDecl?.scopeStart).toBeDefined();
+            expect(varDecl?.scopeEnd).toBeDefined();
+        });
+
+        it('should scan multiple local variables', () => {
+            const doc = createDocument(`
+fun test() {
+    var x = 10
+    var y = 20
+    var z = x + y
+}
+`);
+            const decls = scanDocumentAST(doc);
+
+            expect(decls.find(d => d.name === 'test' && d.type === 'function')).toBeDefined();
+            expect(decls.find(d => d.name === 'x' && d.type === 'variable')).toBeDefined();
+            expect(decls.find(d => d.name === 'y' && d.type === 'variable')).toBeDefined();
+            expect(decls.find(d => d.name === 'z' && d.type === 'variable')).toBeDefined();
+        });
+    });
 });

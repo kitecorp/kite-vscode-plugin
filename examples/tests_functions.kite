@@ -1,3 +1,8 @@
-fun calculate() string {
-    return 42       // OK - inside function
+fun calculate() string[] {
+    return [123]       // 'return' statement outside of function
+}
+
+fun calculate() number {
+    var result = 42
+    return result
 }
