@@ -184,11 +184,29 @@ fun nullable() string {
 
 fun withVariable() number {
     var result = 42
-    return result  // OK - can't infer identifier type, so no error
+    return result  // OK - inferred type matches
+}
+
+fun mismatchVariable() number {
+    var result = "42"
+    return result  // Error: Return type mismatch: expected 'number' but got 'string'
+}
+
+fun withExplicitType() string {
+    var number port = 8080
+    return port  // Error: Return type mismatch: expected 'string' but got 'number'
 }
 ```
 
-**Note:** This validation only checks literal values (numbers, strings, booleans, arrays, objects, null). Variable and function call returns are not checked since their types cannot be easily inferred.
+**Features:**
+- Validates literal return values (numbers, strings, booleans, arrays, objects, null)
+- **Infers variable types** from their assignments and explicit type annotations
+- Checks variable returns against function return type
+- Supports both `var name = value` and `var type name = value` syntax
+
+**Limitations:**
+- Does not track variable reassignments (uses first assignment only)
+- Cannot infer types from function calls or complex expressions
 
 ---
 

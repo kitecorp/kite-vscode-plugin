@@ -33,10 +33,42 @@ fun getNullable() string {
     return null
 }
 
-// OK: variable return (can't infer type)
+// OK: variable return with inferred type
 fun withVariable() number {
     var result = 42
     return result
+}
+
+// Error: variable with wrong inferred type
+fun wrongVariable() number {
+    var result = "42"
+    return result  // Error: expected number, got string
+}
+
+// Error: variable with explicit type
+fun withExplicitType() string {
+    var number port = 8080
+    return port  // Error: expected string, got number
+}
+
+// OK: variable with correct explicit type
+fun correctExplicitType() number {
+    var number port = 8080
+    return port
+}
+
+// Multiple variables
+fun multipleVars() string {
+    var x = 42
+    var y = "hello"
+    var z = true
+    return y  // OK - y is string
+}
+
+fun multipleVarsError() string {
+    var x = 42
+    var y = "hello"
+    return x  // Error: expected string, got number
 }
 
 // Multiple returns - one error

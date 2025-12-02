@@ -13,6 +13,14 @@ import { isInComment } from '../../utils/text-utils';
 import { inferValueType, isTypeCompatible } from './type-checking';
 
 /**
+ * Variable type information
+ */
+interface VariableType {
+    name: string;
+    type: string; // Inferred type
+}
+
+/**
  * Check for return type mismatches in functions
  */
 export function checkReturnTypeMismatch(document: TextDocument): Diagnostic[] {
@@ -39,16 +47,27 @@ export function checkReturnTypeMismatch(document: TextDocument): Diagnostic[] {
         const funcBody = text.substring(braceStart + 1, braceEnd);
         const bodyOffset = braceStart + 1;
 
+        // Build variable type map from function body
+        const variableTypes = extractVariableTypes(funcBody);
+
         // Find all return statements in this function (not in nested functions)
         const returnStatements = findReturnStatements(funcBody);
 
         for (const returnStmt of returnStatements) {
             const returnValue = returnStmt.value.trim();
 
-            // Infer the type of the returned value
-            const valueType = inferValueType(returnValue);
+            // First, try to infer the type directly from the value
+            let valueType = inferValueType(returnValue);
 
-            // Skip if we can't infer the type (e.g., identifier reference)
+            // If it's an identifier (not a literal), check variable types
+            if (!valueType && /^[a-zA-Z_]\w*$/.test(returnValue)) {
+                const varInfo = variableTypes.find(v => v.name === returnValue);
+                if (varInfo) {
+                    valueType = varInfo.type;
+                }
+            }
+
+            // Skip if we still can't infer the type
             if (!valueType) continue;
 
             // Check for type mismatch
@@ -71,6 +90,76 @@ export function checkReturnTypeMismatch(document: TextDocument): Diagnostic[] {
     }
 
     return diagnostics;
+}
+
+/**
+ * Extract variable types from function body.
+ * Tracks both explicit type annotations and inferred types from literal assignments.
+ */
+function extractVariableTypes(code: string): VariableType[] {
+    const variables: VariableType[] = [];
+
+    // Match: var [type] name = value
+    // Handles both: "var name = value" and "var type name = value"
+    const varRegex = /\bvar\s+(?:(\w+(?:\[\])?)\s+)?(\w+)\s*=\s*([^;\n]+)/g;
+
+    let match;
+    while ((match = varRegex.exec(code)) !== null) {
+        if (isInCommentSimple(code, match.index)) continue;
+
+        const explicitType = match[1]; // Optional type annotation
+        const varName = match[2];
+        let value = match[3].trim();
+
+        // Remove inline comment if present
+        const commentIndex = value.indexOf('//');
+        if (commentIndex !== -1) {
+            value = value.substring(0, commentIndex).trim();
+        }
+
+        // Determine the variable's type
+        let varType: string | null = null;
+
+        if (explicitType) {
+            // Use explicit type annotation
+            varType = explicitType;
+        } else {
+            // Infer type from the assigned value
+            varType = inferValueType(value);
+        }
+
+        if (varType) {
+            variables.push({ name: varName, type: varType });
+        }
+    }
+
+    return variables;
+}
+
+/**
+ * Simple comment check for variable extraction
+ */
+function isInCommentSimple(code: string, offset: number): boolean {
+    // Check if offset is in a line comment
+    const beforeOffset = code.substring(0, offset);
+    const lastNewline = beforeOffset.lastIndexOf('\n');
+    const currentLine = beforeOffset.substring(lastNewline + 1);
+    if (currentLine.includes('//')) {
+        return true;
+    }
+
+    // Check if offset is in a block comment
+    let inBlockComment = false;
+    for (let i = 0; i < offset; i++) {
+        if (code[i] === '/' && code[i + 1] === '*') {
+            inBlockComment = true;
+        }
+        if (code[i] === '*' && code[i + 1] === '/') {
+            inBlockComment = false;
+        }
+    }
+
+    return inBlockComment;
 }
 
 /**
