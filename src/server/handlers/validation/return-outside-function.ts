@@ -21,7 +21,8 @@ export function checkReturnOutsideFunction(document: TextDocument): Diagnostic[]
     const functionBodies: { start: number; end: number }[] = [];
 
     // Regex to find function definitions and init blocks
-    const funcRegex = /\b(fun\s+\w+\s*\([^)]*\)(?:\s+\w+)?\s*\{|\binit\s*\{)/g;
+    // Matches: fun name(params) returnType { or fun name(params) returnType[] { or init {
+    const funcRegex = /\b(fun\s+\w+\s*\([^)]*\)(?:\s+\w+(?:\[\])?)?\s*\{|\binit\s*\{)/g;
 
     let match;
     while ((match = funcRegex.exec(text)) !== null) {

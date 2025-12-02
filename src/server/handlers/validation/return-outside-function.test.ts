@@ -157,4 +157,38 @@ describe('Return outside function validation', () => {
 
         expect(diagnostics).toHaveLength(0);
     });
+
+    it('should handle function with array return type', () => {
+        const doc = createDoc(`
+            fun getNumbers() number[] {
+                return [1, 2, 3]
+            }
+        `);
+        const diagnostics = checkReturnOutsideFunction(doc);
+
+        expect(diagnostics).toHaveLength(0);
+    });
+
+    it('should handle function with string[] return type', () => {
+        const doc = createDoc(`
+            fun getNames() string[] {
+                return ["Alice", "Bob"]
+            }
+        `);
+        const diagnostics = checkReturnOutsideFunction(doc);
+
+        expect(diagnostics).toHaveLength(0);
+    });
+
+    it('should handle function with array return type and variable', () => {
+        const doc = createDoc(`
+            fun calculate() number[] {
+                var result = 42
+                return [result]
+            }
+        `);
+        const diagnostics = checkReturnOutsideFunction(doc);
+
+        expect(diagnostics).toHaveLength(0);
+    });
 });
