@@ -1,0 +1,52 @@
+// Multiline String Examples
+
+// Double-quoted multiline string
+var message = "This is a
+multiline
+string"
+
+// Double-quoted with interpolation
+var name = "World"
+var greeting = "Hello
+${name}!
+Welcome to Kite."
+
+// Single-quoted multiline string (no interpolation)
+var description = 'This is also
+a multiline string
+but without interpolation'
+
+// Multiline in function
+fun getHelpText() string {
+    return "Usage: kite [options] <file>
+
+Options:
+  -h, --help     Show this help
+  -v, --version  Show version
+
+Examples:
+  kite deploy.kite
+  kite --help"
+}
+
+// Multiline in schema
+schema Documentation {
+    string title
+    string content = "Default documentation
+
+This is a multiline default value
+that spans multiple lines."
+}
+
+// Complex interpolation in multiline
+var config = {
+    host: "localhost",
+    port: 8080
+}
+
+var connectionString = "Database Configuration:
+Host: ${config.host}
+Port: ${config.port}
+
+Connection URL:
+http://${config.host}:${config.port}"

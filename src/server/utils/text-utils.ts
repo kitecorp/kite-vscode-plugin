@@ -292,11 +292,6 @@ export function isInString(text: string, pos: number): boolean {
                 inString = false;
             }
         }
-
-        // Handle newlines - strings don't span lines in Kite
-        if (char === '\n' && inString) {
-            inString = false;
-        }
     }
 
     return inString;

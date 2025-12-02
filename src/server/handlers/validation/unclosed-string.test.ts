@@ -58,20 +58,55 @@ describe('Unclosed string validation', () => {
         expect(diagnostics).toHaveLength(0);
     });
 
-    it('should report multiple unclosed strings', () => {
+    it('should not report error when quotes accidentally match across lines', () => {
         const doc = createDoc(`
             var x = "hello
             var y = "world
         `);
         const diagnostics = checkUnclosedStrings(doc);
 
-        expect(diagnostics).toHaveLength(2);
+        // With multiline strings, the first " is closed by the second "
+        // This creates a malformed but "technically closed" string
+        // The actual syntax error will be caught by the parser, not this validator
+        expect(diagnostics).toHaveLength(0);
+    });
+
+    it('should report truly unclosed string', () => {
+        const doc = createDoc(`
+            var x = "This string is never closed
+        `);
+        const diagnostics = checkUnclosedStrings(doc);
+
+        expect(diagnostics).toHaveLength(1);
     });
 
     it('should handle multiline content correctly', () => {
         const doc = createDoc(`
             var x = "proper string"
             var y = "another one"
+        `);
+        const diagnostics = checkUnclosedStrings(doc);
+
+        expect(diagnostics).toHaveLength(0);
+    });
+
+    it('should handle properly closed multiline strings', () => {
+        const doc = createDoc(`
+            var message = "This is
+            a multiline
+            string"
+        `);
+        const diagnostics = checkUnclosedStrings(doc);
+
+        expect(diagnostics).toHaveLength(0);
+    });
+
+    it('should handle multiline strings with interpolation', () => {
+        const doc = createDoc(`
+            var name = "World"
+            var message = "Hello
+            \${name}
+            Welcome"
         `);
         const diagnostics = checkUnclosedStrings(doc);
 

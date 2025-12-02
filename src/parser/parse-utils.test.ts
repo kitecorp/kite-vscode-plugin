@@ -72,6 +72,28 @@ resource VM.Instance server {
         expect(result.errors).toHaveLength(0);
     });
 
+    it('should parse multiline double-quoted strings', () => {
+        const result = parseKite(`var message = "Hello
+World
+This is multiline"`);
+        expect(result.errors).toHaveLength(0);
+    });
+
+    it('should parse multiline single-quoted strings', () => {
+        const result = parseKite(`var message = 'Hello
+World
+This is multiline'`);
+        expect(result.errors).toHaveLength(0);
+    });
+
+    it('should parse multiline strings with interpolation', () => {
+        const result = parseKite(`var name = "World"
+var message = "Hello
+\${name}
+This is multiline"`);
+        expect(result.errors).toHaveLength(0);
+    });
+
     it('should parse for loops', () => {
         const result = parseKite(`
 for item in items {

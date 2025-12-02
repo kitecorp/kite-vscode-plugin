@@ -198,6 +198,19 @@ resource VM.Instance server { }
 var greeting = "Hello, ${name}!"
 var simple = "Value: $value"
 
+// Multiline strings (both quote types supported)
+var message = "This is a
+multiline
+string"
+
+var singleQuoted = 'Also supports
+multiline
+with single quotes'
+
+var withInterpolation = "Line 1
+${variable}
+Line 3"
+
 // Control flow
 if condition {
   // ...
