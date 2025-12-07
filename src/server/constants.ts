@@ -139,4 +139,13 @@ export const DECORATORS: DecoratorInfo[] = [
         example: '@count(3)\nresource EC2.Instance server {\n    name = "server-$count"\n}',
         snippet: 'count($1)', argHint: '(n)', sortOrder: 201
     },
+    // Schema decorators (sortOrder 300-399)
+    {
+        name: 'cloud', category: 'resource',
+        description: 'Marks schema properties as cloud-generated (set by provider after apply)',
+        argument: 'optional: importable (boolean)', argType: 'none',
+        targets: 'schema property',
+        example: '@cloud\nstring arn\n\n@cloud(importable)\nstring id',
+        sortOrder: 300
+    },
 ];

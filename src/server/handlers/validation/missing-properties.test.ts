@@ -147,6 +147,45 @@ resource Config cfg {
             expect(diagnostics).toHaveLength(1);
             expect(diagnostics[0].message).toContain("'hosts'");
         });
+
+        it('should not report error for @cloud properties (set by cloud provider)', () => {
+            const doc = createDocument(`
+schema ServerConfig {
+    string name
+    @cloud string arn
+    @cloud(importable) string id
+}
+
+resource ServerConfig server {
+    name = "web-server"
+    // arn and id are @cloud - not required
+}
+`);
+            const diagnostics = checkMissingProperties(doc);
+
+            expect(diagnostics).toHaveLength(0);
+        });
+
+        it('should still report error for missing required properties when @cloud properties exist', () => {
+            const doc = createDocument(`
+schema ServerConfig {
+    string name
+    number port
+    @cloud string arn
+}
+
+resource ServerConfig server {
+    // missing 'name' and 'port', but arn is @cloud so not required
+}
+`);
+            const diagnostics = checkMissingProperties(doc);
+
+            expect(diagnostics).toHaveLength(2);
+            expect(diagnostics.some(d => d.message.includes("'name'"))).toBe(true);
+            expect(diagnostics.some(d => d.message.includes("'port'"))).toBe(true);
+            // Should NOT complain about 'arn'
+            expect(diagnostics.some(d => d.message.includes("'arn'"))).toBe(false);
+        });
     });
 
     describe('Component instances', () => {

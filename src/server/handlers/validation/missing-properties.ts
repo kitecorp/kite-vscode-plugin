@@ -13,11 +13,12 @@ import { TextDocument } from 'vscode-languageserver-textdocument';
 import { isInComment } from '../../utils/text-utils';
 import { MissingPropertyData } from '../code-actions/generate-properties';
 
-/** Schema property with default info */
+/** Schema property with default and cloud info */
 interface SchemaProperty {
     name: string;
     typeName: string;
     hasDefault: boolean;
+    isCloud: boolean;  // Properties marked with @cloud are set by cloud provider
 }
 
 
@@ -54,6 +55,7 @@ function extractSchemas(text: string): Map<string, SchemaProperty[]> {
 /**
  * Parse schema properties from body text.
  * Handles: type name, type name = default, type[] name, type[] name = default
+ * Also detects @cloud decorator which marks properties as cloud-generated.
  */
 function parseSchemaProperties(bodyText: string): SchemaProperty[] {
     const properties: SchemaProperty[] = [];
@@ -64,20 +66,25 @@ function parseSchemaProperties(bodyText: string): SchemaProperty[] {
     // Match property declarations: [decorators] type name [= default]
     // Type must start with a letter (not a number) to avoid matching values like "8080"
     // Handle 'any' keyword and array types
-    const propRegex = /(?:@\w+(?:\([^)]*\))?\s*)*\b(any|[a-zA-Z]\w*)(\[\])?\s+([a-zA-Z_]\w*)(\s*=)?/g;
+    // Capture decorators in group 1 to check for @cloud
+    const propRegex = /((?:@\w+(?:\([^)]*\))?\s*)*)\b(any|[a-zA-Z]\w*)(\[\])?\s+([a-zA-Z_]\w*)(\s*=)?/g;
     let propMatch;
 
     while ((propMatch = propRegex.exec(bodyWithoutComments)) !== null) {
-        const typeName = propMatch[1] + (propMatch[2] || '');
-        const name = propMatch[3];
-        const hasDefault = propMatch[4] !== undefined;
+        const decorators = propMatch[1] || '';
+        const typeName = propMatch[2] + (propMatch[3] || '');
+        const name = propMatch[4];
+        const hasDefault = propMatch[5] !== undefined;
 
         // Skip if this looks like a keyword
         if (['input', 'output', 'var', 'fun', 'schema', 'component', 'resource'].includes(name)) {
             continue;
         }
 
-        properties.push({ name, typeName, hasDefault });
+        // Check if property has @cloud decorator (with optional arguments)
+        const isCloud = /@cloud(?:\s*\([^)]*\))?/.test(decorators);
+
+        properties.push({ name, typeName, hasDefault, isCloud });
     }
 
     return properties;
@@ -243,8 +250,9 @@ export function checkMissingProperties(document: TextDocument): Diagnostic[] {
         const provided = findProvidedProperties(bodyText);
 
         // Check for missing required properties
+        // Skip @cloud properties - they are set by the cloud provider, not the user
         for (const prop of schemaProps) {
-            if (!prop.hasDefault && !provided.has(prop.name)) {
+            if (!prop.hasDefault && !prop.isCloud && !provided.has(prop.name)) {
                 // Find position of instance name for error highlighting
                 const instanceNameStart = resourceMatch.index + resourceMatch[0].indexOf(instanceName);
                 const instanceNameEnd = instanceNameStart + instanceName.length;

@@ -17,11 +17,11 @@ The authoritative Kite language documentation is in the `../kite` project:
 
 | Document | Path | Description |
 |----------|------|-------------|
-| Decorators | `../kite/lang/docs/DECORATORS.md` | All 15 built-in decorators with targets and examples |
+| Decorators | `../kite-language/docs/DECORATORS.md` | All 17 built-in decorators with targets and examples |
 | Syntax | `../kite/lang/docs/SYNTAX.md` | Language syntax reference |
 | Grammar | `grammar/*.g4` | ANTLR grammar (source of truth for parsing) |
 
-**Important:** Always check `../kite/lang/docs/DECORATORS.md` for the current list of decorators. The VS Code plugin's `constants.ts` must match this documentation.
+**Important:** Always check `../kite-language/docs/DECORATORS.md` for the current list of decorators. The VS Code plugin's `constants.ts` must match this documentation.
 
 ## Development Principles
 
@@ -157,6 +157,7 @@ schema ServerConfig {
   boolean  ssl      = true
   string[] tags              // Array type
   any      metadata          // Any type
+  @cloud string arn          // Cloud-generated property
 }
 
 // Resource instantiation (uses a schema)
@@ -470,12 +471,23 @@ Skip "Cannot resolve symbol" warnings for:
 
 The `any` keyword is a **type keyword**, not an identifier. Handle it specially in type positions alongside `string`, `number`, `boolean`, etc.
 
-### Component Inputs vs Schema Properties
+### Schema Properties and @cloud Decorator
 
-**Important semantic difference:**
+**Schema properties have two categories:**
 
-- **Schema properties** - Required unless they have a default value (`= value`). Resource instances must provide all required properties or get an error.
-- **Component inputs** - ALL inputs are optional. When not specified at instantiation, users are prompted at CLI runtime to enter values. Never flag missing inputs as errors.
+- **Regular properties** - Required unless they have a default value (`= value`). Resource instances must provide all required properties or get an error.
+- **@cloud properties** - Set by the cloud provider after resource creation (e.g., ARNs, IDs, endpoints). Never required in resource instances.
+
+```kite
+schema aws_instance {
+    string name                      // Required - user must provide
+    number port = 8080               // Optional - has default
+    @cloud string arn                // Cloud-generated, not required
+    @cloud(importable) string id     // Cloud-generated, importable for existing resources
+}
+```
+
+**Component inputs** - ALL inputs are optional. When not specified at instantiation, users are prompted at CLI runtime to enter values. Never flag missing inputs as errors.
 
 **Validation implications:**
 
@@ -483,6 +495,7 @@ The `any` keyword is a **type keyword**, not an identifier. Handle it specially 
 |-------------|----------------------|-------------------------|
 | Schema property (no default) | Error if missing in resource | N/A (not a variable) |
 | Schema property (with default) | No error (optional) | N/A (not a variable) |
+| Schema property with @cloud | Never an error (cloud-generated) | N/A (not a variable) |
 | Component input | Never an error (all optional) | Never flagged (part of API) |
 | Component output | N/A | Never flagged (exports values externally) |
 | `var` declaration | N/A | Warning if unused |
