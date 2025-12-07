@@ -491,16 +491,20 @@ schema aws_instance {
 
 **Validation implications:**
 
-| Declaration | Missing Required Check | Unused Declaration Check |
-|-------------|----------------------|-------------------------|
-| Schema property (no default) | Error if missing in resource | N/A (not a variable) |
-| Schema property (with default) | No error (optional) | N/A (not a variable) |
-| Schema property with @cloud | Never an error (cloud-generated) | N/A (not a variable) |
-| Component input | Never an error (all optional) | Never flagged (part of API) |
-| Component output | N/A | Never flagged (exports values externally) |
-| `var` declaration | N/A | Warning if unused |
-| Function parameter | N/A | Warning if unused |
-| Loop variable (`for x in`) | N/A | Warning if unused |
+| Declaration | Missing Required Check | Assignment Check | Unused Declaration Check |
+|-------------|----------------------|------------------|-------------------------|
+| Schema property (no default) | Error if missing in resource | Allowed | N/A (not a variable) |
+| Schema property (with default) | No error (optional) | Allowed | N/A (not a variable) |
+| Schema property with @cloud | Never an error (cloud-generated) | **Error** (cannot set) | N/A (not a variable) |
+| Component input | Never an error (all optional) | Allowed | Never flagged (part of API) |
+| Component output | N/A | N/A | Never flagged (exports values externally) |
+| `var` declaration | N/A | Allowed | Warning if unused |
+| Function parameter | N/A | Allowed | Warning if unused |
+| Loop variable (`for x in`) | N/A | Allowed | Warning if unused |
+
+**@cloud property behavior:**
+- Not suggested in auto-completion (users can't set them)
+- Error if user tries to set them: `Cannot set '@cloud' property 'x' - it is set by the cloud provider`
 
 ### Reserved Names
 

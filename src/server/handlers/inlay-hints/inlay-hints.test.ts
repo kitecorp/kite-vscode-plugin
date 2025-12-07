@@ -8,6 +8,7 @@ import { InlayHintKind, Range, Position } from 'vscode-languageserver/node';
 import {
     handleInlayHints,
     extractSchemaPropertyTypes,
+    extractSchemaPropertyTypesForCompletion,
     extractComponentInputTypes,
     InlayHintContext,
 } from '.';
@@ -327,6 +328,84 @@ describe('extractComponentInputTypes', () => {
 
         expect(types).toEqual({
             tags: 'string[]',
+        });
+    });
+});
+
+describe('extractSchemaPropertyTypesForCompletion', () => {
+    it('should exclude @cloud properties from completions', () => {
+        const text = `schema Config {
+    string name
+    @cloud string arn
+    number port
+    @cloud string id
+}`;
+        const ctx = createContext();
+        const types = extractSchemaPropertyTypesForCompletion(text, 'Config', ctx);
+
+        // Should NOT include arn or id (they are @cloud)
+        expect(types).toEqual({
+            name: 'string',
+            port: 'number',
+        });
+    });
+
+    it('should include all properties when no @cloud properties exist', () => {
+        const text = `schema Config {
+    string name
+    number port
+    boolean ssl
+}`;
+        const ctx = createContext();
+        const types = extractSchemaPropertyTypesForCompletion(text, 'Config', ctx);
+
+        expect(types).toEqual({
+            name: 'string',
+            port: 'number',
+            ssl: 'boolean',
+        });
+    });
+
+    it('should handle @cloud with arguments', () => {
+        const text = `schema Config {
+    string name
+    @cloud(importable) string id
+    @cloud(importable=true) string arn
+}`;
+        const ctx = createContext();
+        const types = extractSchemaPropertyTypesForCompletion(text, 'Config', ctx);
+
+        // Should NOT include id or arn
+        expect(types).toEqual({
+            name: 'string',
+        });
+    });
+
+    it('should return empty object when all properties are @cloud', () => {
+        const text = `schema Config {
+    @cloud string arn
+    @cloud string id
+}`;
+        const ctx = createContext();
+        const types = extractSchemaPropertyTypesForCompletion(text, 'Config', ctx);
+
+        expect(types).toEqual({});
+    });
+
+    it('should work cross-file', () => {
+        const currentText = `resource Config server { }`;
+        const otherFile = `schema Config {
+    string name
+    @cloud string arn
+}`;
+        const ctx = createContext({
+            '/other.kite': otherFile,
+        });
+        const types = extractSchemaPropertyTypesForCompletion(currentText, 'Config', ctx);
+
+        // Should NOT include arn
+        expect(types).toEqual({
+            name: 'string',
         });
     });
 });

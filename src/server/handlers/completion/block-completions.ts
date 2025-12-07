@@ -8,7 +8,7 @@ import {
     CompletionItemKind,
 } from 'vscode-languageserver/node';
 import { BlockContext } from '../../types';
-import { extractSchemaPropertyTypes, extractComponentInputTypes, InlayHintContext } from '../inlay-hints';
+import { extractSchemaPropertyTypes, extractSchemaPropertyTypesForCompletion, extractComponentInputTypes, InlayHintContext } from '../inlay-hints';
 import { getNumberSuggestionsForProp, getStringSuggestionsForProp } from './devops-suggestions';
 import { CompletionContext } from './types';
 import { isInsideNestedStructure } from './utils';
@@ -47,7 +47,8 @@ export function getBlockBodyCompletions(
     };
 
     if (enclosingBlock.type === 'resource') {
-        const schemaProps = extractSchemaPropertyTypes(text, enclosingBlock.typeName, inlayCtx, uri);
+        // Use ForCompletion variant to exclude @cloud properties (they are set by cloud provider)
+        const schemaProps = extractSchemaPropertyTypesForCompletion(text, enclosingBlock.typeName, inlayCtx, uri);
         for (const [propName, propType] of Object.entries(schemaProps)) {
             if (!alreadySet.has(propName)) {
                 completions.push({

@@ -894,6 +894,35 @@ resource ServerConfig db {
 
 ---
 
+## @cloud Property Assignment
+
+**File:** `cloud-property-assignment.ts`
+
+Reports error when users try to set `@cloud` properties in resource instances.
+
+`@cloud` properties are set by the cloud provider after resource creation (e.g., ARNs, IDs, endpoints). Users cannot set these values.
+
+```kite
+schema ServerConfig {
+    string name
+    @cloud string arn        // Set by cloud provider
+    @cloud(importable) string id  // Set by cloud provider, importable
+}
+
+resource ServerConfig server {
+    name = "web-server"
+    arn = "arn:aws:..."      // Error: Cannot set '@cloud' property 'arn'
+}
+```
+
+**Features:**
+- Detects assignments to `@cloud` properties
+- Handles `@cloud` with optional arguments (`@cloud(importable)`)
+- Shows clear error message indicating the property is cloud-generated
+- `@cloud` properties are also excluded from auto-completion suggestions
+
+---
+
 ## Circular Imports
 
 **File:** `circular-imports.ts`

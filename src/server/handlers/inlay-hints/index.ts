@@ -438,8 +438,9 @@ export function extractComponentInputTypes(
 /**
  * Extract property types from a schema definition (single text)
  * Uses AST-based parsing.
+ * @param excludeCloud - If true, excludes @cloud properties (for completions)
  */
-function extractSchemaPropertyTypesFromText(text: string, schemaName: string): Record<string, string> {
+function extractSchemaPropertyTypesFromText(text: string, schemaName: string, excludeCloud = false): Record<string, string> {
     const propertyTypes: Record<string, string> = {};
 
     // Handle dotted schema names like "VM.Instance" - just use the last part for matching
@@ -453,6 +454,8 @@ function extractSchemaPropertyTypesFromText(text: string, schemaName: string): R
 
     const props = extractSchemaPropertiesAST(schema);
     for (const prop of props) {
+        // Skip @cloud properties if requested (they are set by cloud provider, not user)
+        if (excludeCloud && prop.isCloud) continue;
         propertyTypes[prop.name] = prop.typeName;
     }
     return propertyTypes;
@@ -479,6 +482,37 @@ export function extractSchemaPropertyTypes(
         const fileContent = ctx.getFileContent(filePath, currentDocUri);
         if (fileContent) {
             propertyTypes = extractSchemaPropertyTypesFromText(fileContent, schemaName);
+            if (Object.keys(propertyTypes).length > 0) {
+                return propertyTypes;
+            }
+        }
+    }
+
+    return {};
+}
+
+/**
+ * Extract property types for completion (excludes @cloud properties).
+ * @cloud properties are set by the cloud provider and should not be suggested for user input.
+ */
+export function extractSchemaPropertyTypesForCompletion(
+    text: string,
+    schemaName: string,
+    ctx: InlayHintContext,
+    currentDocUri?: string
+): Record<string, string> {
+    // First try current file
+    let propertyTypes = extractSchemaPropertyTypesFromText(text, schemaName, true);
+    if (Object.keys(propertyTypes).length > 0) {
+        return propertyTypes;
+    }
+
+    // Try other files in workspace
+    const kiteFiles = ctx.findKiteFilesInWorkspace();
+    for (const filePath of kiteFiles) {
+        const fileContent = ctx.getFileContent(filePath, currentDocUri);
+        if (fileContent) {
+            propertyTypes = extractSchemaPropertyTypesFromText(fileContent, schemaName, true);
             if (Object.keys(propertyTypes).length > 0) {
                 return propertyTypes;
             }

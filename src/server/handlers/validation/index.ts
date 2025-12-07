@@ -18,6 +18,7 @@ import { checkUnusedImports } from './unused-imports';
 import { checkUnusedVariables } from './unused-variables';
 import { checkUndefinedSymbols } from './undefined-symbols';
 import { checkMissingProperties } from './missing-properties';
+import { checkCloudPropertyAssignment } from './cloud-property-assignment';
 import { checkReservedNames } from './reserved-names';
 import { checkDuplicateProperties } from './duplicate-properties';
 import { checkDecoratorTargets } from './decorator-targets';
@@ -598,6 +599,10 @@ export function validateDocument(document: TextDocument, ctx: ValidationContext)
     // Check for missing required properties
     const missingPropertyDiagnostics = checkMissingProperties(document);
     diagnostics.push(...missingPropertyDiagnostics);
+
+    // Check for @cloud property assignments (not allowed - set by cloud provider)
+    const cloudPropertyDiagnostics = checkCloudPropertyAssignment(document);
+    diagnostics.push(...cloudPropertyDiagnostics);
 
     // Check for reserved names used as property/input/output names
     const reservedNameDiagnostics = checkReservedNames(document);

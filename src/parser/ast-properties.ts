@@ -12,6 +12,7 @@ export interface SchemaProperty {
     name: string;
     typeName: string;
     hasDefault: boolean;
+    isCloud: boolean;  // Properties marked with @cloud are set by cloud provider
 }
 
 /**
@@ -32,6 +33,21 @@ export interface ComponentOutput {
 }
 
 /**
+ * Check if a property has the @cloud decorator
+ */
+function hasCloudDecorator(decoratorList: ReturnType<typeof import('./grammar/KiteParser').SchemaPropertyContext.prototype.decoratorList>): boolean {
+    if (!decoratorList) return false;
+
+    for (const decorator of decoratorList.decorator_list()) {
+        const name = decorator.identifier()?.getText();
+        if (name === 'cloud') {
+            return true;
+        }
+    }
+    return false;
+}
+
+/**
  * Extract schema properties using AST
  */
 export function extractSchemaPropertiesAST(schemaCtx: SchemaDeclarationContext): SchemaProperty[] {
@@ -44,9 +60,10 @@ export function extractSchemaPropertiesAST(schemaCtx: SchemaDeclarationContext):
         const typeId = prop.typeIdentifier();
         const typeName = typeId?.getText() ?? 'any';
         const hasDefault = prop.propertyInitializer() !== null;
+        const isCloud = hasCloudDecorator(prop.decoratorList());
 
         if (name) {
-            properties.push({ name, typeName, hasDefault });
+            properties.push({ name, typeName, hasDefault, isCloud });
         }
     }
 
