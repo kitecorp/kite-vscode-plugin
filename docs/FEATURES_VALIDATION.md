@@ -948,6 +948,43 @@ import * from "current.kite"  // Error: Circular import: File imports itself
 
 ---
 
+## Indexed Access Validation
+
+**File:** `indexed-access.ts`
+
+Validates that indexed resource access (`server[0]`, `data["prod"]`) is used correctly.
+
+```kite
+// Error: Non-indexed resource
+resource EC2.Instance server {
+    name = "web"
+}
+var x = server[0]  // Error: 'server' is not an indexed resource
+
+// Error: Type mismatch
+@count(3)
+resource EC2.Instance server { }
+var x = server["dev"]  // Error: uses numeric indices, not string keys
+
+// Error: Out of bounds
+@count(3)
+resource EC2.Instance server { }
+var x = server[5]  // Error: Index 5 is out of bounds (0-2)
+
+// Error: Invalid string key
+[for env in ["dev", "prod"]]
+resource RDS.Instance db { }
+var x = db["staging"]  // Error: Key "staging" is not valid
+```
+
+**Checks:**
+- Non-indexed resource access
+- Index type mismatch (numeric vs string)
+- Numeric index out of bounds
+- Invalid string key (when known keys)
+
+---
+
 ## Summary Table
 
 | Validation | Severity | File |
@@ -990,3 +1027,4 @@ import * from "current.kite"  // Error: Circular import: File imports itself
 | Reserved names | Error | `reserved-names.ts` |
 | Missing properties | Error | `missing-properties.ts` |
 | Circular imports | Error | `circular-imports.ts` |
+| Indexed access | Error | `indexed-access.ts` |

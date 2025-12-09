@@ -3,6 +3,9 @@ schema ServerConfig {
     number port = 8080      // Optional (has default)
 }
 
+for i in ["dev","prod"]
 resource ServerConfig db {
-    
+    port=10
 }
+
+db["dev"].port

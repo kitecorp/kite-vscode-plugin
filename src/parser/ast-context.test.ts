@@ -187,6 +187,31 @@ describe('getDotAccessTarget', () => {
         const text = 'config';
         expect(getDotAccessTarget(text, text.length)).toBeNull();
     });
+
+    it('should get base name for numeric indexed access', () => {
+        const text = 'server[0].';
+        expect(getDotAccessTarget(text, text.length)).toBe('server');
+    });
+
+    it('should get base name for string indexed access with double quotes', () => {
+        const text = 'data["prod"].';
+        expect(getDotAccessTarget(text, text.length)).toBe('data');
+    });
+
+    it('should get base name for string indexed access with single quotes', () => {
+        const text = "data['dev'].";
+        expect(getDotAccessTarget(text, text.length)).toBe('data');
+    });
+
+    it('should get base name for multi-digit index', () => {
+        const text = 'server[123].';
+        expect(getDotAccessTarget(text, text.length)).toBe('server');
+    });
+
+    it('should handle whitespace after dot', () => {
+        const text = 'server[0].  ';
+        expect(getDotAccessTarget(text, text.length)).toBe('server');
+    });
 });
 
 describe('extractSchemaPropertiesAST', () => {

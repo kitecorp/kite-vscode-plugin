@@ -2,7 +2,7 @@
 
 This document provides an overview of all implemented features in the Kite Language VS Code extension.
 
-**Total: 27 features + 38 validation checks**
+**Total: 28 features + 39 validation checks**
 
 ---
 
@@ -55,14 +55,15 @@ Advanced editing and refactoring tools.
 | 25 | On Type Formatting | Auto-format as you type |
 | 26 | Unused Variables | Detect unused variables, inputs, parameters |
 | 27 | Go to Type Definition | Navigate to schema/component definition |
+| 28 | Indexed Resources | Complete support for @count and loop-created resources |
 
 ### [Diagnostics & Validation](./FEATURES_VALIDATION.md)
 
-38 validation rules for detecting errors and code quality issues.
+39 validation rules for detecting errors and code quality issues.
 
 | Category | Count | Examples |
 |----------|-------|----------|
-| Error | 19 | Duplicate parameters, decorator validation, circular imports |
+| Error | 20 | Duplicate parameters, decorator validation, circular imports, indexed access |
 | Warning | 16 | Empty block, variable shadowing, infinite loop |
 | Hint | 3 | Empty string check, negated comparison, implicit any |
 

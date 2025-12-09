@@ -398,9 +398,12 @@ export function isInDecoratorContext(text: string, offset: number): boolean {
 
 /**
  * Check if cursor is after a dot (property access context)
+ * Returns the base identifier (without index for indexed access).
+ * Matches patterns like: identifier., identifier[0]., identifier["key"].
  */
 export function getDotAccessTarget(text: string, offset: number): string | null {
     const beforeCursor = text.substring(Math.max(0, offset - 100), offset);
-    const match = beforeCursor.match(/(\w+)\.\s*$/);
+    // Match: identifier. or identifier[index]. where index is numeric or string
+    const match = beforeCursor.match(/(\w+)(?:\[(?:\d+|["'][^"']*["'])\])?\.\s*$/);
     return match ? match[1] : null;
 }
