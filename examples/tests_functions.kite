@@ -2,7 +2,9 @@ schema ServerConfig {
     @cloud string host             // Required (no default)
     number port = 8080      // Optional (has default)
 }
-
+@count(4)
 resource ServerConfig db {
-    
+    port=10
 }
+
+db[0].port

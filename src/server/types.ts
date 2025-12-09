@@ -7,6 +7,30 @@ import { Range, Location } from 'vscode-languageserver/node';
 // Declaration types in Kite
 export type DeclarationType = 'variable' | 'input' | 'output' | 'resource' | 'component' | 'schema' | 'function' | 'type' | 'for' | 'import';
 
+/**
+ * Index type for resources created inside loops or with @count.
+ * - 'numeric': Indexed by numbers (0, 1, 2...) - from @count or range loops (0..n)
+ * - 'string': Indexed by string keys - from array loops (["a", "b"])
+ */
+export type IndexType = 'numeric' | 'string';
+
+/**
+ * Information about how a resource is indexed when created inside a loop or with @count.
+ */
+export interface IndexedResourceInfo {
+    /** The type of index (numeric for @count/ranges, string for array loops) */
+    indexType: IndexType;
+    /** The loop variable name (for loops) or 'count' (for @count) */
+    loopVariable?: string;
+    /** For @count: the count value if static, undefined if dynamic */
+    countValue?: number;
+    /** For string-indexed: the known string keys */
+    stringKeys?: string[];
+    /** For range loops: the start and end values */
+    rangeStart?: number;
+    rangeEnd?: number;
+}
+
 // Represents a function parameter
 export interface FunctionParameter {
     type: string;
@@ -29,6 +53,7 @@ export interface Declaration {
     scopeStart?: number;       // Start offset of the scope this declaration is in (undefined = file scope)
     scopeEnd?: number;         // End offset of the scope
     importPath?: string;       // For import: the file path being imported from
+    indexedBy?: IndexedResourceInfo; // For resources/components created inside loops or with @count
 }
 
 // Diagnostic data for code actions (stores import suggestions)

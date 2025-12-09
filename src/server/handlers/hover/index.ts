@@ -12,6 +12,7 @@ import { Position } from 'vscode-languageserver/node';
 import { Declaration } from '../../types';
 import { KEYWORDS, TYPES } from '../../constants';
 import { getWordAtPosition } from '../../utils/text-utils';
+import { isIndexedResource, formatIndexedResourceInfo, getAccessPatternSuggestion } from '../../utils/indexed-resources';
 
 /**
  * Handle hover request
@@ -58,6 +59,18 @@ export function handleHover(
         if (decl.componentType) {
             content += `\n\nComponent Type: \`${decl.componentType}\``;
         }
+
+        // Show indexed resource info
+        if (isIndexedResource(decl) && decl.indexedBy) {
+            const indexedInfo = formatIndexedResourceInfo(decl.indexedBy);
+            content += `\n\n**${indexedInfo}**`;
+
+            const accessPattern = getAccessPatternSuggestion(decl);
+            if (accessPattern) {
+                content += `\n\n${accessPattern}`;
+            }
+        }
+
         if (decl.documentation) {
             content += `\n\n${decl.documentation}`;
         }

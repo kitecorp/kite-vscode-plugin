@@ -151,7 +151,7 @@ connection.onInitialize((params: InitializeParams): InitializeResult => {
             },
             completionProvider: {
                 resolveProvider: false,
-                triggerCharacters: ['.', '@']
+                triggerCharacters: ['.', '@', '[']
             },
             signatureHelpProvider: {
                 triggerCharacters: ['(', ','],

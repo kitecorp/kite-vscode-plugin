@@ -57,8 +57,8 @@
 
 import { TextDocument } from 'vscode-languageserver-textdocument';
 import { Range, Position } from 'vscode-languageserver/node';
-import { ParserRuleContext } from 'antlr4';
-import { Declaration, DeclarationType, FunctionParameter } from '../server/types';
+import { ParserRuleContext, TerminalNode } from 'antlr4';
+import { Declaration, DeclarationType, FunctionParameter, IndexedResourceInfo, IndexType } from '../server/types';
 import { parseKite } from './parse-utils';
 import KiteParser, {
     ProgramContext,
@@ -77,6 +77,8 @@ import KiteParser, {
     BlockExpressionContext,
     SchemaPropertyContext,
     ImportStatementContext,
+    DecoratorListContext,
+    ArrayExpressionContext,
 } from './grammar/KiteParser';
 
 /**
@@ -86,6 +88,22 @@ interface ScopeInfo {
     start: number;
     end: number;
     type: 'function' | 'component-def' | 'schema';
+}
+
+/**
+ * Loop context tracking for indexed resources
+ */
+interface LoopContext {
+    /** Loop variable name */
+    loopVariable: string;
+    /** Type of index: numeric for ranges, string for array iteration */
+    indexType: IndexType;
+    /** For ranges: start value */
+    rangeStart?: number;
+    /** For ranges: end value */
+    rangeEnd?: number;
+    /** For array iteration: the string keys (if known) */
+    stringKeys?: string[];
 }
 
 /**
@@ -124,7 +142,7 @@ function visitProgram(ctx: ProgramContext, declarations: Declaration[], uri: str
 
         const decl = stmt.declaration();
         if (decl) {
-            visitDeclaration(decl, declarations, uri, text, null);
+            visitDeclaration(decl, declarations, uri, text, null, null);
         }
 
         // Handle for loops (they declare loop variables)
@@ -133,6 +151,18 @@ function visitProgram(ctx: ProgramContext, declarations: Declaration[], uri: str
             const forStmt = iterStmt.forStatement();
             if (forStmt) {
                 visitForStatement(forStmt, declarations, uri, text, null);
+            }
+        }
+
+        // Handle array expression with for loop (list comprehension creating resources)
+        const exprStmt = stmt.expressionStatement();
+        if (exprStmt) {
+            const expr = exprStmt.expression();
+            if (expr) {
+                const arrayExpr = expr.arrayExpression();
+                if (arrayExpr) {
+                    visitArrayExpressionForLoop(arrayExpr, declarations, uri, text, null);
+                }
             }
         }
     }
@@ -210,8 +240,12 @@ function visitDeclaration(
     declarations: Declaration[],
     uri: string,
     text: string,
-    enclosingScope: ScopeInfo | null
+    enclosingScope: ScopeInfo | null,
+    loopContext: LoopContext | null
 ): void {
+    // Extract decorator list for @count handling
+    const decoratorList = ctx.decoratorList();
+
     const funcDecl = ctx.functionDeclaration();
     if (funcDecl) {
         visitFunctionDeclaration(funcDecl, declarations, uri, text, enclosingScope);
@@ -232,13 +266,13 @@ function visitDeclaration(
 
     const resourceDecl = ctx.resourceDeclaration();
     if (resourceDecl) {
-        visitResourceDeclaration(resourceDecl, declarations, uri, text, enclosingScope);
+        visitResourceDeclaration(resourceDecl, declarations, uri, text, enclosingScope, loopContext, decoratorList);
         return;
     }
 
     const componentDecl = ctx.componentDeclaration();
     if (componentDecl) {
-        visitComponentDeclaration(componentDecl, declarations, uri, text, enclosingScope);
+        visitComponentDeclaration(componentDecl, declarations, uri, text, enclosingScope, loopContext, decoratorList);
         return;
     }
 
@@ -381,7 +415,9 @@ function visitResourceDeclaration(
     declarations: Declaration[],
     uri: string,
     text: string,
-    enclosingScope: ScopeInfo | null
+    enclosingScope: ScopeInfo | null,
+    loopContext: LoopContext | null,
+    decoratorList: DecoratorListContext | null
 ): void {
     const resourceName = ctx.resourceName();
     if (!resourceName) return;
@@ -405,6 +441,24 @@ function visitResourceDeclaration(
         decl.scopeEnd = enclosingScope.end;
     }
 
+    // Check for @count decorator or loop context for indexed resources
+    const countInfo = extractCountDecorator(decoratorList);
+    if (countInfo) {
+        decl.indexedBy = {
+            indexType: 'numeric',
+            loopVariable: 'count',
+            countValue: countInfo.value,
+        };
+    } else if (loopContext) {
+        decl.indexedBy = {
+            indexType: loopContext.indexType,
+            loopVariable: loopContext.loopVariable,
+            rangeStart: loopContext.rangeStart,
+            rangeEnd: loopContext.rangeEnd,
+            stringKeys: loopContext.stringKeys,
+        };
+    }
+
     extractDocumentation(decl, ctx, text);
     declarations.push(decl);
 }
@@ -417,7 +471,9 @@ function visitComponentDeclaration(
     declarations: Declaration[],
     uri: string,
     text: string,
-    enclosingScope: ScopeInfo | null
+    enclosingScope: ScopeInfo | null,
+    loopContext: LoopContext | null,
+    decoratorList: DecoratorListContext | null
 ): void {
     const compType = ctx.componentType();
     if (!compType) return;
@@ -442,6 +498,24 @@ function visitComponentDeclaration(
         if (enclosingScope && enclosingScope.type === 'component-def') {
             decl.scopeStart = enclosingScope.start;
             decl.scopeEnd = enclosingScope.end;
+        }
+
+        // Check for @count decorator or loop context for indexed resources
+        const countInfo = extractCountDecorator(decoratorList);
+        if (countInfo) {
+            decl.indexedBy = {
+                indexType: 'numeric',
+                loopVariable: 'count',
+                countValue: countInfo.value,
+            };
+        } else if (loopContext) {
+            decl.indexedBy = {
+                indexType: loopContext.indexType,
+                loopVariable: loopContext.loopVariable,
+                rangeStart: loopContext.rangeStart,
+                rangeEnd: loopContext.rangeEnd,
+                stringKeys: loopContext.stringKeys,
+            };
         }
 
         extractDocumentation(decl, ctx, text);
@@ -600,6 +674,9 @@ function visitForStatement(
 
     const decl = createDeclaration(name, 'for', nameCtx, uri, text);
 
+    // Extract loop context for nested resource/component declarations
+    const loopContext = extractLoopContext(ctx, name);
+
     // For loop variables are scoped to the for body
     const forBody = ctx.forBody();
     if (forBody) {
@@ -608,6 +685,15 @@ function visitForStatement(
             const scope = getScopeFromBlock(blockExpr);
             decl.scopeStart = scope.start;
             decl.scopeEnd = scope.end;
+
+            // Visit the block expression with loop context
+            visitBlockExpressionWithLoop(blockExpr, declarations, uri, text, enclosingScope, loopContext);
+        }
+
+        // Handle resource declaration directly in for body (without block)
+        const resourceDecl = forBody.resourceDeclaration();
+        if (resourceDecl) {
+            visitResourceDeclaration(resourceDecl, declarations, uri, text, enclosingScope, loopContext, null);
         }
     }
 
@@ -615,7 +701,7 @@ function visitForStatement(
 }
 
 /**
- * Visit a block expression for nested declarations
+ * Visit a block expression for nested declarations (no loop context)
  */
 function visitBlockExpression(
     ctx: BlockExpressionContext,
@@ -630,7 +716,7 @@ function visitBlockExpression(
     for (const stmt of statementList.nonEmptyStatement_list()) {
         const decl = stmt.declaration();
         if (decl) {
-            visitDeclaration(decl, declarations, uri, text, enclosingScope);
+            visitDeclaration(decl, declarations, uri, text, enclosingScope, null);
         }
 
         // Handle for loops inside blocks
@@ -792,4 +878,255 @@ function extractDocumentation(decl: Declaration, ctx: ParserRuleContext, text: s
         }
         decl.documentation = commentLines.join('\n').trim();
     }
+}
+
+/**
+ * Extract @count decorator value from decorator list
+ */
+function extractCountDecorator(decoratorList: DecoratorListContext | null): { value?: number } | null {
+    if (!decoratorList) return null;
+
+    for (const decorator of decoratorList.decorator_list()) {
+        const idCtx = decorator.identifier();
+        if (!idCtx) continue;
+
+        const decoratorName = getIdentifierText(idCtx);
+        if (decoratorName !== 'count') continue;
+
+        // Found @count - extract the argument
+        const argsCtx = decorator.decoratorArgs();
+        if (!argsCtx) {
+            return { value: undefined }; // @count without argument
+        }
+
+        // Get the decorator argument
+        const argCtx = argsCtx.decoratorArg();
+        if (argCtx) {
+            // Check for number literal
+            const numToken = argCtx.NUMBER();
+            if (numToken) {
+                const value = parseInt(numToken.getText(), 10);
+                return { value: isNaN(value) ? undefined : value };
+            }
+            // Check for identifier (variable reference)
+            const idArg = argCtx.identifier();
+            if (idArg) {
+                return { value: undefined }; // Dynamic count via variable
+            }
+        }
+
+        return { value: undefined };
+    }
+
+    return null;
+}
+
+/**
+ * Extract loop context from a for statement
+ */
+function extractLoopContext(ctx: ForStatementContext, loopVariable: string): LoopContext {
+    // Check for range expression: 0..n
+    const rangeExpr = ctx.rangeExpression();
+    if (rangeExpr) {
+        const numbers = rangeExpr.NUMBER_list();
+        if (numbers.length >= 2) {
+            const start = parseInt(numbers[0].getText(), 10);
+            const end = parseInt(numbers[1].getText(), 10);
+            return {
+                loopVariable,
+                indexType: 'numeric',
+                rangeStart: isNaN(start) ? 0 : start,
+                rangeEnd: isNaN(end) ? undefined : end,
+            };
+        }
+        return {
+            loopVariable,
+            indexType: 'numeric',
+        };
+    }
+
+    // Check for array expression: ["a", "b", "c"]
+    const arrayExpr = ctx.arrayExpression();
+    if (arrayExpr) {
+        const stringKeys = extractStringArrayValues(arrayExpr);
+        if (stringKeys && stringKeys.length > 0) {
+            return {
+                loopVariable,
+                indexType: 'string',
+                stringKeys,
+            };
+        }
+        // Array of non-strings or complex expressions - treat as string indexed but unknown keys
+        return {
+            loopVariable,
+            indexType: 'string',
+        };
+    }
+
+    // Check for identifier (variable reference) - we can't know the type at parse time
+    const identifiers = ctx.identifier_list();
+    if (identifiers.length >= 2) {
+        // for x in someVar - assume string keys for safety
+        return {
+            loopVariable,
+            indexType: 'string',
+        };
+    }
+
+    // Default to numeric
+    return {
+        loopVariable,
+        indexType: 'numeric',
+    };
+}
+
+/**
+ * Extract string values from an array expression literal
+ */
+function extractStringArrayValues(ctx: ArrayExpressionContext): string[] | null {
+    const items = ctx.arrayItems();
+    if (!items) return null;
+
+    const stringKeys: string[] = [];
+
+    for (const item of items.arrayItem_list()) {
+        const literal = item.literal();
+        if (literal) {
+            const strLiteral = literal.stringLiteral();
+            if (strLiteral) {
+                const value = strLiteral.getText();
+                // Remove quotes
+                if ((value.startsWith('"') && value.endsWith('"')) ||
+                    (value.startsWith("'") && value.endsWith("'"))) {
+                    stringKeys.push(value.slice(1, -1));
+                } else {
+                    stringKeys.push(value);
+                }
+            }
+        }
+    }
+
+    return stringKeys.length > 0 ? stringKeys : null;
+}
+
+/**
+ * Visit a block expression with loop context for indexed resources
+ */
+function visitBlockExpressionWithLoop(
+    ctx: BlockExpressionContext,
+    declarations: Declaration[],
+    uri: string,
+    text: string,
+    enclosingScope: ScopeInfo | null,
+    loopContext: LoopContext | null
+): void {
+    const statementList = ctx.statementList();
+    if (!statementList) return;
+
+    for (const stmt of statementList.nonEmptyStatement_list()) {
+        const decl = stmt.declaration();
+        if (decl) {
+            visitDeclaration(decl, declarations, uri, text, enclosingScope, loopContext);
+        }
+
+        // Handle nested for loops
+        const iterStmt = stmt.iterationStatement();
+        if (iterStmt) {
+            const forStmt = iterStmt.forStatement();
+            if (forStmt) {
+                visitForStatement(forStmt, declarations, uri, text, enclosingScope);
+            }
+        }
+    }
+}
+
+/**
+ * Visit an array expression with for loop (list comprehension) for resources
+ * Handles: [for env in environments] resource S3.Bucket data { ... }
+ */
+function visitArrayExpressionForLoop(
+    ctx: ArrayExpressionContext,
+    declarations: Declaration[],
+    uri: string,
+    text: string,
+    enclosingScope: ScopeInfo | null
+): void {
+    // Check if this is a list comprehension with for
+    const identifiers = ctx.identifier_list();
+    if (identifiers.length === 0) return;
+
+    // First identifier is the loop variable
+    const nameCtx = identifiers[0];
+    const name = getIdentifierText(nameCtx);
+    if (!name) return;
+
+    // Create the loop variable declaration
+    const loopVarDecl = createDeclaration(name, 'for', nameCtx, uri, text);
+
+    // Extract loop context
+    let loopContext: LoopContext;
+
+    // Check for range expression
+    const rangeExpr = ctx.rangeExpression();
+    if (rangeExpr) {
+        const numbers = rangeExpr.NUMBER_list();
+        if (numbers.length >= 2) {
+            const start = parseInt(numbers[0].getText(), 10);
+            const end = parseInt(numbers[1].getText(), 10);
+            loopContext = {
+                loopVariable: name,
+                indexType: 'numeric',
+                rangeStart: isNaN(start) ? 0 : start,
+                rangeEnd: isNaN(end) ? undefined : end,
+            };
+        } else {
+            loopContext = {
+                loopVariable: name,
+                indexType: 'numeric',
+            };
+        }
+    } else {
+        // Check for array expression within the comprehension
+        const arrayExpr = ctx.arrayExpression();
+        if (arrayExpr) {
+            const stringKeys = extractStringArrayValues(arrayExpr);
+            if (stringKeys && stringKeys.length > 0) {
+                loopContext = {
+                    loopVariable: name,
+                    indexType: 'string',
+                    stringKeys,
+                };
+            } else {
+                loopContext = {
+                    loopVariable: name,
+                    indexType: 'string',
+                };
+            }
+        } else {
+            // Identifier reference
+            loopContext = {
+                loopVariable: name,
+                indexType: 'string',
+            };
+        }
+    }
+
+    // Set scope for loop variable
+    const forBody = ctx.forBody();
+    if (forBody) {
+        const blockExpr = forBody.blockExpression();
+        if (blockExpr) {
+            const scope = getScopeFromBlock(blockExpr);
+            loopVarDecl.scopeStart = scope.start;
+            loopVarDecl.scopeEnd = scope.end;
+        }
+
+        // Handle resource declaration in for body
+        const resourceDecl = forBody.resourceDeclaration();
+        if (resourceDecl) {
+            visitResourceDeclaration(resourceDecl, declarations, uri, text, enclosingScope, loopContext, null);
+        }
+    }
+
+    declarations.push(loopVarDecl);
 }

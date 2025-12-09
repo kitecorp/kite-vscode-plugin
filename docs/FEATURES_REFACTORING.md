@@ -322,3 +322,110 @@ resource Config server {    // <- Go to Type Definition on "server"
 ### Built-in Types
 
 Built-in types (`string`, `number`, `boolean`, `any`, `object`) have no type definition to navigate to, so the feature returns nothing for these.
+
+---
+
+## 28. Indexed Resources
+
+**Related:** Completions, Validation, Go to Definition, Hover
+
+Complete support for resources and components created inside loops or with the `@count` decorator. These resources are accessed using indexed notation like `server[0]` or `data["prod"]`.
+
+### Creating Indexed Resources
+
+| Pattern | Index Type | Example Access |
+|---------|------------|----------------|
+| `@count(n)` | Numeric (0 to n-1) | `server[0]`, `server[1]` |
+| `for i in 0..n` | Numeric (0 to n-1) | `server[0]`, `server[1]` |
+| `for x in ["a", "b"]` | String keys | `data["a"]`, `data["b"]` |
+
+### Example: @count Decorator
+
+```kite
+@count(3)
+resource EC2.Instance server {
+    name = "server-$count"
+}
+
+// Access instances:
+var first = server[0]
+var second = server[1]
+var third = server[2]
+```
+
+### Example: Range Loop
+
+```kite
+for i in 0..5 {
+    resource S3.Bucket bucket {
+        name = "bucket-${i}"
+    }
+}
+
+// Access instances:
+var b0 = bucket[0]
+var b4 = bucket[4]
+```
+
+### Example: Array Loop (String Keys)
+
+```kite
+var environments = ["dev", "staging", "prod"]
+
+[for env in environments]
+resource RDS.Instance database {
+    name = "db-${env}"
+}
+
+// Access instances:
+var devDb = database["dev"]
+var prodDb = database["prod"]
+```
+
+### Features
+
+| Feature | Description |
+|---------|-------------|
+| **Completions** | Suggests indexed access patterns (e.g., `server[0]`) when typing |
+| **Index Completions** | When typing `[` after a resource, suggests valid indices |
+| **Validation** | Checks index type matches (numeric vs string) |
+| **Bounds Checking** | Warns when index is out of bounds (when known) |
+| **Key Validation** | Warns when string key is not in allowed list |
+| **Go to Definition** | Ctrl+Click on `server[0]` navigates to the declaration |
+| **Hover** | Shows indexed resource info (count, keys, access pattern) |
+
+### Validation Errors
+
+| Error | Example | Message |
+|-------|---------|---------|
+| Non-indexed access | `server[0]` (no @count) | `'server' is not an indexed resource` |
+| Type mismatch | `data[0]` on string-indexed | `'data' uses string keys, not numeric indices` |
+| Out of bounds | `server[5]` on @count(3) | `Index 5 is out of bounds (0-2)` |
+| Invalid key | `data["unknown"]` | `Key "unknown" is not valid. Accepts: "dev", "prod"` |
+
+### Hover Documentation
+
+Hovering over an indexed resource shows:
+- The indexing method (count, range, or string keys)
+- The valid access patterns
+
+```
+resource `server`
+Schema: EC2.Instance
+
+**Indexed resource with 3 instances (0-2) via @count(3)**
+
+Access using: server[0], server[1], server[2]
+```
+
+### Implementation Files
+
+| File | Description |
+|------|-------------|
+| `types.ts` | `IndexedResourceInfo` interface |
+| `ast-scanner.ts` | Extracts @count and loop context |
+| `indexed-resources.ts` | Utility functions |
+| `declaration-completions.ts` | Indexed access completions |
+| `indexed-access.ts` | Validation checks |
+| `definition/index.ts` | Go to definition support |
+| `hover/index.ts` | Hover documentation |

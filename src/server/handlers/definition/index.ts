@@ -23,6 +23,7 @@ import * as path from 'path';
 import { escapeRegex } from '../../utils/text-utils';
 import { getWordAtPosition } from '../../utils/text-utils';
 import { resolveImportPath } from '../../utils/import-utils';
+import { parseIndexedAccess } from '../../utils/indexed-resources';
 
 // Import from modular files
 import { DefinitionContext } from './types';
@@ -54,6 +55,12 @@ export function handleDefinition(
 
     const word = getWordAtPosition(document, params.position);
     if (!word) return null;
+
+    // Check if this is an indexed resource access (e.g., server[0], data["prod"])
+    const indexedAccess = findIndexedResourceDefinition(text, offset, params.textDocument.uri, ctx);
+    if (indexedAccess) {
+        return indexedAccess;
+    }
 
     // Check if this is a loop variable reference in a list comprehension
     const listCompLocation = findListComprehensionVariable(document, text, offset, word);
@@ -465,4 +472,27 @@ function resolveAndVerifyImportPath(
     }
 
     return null;
+}
+
+/**
+ * Find the definition for an indexed resource access.
+ * Handles patterns like server[0], data["prod"], etc.
+ */
+function findIndexedResourceDefinition(
+    text: string,
+    offset: number,
+    currentDocUri: string,
+    ctx: DefinitionContext
+): Location | null {
+    // Parse the indexed access at cursor position
+    const access = parseIndexedAccess(text, offset);
+    if (!access) return null;
+
+    // Find the base resource declaration
+    const declarations = ctx.getDeclarations(currentDocUri) || [];
+    const decl = declarations.find(d => d.name === access.baseName);
+    if (!decl) return null;
+
+    // Return the location of the base declaration
+    return Location.create(decl.uri, decl.nameRange);
 }

@@ -35,6 +35,7 @@ import { getComponentDefinitionCompletions } from './component-completions';
 import { getBlockBodyCompletions, addContextAwareSuggestions } from './block-completions';
 import { addKeywordCompletions, addTypeCompletions, addDeclarationCompletions } from './declaration-completions';
 import { getAutoImportCompletions } from './auto-import-completions';
+import { getIndexCompletions, isIndexedResource } from '../../utils/indexed-resources';
 
 // Re-export types and utilities
 export { CompletionContext } from './types';
@@ -59,6 +60,12 @@ export function handleCompletion(
     // Check if we're after @ (decorator context) - use AST utility
     if (isInDecoratorContext(text, offset)) {
         return getDecoratorCompletions(text, offset);
+    }
+
+    // Check if we're after [ (indexed resource access)
+    const indexedAccessCompletions = getIndexedResourceAccessCompletions(text, offset, uri, ctx);
+    if (indexedAccessCompletions !== null) {
+        return indexedAccessCompletions;
     }
 
     // Check if we're in an import statement symbol position
@@ -291,6 +298,52 @@ function getSymbolsFromImportedFile(
             detail: 'type',
         });
     }
+
+    return completions;
+}
+
+/**
+ * Get completions for indexed resource access.
+ * Triggered when typing `[` after an indexed resource name.
+ * Returns null if not in indexed access context, completions array otherwise.
+ */
+function getIndexedResourceAccessCompletions(
+    text: string,
+    offset: number,
+    currentDocUri: string,
+    ctx: CompletionContext
+): CompletionItem[] | null {
+    // Check if we just typed `[` after an identifier
+    if (offset < 2) return null;
+
+    // Look for pattern: identifier[
+    const beforeCursor = text.substring(Math.max(0, offset - 100), offset);
+    const bracketMatch = beforeCursor.match(/(\w+)\[$/);
+    if (!bracketMatch) return null;
+
+    const resourceName = bracketMatch[1];
+
+    // Find the declaration
+    const declarations = ctx.getDeclarations(currentDocUri) || [];
+    const decl = declarations.find(d => d.name === resourceName);
+    if (!decl) return null;
+
+    // Check if it's an indexed resource
+    if (!isIndexedResource(decl) || !decl.indexedBy) {
+        return null;
+    }
+
+    const completions: CompletionItem[] = [];
+    const indices = getIndexCompletions(decl);
+
+    indices.forEach((index, i) => {
+        completions.push({
+            label: index,
+            kind: CompletionItemKind.Value,
+            detail: `Index for ${resourceName}`,
+            sortText: String(i).padStart(4, '0'),
+        });
+    });
 
     return completions;
 }
