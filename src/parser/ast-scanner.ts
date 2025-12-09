@@ -881,7 +881,8 @@ function extractDocumentation(decl: Declaration, ctx: ParserRuleContext, text: s
 }
 
 /**
- * Extract @count decorator value from decorator list
+ * Extract @count decorator value from decorator list.
+ * Handles both direct literal and callMemberExpression paths.
  */
 function extractCountDecorator(decoratorList: DecoratorListContext | null): { value?: number } | null {
     if (!decoratorList) return null;
@@ -902,12 +903,28 @@ function extractCountDecorator(decoratorList: DecoratorListContext | null): { va
         // Get the decorator argument
         const argCtx = argsCtx.decoratorArg();
         if (argCtx) {
-            // Check for number literal
-            const numToken = argCtx.NUMBER();
-            if (numToken) {
-                const value = parseInt(numToken.getText(), 10);
-                return { value: isNaN(value) ? undefined : value };
+            // Try direct literal path first
+            let literal = argCtx.literal();
+
+            // If not found, try callMemberExpression -> primaryExpression -> literal path
+            if (!literal) {
+                const callMember = argCtx.callMemberExpression();
+                if (callMember) {
+                    const primary = callMember.primaryExpression();
+                    if (primary) {
+                        literal = primary.literal();
+                    }
+                }
             }
+
+            if (literal) {
+                const numToken = literal.NUMBER();
+                if (numToken) {
+                    const value = parseInt(numToken.getText(), 10);
+                    return { value: isNaN(value) ? undefined : value };
+                }
+            }
+
             // Check for identifier (variable reference)
             const idArg = argCtx.identifier();
             if (idArg) {
@@ -981,7 +998,8 @@ function extractLoopContext(ctx: ForStatementContext, loopVariable: string): Loo
 }
 
 /**
- * Extract string values from an array expression literal
+ * Extract string values from an array expression literal.
+ * Handles both direct literal and callMemberExpression paths.
  */
 function extractStringArrayValues(ctx: ArrayExpressionContext): string[] | null {
     const items = ctx.arrayItems();
@@ -990,7 +1008,20 @@ function extractStringArrayValues(ctx: ArrayExpressionContext): string[] | null 
     const stringKeys: string[] = [];
 
     for (const item of items.arrayItem_list()) {
-        const literal = item.literal();
+        // Try direct literal path first
+        let literal = item.literal();
+
+        // If not found, try callMemberExpression -> primaryExpression -> literal path
+        if (!literal) {
+            const callMember = item.callMemberExpression();
+            if (callMember) {
+                const primary = callMember.primaryExpression();
+                if (primary) {
+                    literal = primary.literal();
+                }
+            }
+        }
+
         if (literal) {
             const strLiteral = literal.stringLiteral();
             if (strLiteral) {

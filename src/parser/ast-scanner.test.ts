@@ -259,6 +259,140 @@ resource DatabaseConfig db {
         });
     });
 
+    describe('indexed resources with @count', () => {
+        it('should extract indexedBy for resource with @count decorator', () => {
+            const doc = createDocument(`
+@count(3)
+resource ServerConfig server {
+    host = "localhost"
+}
+`);
+            const decls = scanDocumentAST(doc);
+
+            const resource = decls.find(d => d.name === 'server' && d.type === 'resource');
+            expect(resource).toBeDefined();
+            expect(resource?.indexedBy).toBeDefined();
+            expect(resource?.indexedBy?.indexType).toBe('numeric');
+            expect(resource?.indexedBy?.countValue).toBe(3);
+        });
+
+        it('should extract indexedBy for component with @count decorator', () => {
+            const doc = createDocument(`
+@count(2)
+component WebServer api {
+    name = "api"
+}
+`);
+            const decls = scanDocumentAST(doc);
+
+            const comp = decls.find(d => d.name === 'api' && d.type === 'component');
+            expect(comp).toBeDefined();
+            expect(comp?.indexedBy).toBeDefined();
+            expect(comp?.indexedBy?.indexType).toBe('numeric');
+            expect(comp?.indexedBy?.countValue).toBe(2);
+        });
+    });
+
+    describe('indexed resources in for loops', () => {
+        it('should extract indexedBy for resource in range loop', () => {
+            const doc = createDocument(`
+for i in 0..5 {
+    resource S3.Bucket bucket {
+        name = "bucket"
+    }
+}
+`);
+            const decls = scanDocumentAST(doc);
+
+            const resource = decls.find(d => d.name === 'bucket' && d.type === 'resource');
+            expect(resource).toBeDefined();
+            expect(resource?.indexedBy).toBeDefined();
+            expect(resource?.indexedBy?.indexType).toBe('numeric');
+            expect(resource?.indexedBy?.rangeStart).toBe(0);
+            expect(resource?.indexedBy?.rangeEnd).toBe(5);
+        });
+
+        it('should extract indexedBy for component in range loop', () => {
+            const doc = createDocument(`
+for i in 0..3 {
+    component CacheLayer cache {
+        size = 100
+    }
+}
+`);
+            const decls = scanDocumentAST(doc);
+
+            const comp = decls.find(d => d.name === 'cache' && d.type === 'component');
+            expect(comp).toBeDefined();
+            expect(comp?.indexedBy).toBeDefined();
+            expect(comp?.indexedBy?.indexType).toBe('numeric');
+            expect(comp?.indexedBy?.rangeStart).toBe(0);
+            expect(comp?.indexedBy?.rangeEnd).toBe(3);
+        });
+
+        it('should extract indexedBy for resource in array loop with string keys', () => {
+            const doc = createDocument(`
+for env in ["dev", "staging", "prod"] {
+    resource RDS.Instance database {
+        name = "db"
+    }
+}
+`);
+            const decls = scanDocumentAST(doc);
+
+            const resource = decls.find(d => d.name === 'database' && d.type === 'resource');
+            expect(resource).toBeDefined();
+            expect(resource?.indexedBy).toBeDefined();
+            expect(resource?.indexedBy?.indexType).toBe('string');
+            expect(resource?.indexedBy?.stringKeys).toEqual(['dev', 'staging', 'prod']);
+        });
+
+        it('should extract indexedBy for component in array loop with string keys', () => {
+            const doc = createDocument(`
+for env in ["dev", "prod"] {
+    component APIGateway gateway {
+        environment = env
+    }
+}
+`);
+            const decls = scanDocumentAST(doc);
+
+            const comp = decls.find(d => d.name === 'gateway' && d.type === 'component');
+            expect(comp).toBeDefined();
+            expect(comp?.indexedBy).toBeDefined();
+            expect(comp?.indexedBy?.indexType).toBe('string');
+            expect(comp?.indexedBy?.stringKeys).toEqual(['dev', 'prod']);
+        });
+    });
+
+    describe('non-indexed resources', () => {
+        it('should not have indexedBy for regular resource', () => {
+            const doc = createDocument(`
+resource ServerConfig server {
+    host = "localhost"
+}
+`);
+            const decls = scanDocumentAST(doc);
+
+            const resource = decls.find(d => d.name === 'server' && d.type === 'resource');
+            expect(resource).toBeDefined();
+            expect(resource?.indexedBy).toBeUndefined();
+        });
+
+        it('should not have indexedBy for regular component', () => {
+            const doc = createDocument(`
+component WebServer api {
+    name = "api"
+}
+`);
+            const decls = scanDocumentAST(doc);
+
+            const comp = decls.find(d => d.name === 'api' && d.type === 'component');
+            expect(comp).toBeDefined();
+            expect(comp?.indexedBy).toBeUndefined();
+        });
+    });
+
     describe('Local variables in functions', () => {
         it('should scan local variables in function without parameters', () => {
             const doc = createDocument(`
