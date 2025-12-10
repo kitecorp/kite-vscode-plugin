@@ -36,6 +36,7 @@ import { getBlockBodyCompletions, addContextAwareSuggestions } from './block-com
 import { addKeywordCompletions, addTypeCompletions, addDeclarationCompletions } from './declaration-completions';
 import { getAutoImportCompletions } from './auto-import-completions';
 import { getIndexCompletions, isIndexedResource } from '../../utils/indexed-resources';
+import { getInstanceNameCompletions } from './instance-name-completions';
 
 // Re-export types and utilities
 export { CompletionContext } from './types';
@@ -60,6 +61,12 @@ export function handleCompletion(
     // Check if we're after @ (decorator context) - use AST utility
     if (isInDecoratorContext(text, offset)) {
         return getDecoratorCompletions(text, offset);
+    }
+
+    // Check if we're in instance name position (after 'resource TypeName ' or 'component TypeName ')
+    const instanceNameCompletions = getInstanceNameCompletions(text, offset);
+    if (instanceNameCompletions !== null) {
+        return instanceNameCompletions;
     }
 
     // Check if we're after [ (indexed resource access)

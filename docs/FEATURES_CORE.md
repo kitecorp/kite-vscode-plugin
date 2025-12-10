@@ -114,6 +114,38 @@ Intelligent autocomplete with context awareness.
 - For resources: Shows set properties (with indicator) + unset schema properties
 - For component instances: Shows outputs
 
+### Instance Name Completions
+
+**File:** `src/server/handlers/completion/instance-name-completions.ts`
+
+When typing after `resource TypeName ` or `component TypeName ` (with a trailing space), suggests smart instance names:
+
+```kite
+resource ServerConfig █  // Shows: serverConfig, server, srv, config, cfg, myServerConfig, etc.
+component WebServer █    // Shows: webServer, server, srv, myWebServer, mainWebServer, etc.
+```
+
+#### Suggestion Types:
+
+| Type | Example Input | Suggestions |
+|------|---------------|-------------|
+| **camelCase** | `ServerConfig` | `serverConfig` |
+| **Abbreviations** | `Database` | `db` |
+| **Abbreviations** | `Configuration` | `cfg`, `config` |
+| **Abbreviations** | `Service` | `svc` |
+| **Abbreviations** | `Function` | `func`, `fn` |
+| **Prefixed** | `Database` | `myDatabase`, `mainDatabase`, `primaryDatabase` |
+| **Namespaced** | `AWS.EC2.Instance` | `instance`, `inst`, `web`, `api`, `app` |
+| **Namespaced** | `S3.Bucket` | `bucket` |
+
+#### Features:
+- Filters suggestions as you type
+- Works with namespaced types (e.g., `aws.Lambda.Function`)
+- Ignores context inside strings and comments
+- Does not trigger for component definitions (single name before `{`)
+
+---
+
 ### Import Completions:
 
 #### Symbol Completions (after `import `):
