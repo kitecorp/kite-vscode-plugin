@@ -388,7 +388,6 @@ var prodDb = database["prod"]
 |---------|-------------|
 | **Completions** | Suggests indexed access patterns (e.g., `server[0]`) when typing |
 | **Index Completions** | When typing `[` after a resource, suggests valid indices |
-| **Property Completions** | `server[0].` (Ctrl+Space) shows schema properties like `port`, `host` |
 | **Validation** | Checks index type matches (numeric vs string) |
 | **Bounds Checking** | Warns when index is out of bounds (when known) |
 | **Key Validation** | Warns when string key is not in allowed list |
@@ -425,10 +424,8 @@ Access using: server[0], server[1], server[2]
 |------|-------------|
 | `types.ts` | `IndexedResourceInfo` interface |
 | `ast-scanner.ts` | Extracts @count and loop context |
-| `ast-cursor.ts` | `getDotAccessTarget()` - handles `db[0].` property access detection |
 | `indexed-resources.ts` | Utility functions |
 | `declaration-completions.ts` | Indexed access completions |
-| `property-access.ts` | Property completions for resources/components |
 | `indexed-access.ts` | Validation checks |
 | `definition/index.ts` | Go to definition support |
 | `hover/index.ts` | Hover documentation |

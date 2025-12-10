@@ -881,8 +881,7 @@ function extractDocumentation(decl: Declaration, ctx: ParserRuleContext, text: s
 }
 
 /**
- * Extract @count decorator value from decorator list.
- * Handles both direct literal and callMemberExpression paths.
+ * Extract @count decorator value from decorator list
  */
 function extractCountDecorator(decoratorList: DecoratorListContext | null): { value?: number } | null {
     if (!decoratorList) return null;
@@ -903,26 +902,27 @@ function extractCountDecorator(decoratorList: DecoratorListContext | null): { va
         // Get the decorator argument
         const argCtx = argsCtx.decoratorArg();
         if (argCtx) {
-            // Try direct literal path first
-            let literal = argCtx.literal();
+            // Check for number literal directly
+            let numToken = argCtx.NUMBER();
 
-            // If not found, try callMemberExpression -> primaryExpression -> literal path
-            if (!literal) {
+            // If not found, try callMemberExpression -> primaryExpression -> literal -> NUMBER path
+            // (ANTLR parses numbers through this path in some cases)
+            if (!numToken) {
                 const callMember = argCtx.callMemberExpression();
                 if (callMember) {
                     const primary = callMember.primaryExpression();
                     if (primary) {
-                        literal = primary.literal();
+                        const literal = primary.literal();
+                        if (literal) {
+                            numToken = literal.NUMBER();
+                        }
                     }
                 }
             }
 
-            if (literal) {
-                const numToken = literal.NUMBER();
-                if (numToken) {
-                    const value = parseInt(numToken.getText(), 10);
-                    return { value: isNaN(value) ? undefined : value };
-                }
+            if (numToken) {
+                const value = parseInt(numToken.getText(), 10);
+                return { value: isNaN(value) ? undefined : value };
             }
 
             // Check for identifier (variable reference)
@@ -998,8 +998,7 @@ function extractLoopContext(ctx: ForStatementContext, loopVariable: string): Loo
 }
 
 /**
- * Extract string values from an array expression literal.
- * Handles both direct literal and callMemberExpression paths.
+ * Extract string values from an array expression literal
  */
 function extractStringArrayValues(ctx: ArrayExpressionContext): string[] | null {
     const items = ctx.arrayItems();
@@ -1012,6 +1011,7 @@ function extractStringArrayValues(ctx: ArrayExpressionContext): string[] | null 
         let literal = item.literal();
 
         // If not found, try callMemberExpression -> primaryExpression -> literal path
+        // (ANTLR parses array items through this path in some cases)
         if (!literal) {
             const callMember = item.callMemberExpression();
             if (callMember) {
