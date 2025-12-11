@@ -59,7 +59,12 @@ export function handleInlayHints(
         if (equalsPos === -1) continue;
 
         const valueStart = equalsPos + 1;
-        const inferredType = inferTypeFromValue(text, valueStart);
+        let inferredType = inferTypeFromValue(text, valueStart);
+
+        // If not a literal, check if it's a function call and get return type
+        if (!inferredType) {
+            inferredType = inferTypeFromFunctionCall(text, valueStart, declarations, ctx, docUri);
+        }
 
         if (inferredType) {
             const pos = document.positionAt(nameStart + varName.length);
@@ -261,6 +266,56 @@ export function handleInlayHints(
     }
 
     return hints;
+}
+
+/**
+ * Infer type from a function call by looking up the function's return type
+ */
+function inferTypeFromFunctionCall(
+    text: string,
+    startPos: number,
+    declarations: Declaration[],
+    ctx: InlayHintContext,
+    currentDocUri?: string
+): string | null {
+    // Skip whitespace
+    let pos = startPos;
+    while (pos < text.length && /\s/.test(text[pos])) {
+        pos++;
+    }
+
+    // Check if it looks like a function call: identifier followed by (
+    const funcCallMatch = text.substring(pos).match(/^(\w+)\s*\(/);
+    if (!funcCallMatch) return null;
+
+    const funcName = funcCallMatch[1];
+
+    // Skip keywords
+    if (['if', 'while', 'for', 'fun', 'switch', 'catch'].includes(funcName)) {
+        return null;
+    }
+
+    // Look for function declaration in current file
+    const funcDecl = declarations.find(d => d.type === 'function' && d.name === funcName);
+    if (funcDecl && funcDecl.returnType) {
+        return funcDecl.returnType;
+    }
+
+    // Search other files for function definition with return type
+    const kiteFiles = ctx.findKiteFilesInWorkspace();
+    for (const filePath of kiteFiles) {
+        const fileContent = ctx.getFileContent(filePath, currentDocUri);
+        if (fileContent) {
+            // Look for function definition: fun name(params) ReturnType {
+            const funcRegex = new RegExp(`\\bfun\\s+${escapeRegex(funcName)}\\s*\\([^)]*\\)\\s+(\\w+)\\s*\\{`, 'g');
+            const funcMatch = funcRegex.exec(fileContent);
+            if (funcMatch && funcMatch[1]) {
+                return funcMatch[1];
+            }
+        }
+    }
+
+    return null;
 }
 
 /**
