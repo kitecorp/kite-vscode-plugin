@@ -197,18 +197,34 @@ function extractTokensFromLine(line: string, lineNum: number, tokens: TokenInfo[
         });
     }
 
-    // Schema property: type propertyName (inside schema body)
-    const propertyMatch = line.match(/^\s+(string|number|boolean|any|object|\w+)\s+(\w+)/);
+    // Struct definition: struct Name {
+    const structMatch = line.match(/^\s*struct\s+(\w+)/);
+    if (structMatch) {
+        const nameStart = line.indexOf(structMatch[1]);
+        tokens.push({
+            line: lineNum,
+            char: nameStart,
+            length: structMatch[1].length,
+            type: TOKEN_TYPES.struct,
+            modifiers: modifierBits(['definition']),
+        });
+    }
+
+    // Schema/struct property: type propertyName or type[] propertyName (inside schema/struct body)
+    const propertyMatch = line.match(/^\s+(string|number|boolean|any|object|\w+)(\[\])?\s+(\w+)/);
     if (propertyMatch && !line.includes('var ') && !line.includes('input ') && !line.includes('output ')) {
         const typeStart = line.indexOf(propertyMatch[1]);
-        const nameStart = line.indexOf(propertyMatch[2], typeStart + propertyMatch[1].length);
+        const arrayBrackets = propertyMatch[2] || '';
+        const fullTypeLength = propertyMatch[1].length + arrayBrackets.length;
+        const nameStart = line.indexOf(propertyMatch[3], typeStart + fullTypeLength);
 
-        // Type token
-        if (isBuiltinType(propertyMatch[1])) {
+        // Type token (including [] if present) - highlight both built-in and custom types
+        const typeName = propertyMatch[1];
+        if (isBuiltinType(typeName) || /^[A-Z]/.test(typeName)) {
             tokens.push({
                 line: lineNum,
                 char: typeStart,
-                length: propertyMatch[1].length,
+                length: fullTypeLength,
                 type: TOKEN_TYPES.type,
                 modifiers: 0,
             });
@@ -218,7 +234,7 @@ function extractTokensFromLine(line: string, lineNum: number, tokens: TokenInfo[
         tokens.push({
             line: lineNum,
             char: nameStart,
-            length: propertyMatch[2].length,
+            length: propertyMatch[3].length,
             type: TOKEN_TYPES.property,
             modifiers: modifierBits(['declaration']),
         });
@@ -262,17 +278,21 @@ function extractTokensFromLine(line: string, lineNum: number, tokens: TokenInfo[
         });
     }
 
-    // Input declaration: input type name
-    const inputMatch = line.match(/^\s*input\s+(\w+)\s+(\w+)/);
+    // Input declaration: input type name or input type[] name
+    const inputMatch = line.match(/^\s*input\s+(\w+)(\[\])?\s+(\w+)/);
     if (inputMatch) {
-        const typeStart = line.indexOf(inputMatch[1], line.indexOf('input') + 5);
-        const nameStart = line.indexOf(inputMatch[2], typeStart + inputMatch[1].length);
+        const inputTypeName = inputMatch[1];
+        const inputArrayBrackets = inputMatch[2] || '';
+        const inputFullTypeLength = inputTypeName.length + inputArrayBrackets.length;
+        const typeStart = line.indexOf(inputTypeName, line.indexOf('input') + 5);
+        const nameStart = line.indexOf(inputMatch[3], typeStart + inputFullTypeLength);
 
-        if (isBuiltinType(inputMatch[1])) {
+        // Highlight both built-in and custom types
+        if (isBuiltinType(inputTypeName) || /^[A-Z]/.test(inputTypeName)) {
             tokens.push({
                 line: lineNum,
                 char: typeStart,
-                length: inputMatch[1].length,
+                length: inputFullTypeLength,
                 type: TOKEN_TYPES.type,
                 modifiers: 0,
             });
@@ -281,23 +301,27 @@ function extractTokensFromLine(line: string, lineNum: number, tokens: TokenInfo[
         tokens.push({
             line: lineNum,
             char: nameStart,
-            length: inputMatch[2].length,
+            length: inputMatch[3].length,
             type: TOKEN_TYPES.parameter,
             modifiers: modifierBits(['declaration']),
         });
     }
 
-    // Output declaration: output type name
-    const outputMatch = line.match(/^\s*output\s+(\w+)\s+(\w+)/);
+    // Output declaration: output type name or output type[] name
+    const outputMatch = line.match(/^\s*output\s+(\w+)(\[\])?\s+(\w+)/);
     if (outputMatch) {
-        const typeStart = line.indexOf(outputMatch[1], line.indexOf('output') + 6);
-        const nameStart = line.indexOf(outputMatch[2], typeStart + outputMatch[1].length);
+        const outputTypeName = outputMatch[1];
+        const outputArrayBrackets = outputMatch[2] || '';
+        const outputFullTypeLength = outputTypeName.length + outputArrayBrackets.length;
+        const typeStart = line.indexOf(outputTypeName, line.indexOf('output') + 6);
+        const nameStart = line.indexOf(outputMatch[3], typeStart + outputFullTypeLength);
 
-        if (isBuiltinType(outputMatch[1])) {
+        // Highlight both built-in and custom types
+        if (isBuiltinType(outputTypeName) || /^[A-Z]/.test(outputTypeName)) {
             tokens.push({
                 line: lineNum,
                 char: typeStart,
-                length: outputMatch[1].length,
+                length: outputFullTypeLength,
                 type: TOKEN_TYPES.type,
                 modifiers: 0,
             });
@@ -306,7 +330,7 @@ function extractTokensFromLine(line: string, lineNum: number, tokens: TokenInfo[
         tokens.push({
             line: lineNum,
             char: nameStart,
-            length: outputMatch[2].length,
+            length: outputMatch[3].length,
             type: TOKEN_TYPES.property,
             modifiers: modifierBits(['declaration']),
         });
@@ -384,19 +408,24 @@ function extractTokensFromLine(line: string, lineNum: number, tokens: TokenInfo[
         });
     }
 
-    // Variable declaration: var [type] name =
-    const varMatch = line.match(/^\s*var\s+(\w+)(?:\s+(\w+))?\s*=/);
+    // Variable declaration: var [type] name = or var [type[]] name =
+    const varMatch = line.match(/^\s*var\s+(\w+)(\[\])?(?:\s+(\w+))?\s*=/);
     if (varMatch) {
-        if (varMatch[2]) {
-            // Typed variable: var type name =
-            const typeStart = line.indexOf(varMatch[1], line.indexOf('var') + 3);
-            const nameStart = line.indexOf(varMatch[2], typeStart + varMatch[1].length);
+        const varTypeName = varMatch[1];
+        const varArrayBrackets = varMatch[2] || '';
+        const varFullTypeLength = varTypeName.length + varArrayBrackets.length;
 
-            if (isBuiltinType(varMatch[1])) {
+        if (varMatch[3]) {
+            // Typed variable: var type name = or var type[] name =
+            const typeStart = line.indexOf(varTypeName, line.indexOf('var') + 3);
+            const nameStart = line.indexOf(varMatch[3], typeStart + varFullTypeLength);
+
+            // Highlight both built-in and custom types
+            if (isBuiltinType(varTypeName) || /^[A-Z]/.test(varTypeName)) {
                 tokens.push({
                     line: lineNum,
                     char: typeStart,
-                    length: varMatch[1].length,
+                    length: varFullTypeLength,
                     type: TOKEN_TYPES.type,
                     modifiers: 0,
                 });
@@ -405,25 +434,29 @@ function extractTokensFromLine(line: string, lineNum: number, tokens: TokenInfo[
             tokens.push({
                 line: lineNum,
                 char: nameStart,
-                length: varMatch[2].length,
+                length: varMatch[3].length,
                 type: TOKEN_TYPES.variable,
                 modifiers: modifierBits(['declaration']),
             });
         } else {
             // Inferred type: var name =
-            const nameStart = line.indexOf(varMatch[1], line.indexOf('var') + 3);
+            const nameStart = line.indexOf(varTypeName, line.indexOf('var') + 3);
             tokens.push({
                 line: lineNum,
                 char: nameStart,
-                length: varMatch[1].length,
+                length: varTypeName.length,
                 type: TOKEN_TYPES.variable,
                 modifiers: modifierBits(['declaration']),
             });
         }
     }
 
-    // Keywords
-    const keywords = ['if', 'else', 'for', 'while', 'in', 'return'];
+    // Keywords (control flow + IaC + declarations)
+    const keywords = [
+        'if', 'else', 'for', 'while', 'in', 'return',
+        'schema', 'struct', 'component', 'resource', 'input', 'output',
+        'var', 'fun', 'type', 'import', 'from', 'init', 'this'
+    ];
     for (const kw of keywords) {
         const kwRegex = new RegExp(`\\b${kw}\\b`, 'g');
         while ((match = kwRegex.exec(line)) !== null) {

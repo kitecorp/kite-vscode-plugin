@@ -6,6 +6,7 @@
 import {
     ProgramContext,
     SchemaDeclarationContext,
+    StructDeclarationContext,
     ComponentDeclarationContext,
     FunctionDeclarationContext,
     TypeDeclarationContext,
@@ -25,7 +26,7 @@ export interface DefinitionLocation {
 /**
  * Declaration types supported by the finder
  */
-export type DeclarationType = 'schema' | 'component' | 'function' | 'type';
+export type DeclarationType = 'schema' | 'struct' | 'component' | 'function' | 'type';
 
 /**
  * Generic definition finder - finds any declaration by type and name
@@ -47,6 +48,13 @@ export function findDefinitionAST(
                 const schemaDecl = decl.schemaDeclaration();
                 if (schemaDecl?.identifier()?.getText() === name) {
                     return extractLocation(schemaDecl.identifier()!, name);
+                }
+                break;
+            }
+            case 'struct': {
+                const structDecl = decl.structDeclaration();
+                if (structDecl?.identifier()?.getText() === name) {
+                    return extractLocation(structDecl.identifier()!, name);
                 }
                 break;
             }
@@ -118,6 +126,25 @@ export function findSchemaByName(tree: ProgramContext, name: string): SchemaDecl
 }
 
 /**
+ * Find a struct declaration by name
+ */
+export function findStructByName(tree: ProgramContext, name: string): StructDeclarationContext | null {
+    const stmtList = tree.statementList();
+    if (!stmtList) return null;
+
+    for (const stmt of stmtList.nonEmptyStatement_list()) {
+        const decl = stmt.declaration();
+        if (decl) {
+            const structDecl = decl.structDeclaration();
+            if (structDecl?.identifier()?.getText() === name) {
+                return structDecl;
+            }
+        }
+    }
+    return null;
+}
+
+/**
  * Find a component definition by name
  */
 export function findComponentDefByName(tree: ProgramContext, name: string): ComponentDeclarationContext | null {
@@ -155,6 +182,30 @@ export function findSchemaPropertyAST(
     if (!propList) return null;
 
     for (const prop of propList.schemaProperty_list()) {
+        const identifier = prop.identifier();
+        if (identifier?.getText() === propertyName) {
+            return extractLocation(identifier, propertyName);
+        }
+    }
+    return null;
+}
+
+/**
+ * Find struct property location
+ */
+export function findStructPropertyAST(
+    tree: ProgramContext,
+    structName: string,
+    propertyName: string
+): DefinitionLocation | null {
+    const structBaseName = structName.includes('.') ? structName.split('.').pop()! : structName;
+    const struct = findStructByName(tree, structBaseName);
+    if (!struct) return null;
+
+    const propList = struct.structPropertyList();
+    if (!propList) return null;
+
+    for (const prop of propList.structProperty_list()) {
         const identifier = prop.identifier();
         if (identifier?.getText() === propertyName) {
             return extractLocation(identifier, propertyName);

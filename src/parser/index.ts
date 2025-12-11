@@ -38,12 +38,15 @@ export {
     findDefinitionAST,
     DeclarationType,
     findSchemaByName,
+    findStructByName,
     findComponentDefByName,
     findSchemaDefinitionAST,
+    findStructDefinitionAST,
     findComponentDefinitionAST,
     findFunctionDefinitionAST,
     findTypeDefinitionAST,
     findSchemaPropertyAST,
+    findStructPropertyAST,
     findComponentInputAST,
     DefinitionLocation,
     // Import utilities
@@ -53,9 +56,11 @@ export {
     ImportInfo,
     // Property extraction
     extractSchemaPropertiesAST,
+    extractStructPropertiesAST,
     extractComponentInputsAST,
     extractComponentOutputsAST,
     SchemaProperty,
+    StructProperty,
     ComponentInput,
     ComponentOutput,
 } from './ast-context';

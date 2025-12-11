@@ -3,7 +3,7 @@
  * Provides functions to extract schema properties and component inputs/outputs.
  */
 
-import { SchemaDeclarationContext, ComponentDeclarationContext } from './grammar/KiteParser';
+import { SchemaDeclarationContext, StructDeclarationContext, ComponentDeclarationContext } from './grammar/KiteParser';
 
 /**
  * Schema property information
@@ -13,6 +13,15 @@ export interface SchemaProperty {
     typeName: string;
     hasDefault: boolean;
     isCloud: boolean;  // Properties marked with @cloud are set by cloud provider
+}
+
+/**
+ * Struct property information
+ */
+export interface StructProperty {
+    name: string;
+    typeName: string;
+    hasDefault: boolean;
 }
 
 /**
@@ -64,6 +73,28 @@ export function extractSchemaPropertiesAST(schemaCtx: SchemaDeclarationContext):
 
         if (name) {
             properties.push({ name, typeName, hasDefault, isCloud });
+        }
+    }
+
+    return properties;
+}
+
+/**
+ * Extract struct properties using AST
+ */
+export function extractStructPropertiesAST(structCtx: StructDeclarationContext): StructProperty[] {
+    const properties: StructProperty[] = [];
+    const propList = structCtx.structPropertyList();
+    if (!propList) return properties;
+
+    for (const prop of propList.structProperty_list()) {
+        const name = prop.identifier()?.getText();
+        const typeId = prop.typeIdentifier();
+        const typeName = typeId?.getText() ?? 'any';
+        const hasDefault = prop.propertyInitializer() !== null;
+
+        if (name) {
+            properties.push({ name, typeName, hasDefault });
         }
     }
 

@@ -106,10 +106,15 @@ export function isTypeCompatible(declaredType: string, valueType: string): boole
         return true;
     }
 
-    // Custom types (non-built-in) - be lenient with primitives
+    // Custom types (non-built-in) - be lenient with primitives and objects
     // Type aliases like `type Region = "us-east-1" | "us-west-2"` should accept string values
+    // Struct/schema types should accept object literals
     if (!isBuiltinType(normalizedDeclared)) {
         if (normalizedValue === 'string' || normalizedValue === 'number' || normalizedValue === 'boolean') {
+            return true;
+        }
+        // Object literals can be assigned to struct/schema types
+        if (normalizedValue === 'object') {
             return true;
         }
     }

@@ -1,0 +1,70 @@
+// Basic struct examples demonstrating the struct keyword
+
+// Simple struct with required properties
+struct Point {
+    number x
+    number y
+}
+
+// Struct with default values
+struct Rectangle {
+    number x = 0
+    number y = 0
+    number width = 100
+    number height = 100
+}
+
+// Struct with various types
+struct ServerConfig {
+    string host
+    number port = 8080
+    boolean ssl = false
+    string[] tags
+    any metadata
+}
+
+// Struct with array types
+struct Polygon {
+    string name
+    Point[] vertices
+}
+
+// Struct with optional description decorator
+@description("Represents a user in the system")
+struct User {
+    string id
+    string name
+    string email
+    boolean active = true
+}
+
+// Struct with nested type references
+struct APIResponse {
+    number status = 200
+    string message
+    User data
+}
+
+// Inline style struct (comma-separated)
+struct Coordinate { number lat, number lng }
+
+// Using structs as variable types
+var Point origin = { x: 0, y: 0 }
+var Rectangle bounds = { width: 800, height: 600 }
+
+// Function using struct types
+fun distance(Point a, Point b) number {
+    var dx = b.x - a.x
+    var dy = b.y - a.y
+    return dx * dx + dy * dy
+}
+
+// Function returning struct
+fun createUser(string id, string name, string email) User {
+    return {
+        id: id,
+        name: name,
+        email: email,
+        active: true
+    }
+}

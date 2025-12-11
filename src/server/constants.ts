@@ -6,7 +6,7 @@ import { DecoratorInfo } from './types';
 
 // Keywords for completion
 export const KEYWORDS = [
-    'resource', 'component', 'schema', 'input', 'output',
+    'resource', 'component', 'schema', 'struct', 'input', 'output',
     'if', 'else', 'while', 'for', 'in', 'return',
     'import', 'from', 'fun', 'var', 'type', 'init', 'this',
     'true', 'false', 'null'

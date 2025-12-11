@@ -150,7 +150,7 @@ import * from "aws.DatabaseConfig"  // Package-style path
 // Type alias (union type)
 type Region = "us-east-1" | "us-west-2" | "eu-west-1"
 
-// Schema definition (like interface/struct)
+// Schema definition (like interface/struct, for cloud resources)
 schema ServerConfig {
   string   host
   number   port     = 8080
@@ -158,6 +158,12 @@ schema ServerConfig {
   string[] tags              // Array type
   any      metadata          // Any type
   @cloud string arn          // Cloud-generated property
+}
+
+// Struct definition (lightweight data structure)
+struct Point {
+  number x
+  number y = 0
 }
 
 // Resource instantiation (uses a schema)
@@ -233,7 +239,7 @@ while condition {
 Key tokens from the ANTLR lexer (`../kite-intellij-plugin/src/main/antlr/cloud/kitelang/intellij/parser/KiteLexer.g4`):
 
 ### Keywords
-- IaC: `resource`, `component`, `schema`, `input`, `output`
+- IaC: `resource`, `component`, `schema`, `struct`, `input`, `output`
 - Control: `if`, `else`, `while`, `for`, `in`, `return`
 - Declarations: `import`, `from`, `fun`, `var`, `type`, `init`, `this`
 - Types: `object`, `any`

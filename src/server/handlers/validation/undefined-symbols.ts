@@ -21,7 +21,7 @@ const BUILTIN_TYPES = new Set([
 const KEYWORDS_AND_LITERALS = new Set([
     // Keywords
     'if', 'else', 'for', 'while', 'in', 'return',
-    'var', 'fun', 'schema', 'component', 'resource',
+    'var', 'fun', 'schema', 'struct', 'component', 'resource',
     'input', 'output', 'type', 'import', 'from', 'init', 'this',
     // Literals
     'true', 'false', 'null',
@@ -105,8 +105,8 @@ export function checkUndefinedSymbols(
         // Skip if it's an object literal key (e.g., { key: value })
         if (isObjectLiteralKey(text, offset, identifier)) continue;
 
-        // Skip if it's a schema property definition (e.g., string host inside schema)
-        if (isSchemaPropertyDefinition(text, offset, identifier)) continue;
+        // Skip if it's a schema/struct property definition (e.g., string host inside schema/struct)
+        if (isSchemaOrStructPropertyDefinition(text, offset, identifier)) continue;
 
         // Skip if it's a decorator name (after @)
         if (isDecoratorName(text, offset)) continue;
@@ -215,6 +215,7 @@ function isDeclarationContext(text: string, offset: number, identifier: string):
         /\boutput\s+\w+\[\]\s*$/,       // output type[] name
         /\bfun\s*$/,                    // fun name
         /\bschema\s*$/,                 // schema name
+        /\bstruct\s*$/,                 // struct name
         /\bcomponent\s*$/,              // component name
         /\bcomponent\s+\w+\s*$/,        // component Type name
         /\bresource\s+[\w.]+\s*$/,      // resource Schema name
@@ -307,13 +308,38 @@ function isObjectLiteralKey(text: string, offset: number, identifier: string): b
 
     // If followed by ':' or '=', it's a key
     if (afterText.startsWith(':') || afterText.startsWith('=')) {
-        // Make sure we're inside braces (rough check)
-        const beforeText = text.substring(Math.max(0, offset - 100), offset);
-        const lastOpen = beforeText.lastIndexOf('{');
-        const lastClose = beforeText.lastIndexOf('}');
+        // Count brace depth from start of file to determine if we're inside an object
+        // This handles deeply nested object literals
+        const textBefore = text.substring(0, offset);
+        let braceDepth = 0;
+        let inString = false;
+        let stringChar = '';
 
-        // If there's an unclosed brace before us, we're inside an object
-        if (lastOpen > lastClose) {
+        for (let i = 0; i < textBefore.length; i++) {
+            const char = textBefore[i];
+            const prevChar = i > 0 ? textBefore[i - 1] : '';
+
+            // Track string state
+            if ((char === '"' || char === "'") && prevChar !== '\\') {
+                if (!inString) {
+                    inString = true;
+                    stringChar = char;
+                } else if (char === stringChar) {
+                    inString = false;
+                    stringChar = '';
+                }
+                continue;
+            }
+
+            if (inString) continue;
+
+            // Count braces
+            if (char === '{') braceDepth++;
+            else if (char === '}') braceDepth--;
+        }
+
+        // If we're inside any brace, it's likely an object literal key
+        if (braceDepth > 0) {
             return true;
         }
     }
@@ -337,30 +363,31 @@ function isForLoopVariableDefinition(text: string, offset: number, identifier: s
 }
 
 /**
- * Check if identifier is a schema property definition
- * e.g., string host inside schema { }
+ * Check if identifier is a schema or struct property definition
+ * e.g., string host inside schema { } or struct { }
  */
-function isSchemaPropertyDefinition(text: string, offset: number, identifier: string): boolean {
-    // Check if we're inside a schema body
-    // Look backwards for 'schema Name {' with no matching '}'
+function isSchemaOrStructPropertyDefinition(text: string, offset: number, identifier: string): boolean {
+    // Check if we're inside a schema or struct body
+    // Look backwards for 'schema Name {' or 'struct Name {' with no matching '}'
     const textBefore = text.substring(0, offset);
 
-    // Find the last schema declaration
-    const schemaMatch = textBefore.match(/\bschema\s+[\w.]+\s*\{/g);
-    if (!schemaMatch) return false;
+    // Find the last schema or struct declaration
+    const schemaOrStructMatch = textBefore.match(/\b(schema|struct)\s+[\w.]+\s*\{/g);
+    if (!schemaOrStructMatch) return false;
 
-    // Get position of last schema opening brace
-    const lastSchemaStart = textBefore.lastIndexOf(schemaMatch[schemaMatch.length - 1]);
-    const bracePos = textBefore.indexOf('{', lastSchemaStart);
+    // Get position of last schema/struct opening brace
+    const lastMatch = schemaOrStructMatch[schemaOrStructMatch.length - 1];
+    const lastStart = textBefore.lastIndexOf(lastMatch);
+    const bracePos = textBefore.indexOf('{', lastStart);
 
-    // Count braces to see if we're still inside the schema
+    // Count braces to see if we're still inside the schema/struct
     let depth = 0;
     for (let i = bracePos; i < offset; i++) {
         if (text[i] === '{') depth++;
         else if (text[i] === '}') depth--;
     }
 
-    // If depth > 0, we're inside the schema body
+    // If depth > 0, we're inside the schema/struct body
     if (depth <= 0) return false;
 
     // Now check if this identifier follows a type (property name position)

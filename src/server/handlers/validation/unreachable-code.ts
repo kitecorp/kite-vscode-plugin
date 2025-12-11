@@ -105,18 +105,52 @@ function checkBlockForUnreachable(
 
         // Look for return at depth 0
         if (depth === 0 && blockContent.substring(i).match(/^\breturn\b/)) {
-            // Find end of return statement (next newline or semicolon, or end of expression)
+            // Find end of return statement, tracking brace depth for object literals
             const returnStart = i;
             let returnEnd = i + 6; // After 'return'
+            let returnBraceDepth = 0;
+            let returnInString = false;
+            let returnStringChar = '';
 
-            // Skip to end of statement
+            // Skip to end of statement (handle multi-line object literals)
             while (returnEnd < blockContent.length) {
                 const c = blockContent[returnEnd];
-                if (c === '\n') {
+                const pc = returnEnd > 0 ? blockContent[returnEnd - 1] : '';
+
+                // Track strings
+                if (!returnInString && (c === '"' || c === "'")) {
+                    returnInString = true;
+                    returnStringChar = c;
+                    returnEnd++;
+                    continue;
+                }
+                if (returnInString && c === returnStringChar && pc !== '\\') {
+                    returnInString = false;
+                    returnEnd++;
+                    continue;
+                }
+                if (returnInString) {
+                    returnEnd++;
+                    continue;
+                }
+
+                // Track braces for object literals
+                if (c === '{') returnBraceDepth++;
+                if (c === '}') {
+                    if (returnBraceDepth > 0) {
+                        returnBraceDepth--;
+                        returnEnd++;
+                        continue;
+                    }
+                    // This is the function's closing brace, stop here
+                    break;
+                }
+
+                // Only end on newline if not inside object literal
+                if (c === '\n' && returnBraceDepth === 0) {
                     returnEnd++;
                     break;
                 }
-                if (c === '}') break;
                 returnEnd++;
             }
 

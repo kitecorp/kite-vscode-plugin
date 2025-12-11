@@ -18,7 +18,7 @@ import { CompletionContext } from './types';
  */
 interface ImportableSymbol {
     name: string;
-    kind: 'schema' | 'component' | 'function' | 'type';
+    kind: 'schema' | 'struct' | 'component' | 'function' | 'type';
     filePath: string;
     importPath: string;
 }
@@ -81,6 +81,12 @@ function extractSymbolsFromFile(content: string): { name: string; kind: Importab
         symbols.push({ name: m[1], kind: 'schema' });
     }
 
+    // Structs: struct Name {
+    const structRegex = /\bstruct\s+(\w+)\s*\{/g;
+    while ((m = structRegex.exec(content)) !== null) {
+        symbols.push({ name: m[1], kind: 'struct' });
+    }
+
     // Components (definitions only): component Name {
     // Skip instantiations which have two identifiers: component Type name {
     const componentRegex = /\bcomponent\s+(\w+)\s*\{/g;
@@ -109,6 +115,8 @@ function extractSymbolsFromFile(content: string): { name: string; kind: Importab
 function getCompletionItemKind(kind: ImportableSymbol['kind']): CompletionItemKind {
     switch (kind) {
         case 'schema':
+            return CompletionItemKind.Struct;
+        case 'struct':
             return CompletionItemKind.Struct;
         case 'component':
             return CompletionItemKind.Module;

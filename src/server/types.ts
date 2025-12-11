@@ -5,7 +5,7 @@
 import { Range, Location } from 'vscode-languageserver/node';
 
 // Declaration types in Kite
-export type DeclarationType = 'variable' | 'input' | 'output' | 'resource' | 'component' | 'schema' | 'function' | 'type' | 'for' | 'import';
+export type DeclarationType = 'variable' | 'input' | 'output' | 'resource' | 'component' | 'schema' | 'struct' | 'function' | 'type' | 'for' | 'import';
 
 /**
  * Index type for resources created inside loops or with @count.
@@ -82,7 +82,7 @@ export interface DecoratorInfo {
 }
 
 // Decorator target types
-export type DecoratorTarget = 'input' | 'output' | 'resource' | 'component' | 'schema' | 'schema property' | 'var' | 'fun' | null;
+export type DecoratorTarget = 'input' | 'output' | 'resource' | 'component' | 'schema' | 'struct' | 'schema property' | 'struct property' | 'var' | 'fun' | null;
 
 // Block context for resource/component instantiations
 export interface BlockContext {

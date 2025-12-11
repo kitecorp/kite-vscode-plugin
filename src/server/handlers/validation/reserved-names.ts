@@ -19,7 +19,7 @@ const BUILTIN_TYPES = new Set([
 /** Keywords that cannot be used as names */
 const KEYWORDS = new Set([
     'if', 'else', 'for', 'while', 'in', 'return',
-    'var', 'fun', 'schema', 'component', 'resource',
+    'var', 'fun', 'schema', 'struct', 'component', 'resource',
     'input', 'output', 'type', 'import', 'from', 'init', 'this',
     'true', 'false',
 ]);
@@ -34,8 +34,8 @@ export function checkReservedNames(document: TextDocument): Diagnostic[] {
     const diagnostics: Diagnostic[] = [];
     const text = document.getText();
 
-    // Check schema property names: type NAME inside schema { }
-    checkSchemaPropertyNames(text, document, diagnostics);
+    // Check schema/struct property names: type NAME inside schema/struct { }
+    checkSchemaOrStructPropertyNames(text, document, diagnostics);
 
     // Check component input/output names: input type NAME, output type NAME
     checkComponentIONames(text, document, diagnostics);
@@ -44,17 +44,17 @@ export function checkReservedNames(document: TextDocument): Diagnostic[] {
 }
 
 /**
- * Check schema property names for reserved words
+ * Check schema and struct property names for reserved words
  */
-function checkSchemaPropertyNames(text: string, document: TextDocument, diagnostics: Diagnostic[]): void {
-    // Find schema bodies
-    const schemaRegex = /\bschema\s+[\w.]+\s*\{/g;
-    let schemaMatch;
+function checkSchemaOrStructPropertyNames(text: string, document: TextDocument, diagnostics: Diagnostic[]): void {
+    // Find schema and struct bodies
+    const schemaOrStructRegex = /\b(schema|struct)\s+[\w.]+\s*\{/g;
+    let match;
 
-    while ((schemaMatch = schemaRegex.exec(text)) !== null) {
-        if (isInComment(text, schemaMatch.index)) continue;
+    while ((match = schemaOrStructRegex.exec(text)) !== null) {
+        if (isInComment(text, match.index)) continue;
 
-        const braceStart = schemaMatch.index + schemaMatch[0].length - 1;
+        const braceStart = match.index + match[0].length - 1;
         const braceEnd = findMatchingBrace(text, braceStart);
         if (braceEnd === -1) continue;
 

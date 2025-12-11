@@ -117,11 +117,15 @@ export function decoratorAppliesToTarget(dec: DecoratorInfo, target: DecoratorTa
             return targets.includes('component') || targets.includes('any');
         case 'schema':
             return targets.includes('schema') || targets.includes('any');
+        case 'struct':
+            return targets.includes('struct') || targets.includes('any');
         case 'var':
             return targets.includes('var') || targets.includes('any');
         case 'fun':
             return targets.includes('fun') || targets.includes('function') || targets.includes('any');
         case 'schema property':
+            return targets.includes('property') || targets.includes('any');
+        case 'struct property':
             return targets.includes('property') || targets.includes('any');
         default:
             return true;

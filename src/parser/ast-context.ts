@@ -24,8 +24,10 @@ export {
     DeclarationType,
     findDefinitionAST,
     findSchemaByName,
+    findStructByName,
     findComponentDefByName,
     findSchemaPropertyAST,
+    findStructPropertyAST,
     findComponentInputAST,
 } from './ast-definitions';
 
@@ -40,9 +42,11 @@ export {
 // Re-export property extraction utilities
 export {
     SchemaProperty,
+    StructProperty,
     ComponentInput,
     ComponentOutput,
     extractSchemaPropertiesAST,
+    extractStructPropertiesAST,
     extractComponentInputsAST,
     extractComponentOutputsAST,
 } from './ast-properties';
@@ -57,6 +61,13 @@ import type { DefinitionLocation } from './ast-definitions';
  */
 export function findSchemaDefinitionAST(tree: ProgramContext, schemaName: string): DefinitionLocation | null {
     return findDefinitionAST(tree, 'schema', schemaName);
+}
+
+/**
+ * Find struct definition location in the AST
+ */
+export function findStructDefinitionAST(tree: ProgramContext, structName: string): DefinitionLocation | null {
+    return findDefinitionAST(tree, 'struct', structName);
 }
 
 /**

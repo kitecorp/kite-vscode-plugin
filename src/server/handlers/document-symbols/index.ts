@@ -14,6 +14,7 @@ import {
     parseKite,
     ProgramContext,
     SchemaDeclarationContext,
+    StructDeclarationContext,
     ComponentDeclarationContext,
     ResourceDeclarationContext,
     FunctionDeclarationContext,
@@ -51,6 +52,14 @@ export function handleDocumentSymbol(document: TextDocument): DocumentSymbol[] {
         const schemaDecl = decl.schemaDeclaration();
         if (schemaDecl) {
             const symbol = processSchemaDeclaration(schemaDecl, document);
+            if (symbol) symbols.push(symbol);
+            continue;
+        }
+
+        // Struct declaration
+        const structDecl = decl.structDeclaration();
+        if (structDecl) {
+            const symbol = processStructDeclaration(structDecl, document);
             if (symbol) symbols.push(symbol);
             continue;
         }
@@ -187,6 +196,47 @@ function processSchemaDeclaration(ctx: SchemaDeclarationContext, document: TextD
         range,
         nameRange,
         'schema',
+        children.length > 0 ? children : undefined
+    );
+}
+
+function processStructDeclaration(ctx: StructDeclarationContext, document: TextDocument): DocumentSymbol | null {
+    const name = ctx.identifier()?.getText();
+    if (!name) return null;
+
+    const range = getContextRange(ctx, document);
+    const nameRange = getNameRange(ctx.identifier(), document);
+    if (!nameRange) return null;
+
+    // Extract struct properties as children
+    const children: DocumentSymbol[] = [];
+    const propList = ctx.structPropertyList();
+    if (propList) {
+        for (const prop of propList.structProperty_list()) {
+            const propName = prop.identifier()?.getText();
+            const propType = prop.typeIdentifier()?.getText() ?? 'any';
+            if (propName) {
+                const propRange = getContextRange(prop, document);
+                const propNameRange = getNameRange(prop.identifier(), document);
+                if (propNameRange) {
+                    children.push(createSymbol(
+                        propName,
+                        SymbolKind.Property,
+                        propRange,
+                        propNameRange,
+                        propType
+                    ));
+                }
+            }
+        }
+    }
+
+    return createSymbol(
+        name,
+        SymbolKind.Struct,
+        range,
+        nameRange,
+        'struct',
         children.length > 0 ? children : undefined
     );
 }

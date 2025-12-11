@@ -66,6 +66,7 @@ import KiteParser, {
     FunctionDeclarationContext,
     TypeDeclarationContext,
     SchemaDeclarationContext,
+    StructDeclarationContext,
     ResourceDeclarationContext,
     ComponentDeclarationContext,
     InputDeclarationContext,
@@ -264,6 +265,12 @@ function visitDeclaration(
         return;
     }
 
+    const structDecl = ctx.structDeclaration();
+    if (structDecl) {
+        visitStructDeclaration(structDecl, declarations, uri, text);
+        return;
+    }
+
     const resourceDecl = ctx.resourceDeclaration();
     if (resourceDecl) {
         visitResourceDeclaration(resourceDecl, declarations, uri, text, enclosingScope, loopContext, decoratorList);
@@ -404,6 +411,29 @@ function visitSchemaDeclaration(
     declarations.push(decl);
 
     // Note: Schema properties are not added as declarations
+    // They are handled differently (property lookup)
+}
+
+/**
+ * Visit a struct declaration
+ */
+function visitStructDeclaration(
+    ctx: StructDeclarationContext,
+    declarations: Declaration[],
+    uri: string,
+    text: string
+): void {
+    const nameCtx = ctx.identifier();
+    if (!nameCtx) return;
+
+    const name = getIdentifierText(nameCtx);
+    if (!name) return;
+
+    const decl = createDeclaration(name, 'struct', nameCtx, uri, text);
+    extractDocumentation(decl, ctx, text);
+    declarations.push(decl);
+
+    // Note: Struct properties are not added as declarations
     // They are handled differently (property lookup)
 }
 

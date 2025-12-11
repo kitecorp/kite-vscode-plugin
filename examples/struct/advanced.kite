@@ -1,0 +1,119 @@
+// Advanced struct examples - realistic use cases
+
+import * from "basic.kite"
+
+// Type alias with struct
+type Environment = "dev" | "staging" | "prod"
+
+// Struct for cloud resource configuration
+struct EC2Config {
+    string instanceType = "t3.micro"
+    string ami
+    string[] securityGroups
+    boolean publicIp = false
+}
+
+// Struct for database settings
+struct DatabaseConfig {
+    string engine = "postgres"
+    string version = "15"
+    number port = 5432
+    number storage = 20
+    boolean multiAz = false
+    boolean encrypted = true
+}
+
+// Struct for networking
+struct NetworkConfig {
+    string vpcCidr = "10.0.0.0/16"
+    string[] publicSubnets
+    string[] privateSubnets
+    boolean natGateway = true
+}
+
+// Struct for application deployment
+struct DeploymentConfig {
+    string name
+    Environment environment = "dev"
+    number replicas = 1
+    string[] ports
+    object envVars
+}
+
+// Nested struct usage
+struct InfrastructureStack {
+    string name
+    string region = "us-east-1"
+    NetworkConfig network
+    EC2Config[] instances
+    DatabaseConfig database
+}
+
+// Schema using struct as property type
+schema WebApplication {
+    string name
+    DeploymentConfig deployment
+    @cloud string endpoint
+}
+
+// Resource using schema with struct
+resource WebApplication myApp {
+    name = "my-web-app"
+    deployment = {
+        name: "web",
+        environment: "prod",
+        replicas: 3,
+        ports: ["80", "443"],
+        envVars: {
+            NODE_ENV: "production"
+        }
+    }
+}
+
+// Component with struct inputs
+component LoadBalancer {
+    input string name
+    input string[] targets
+    input NetworkConfig network
+
+    output string dnsName = "${name}.elb.amazonaws.com"
+    output number port = 443
+}
+
+// Using the component
+component LoadBalancer appLb {
+    name = "app-lb"
+    targets = ["instance-1", "instance-2"]
+    network = {
+        vpcCidr: "10.0.0.0/16",
+        publicSubnets: ["10.0.1.0/24", "10.0.2.0/24"],
+        privateSubnets: ["10.0.10.0/24", "10.0.11.0/24"],
+        natGateway: true
+    }
+}
+
+// Function working with structs
+fun createStack(string name, string region) InfrastructureStack {
+    return {
+        name: name,
+        region: region,
+        network: {
+            vpcCidr: "10.0.0.0/16",
+            publicSubnets: ["10.0.1.0/24"],
+            privateSubnets: ["10.0.10.0/24"],
+            natGateway: true
+        },
+        instances: [],
+        database: {
+            engine: "postgres",
+            version: "15",
+            port: 5432,
+            storage: 100,
+            multiAz: true,
+            encrypted: true
+        }
+    }
+}
+
+// Variable with struct type
+var prodStack = createStack("production", "us-west-2")
