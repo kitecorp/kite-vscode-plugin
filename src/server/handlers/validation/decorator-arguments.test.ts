@@ -192,7 +192,7 @@ input string name`);
             const diagnostics = checkDecoratorArguments(doc);
             expect(diagnostics).toHaveLength(1);
             expect(diagnostics[0].message).toContain('@nonEmpty');
-            expect(diagnostics[0].message).toContain('no arguments');
+            expect(diagnostics[0].message).toContain('does not take arguments');
         });
 
         it('should accept @sensitive without arguments', () => {

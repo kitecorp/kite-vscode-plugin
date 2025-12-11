@@ -35,7 +35,7 @@ export function handleOnTypeFormatting(
 }
 
 /**
- * Handle newline - add appropriate indentation
+ * Handle newline - add appropriate indentation and auto-close braces
  */
 function handleNewline(
     document: TextDocument,
@@ -57,9 +57,22 @@ function handleNewline(
         const prevIndent = getIndent(prevLine);
         const newIndent = prevIndent + getIndentUnit(options);
 
-        return [
+        const edits: TextEdit[] = [
             TextEdit.insert(Position.create(position.line, 0), newIndent)
         ];
+
+        // Check if brace needs to be closed (auto-close feature)
+        if (needsClosingBrace(lines, prevLineIndex)) {
+            // Insert closing brace on the next line with same indent as opening line
+            edits.push(
+                TextEdit.insert(
+                    Position.create(position.line, 0),
+                    '\n' + prevIndent + '}'
+                )
+            );
+        }
+
+        return edits;
     }
 
     // If not after a brace, maintain the same indent as previous line
@@ -71,6 +84,33 @@ function handleNewline(
     }
 
     return [];
+}
+
+/**
+ * Check if the opening brace at the given line needs a closing brace
+ */
+function needsClosingBrace(lines: string[], openBraceLine: number): boolean {
+    let braceCount = 0;
+
+    // Count all braces from the opening brace line to the end
+    for (let i = openBraceLine; i < lines.length; i++) {
+        const line = lines[i];
+
+        for (let j = 0; j < line.length; j++) {
+            // Skip braces inside strings
+            if (isInsideStringAtPosition(line, j)) continue;
+
+            const char = line[j];
+            if (char === '{') {
+                braceCount++;
+            } else if (char === '}') {
+                braceCount--;
+            }
+        }
+    }
+
+    // If braceCount > 0, there are unclosed braces
+    return braceCount > 0;
 }
 
 /**

@@ -948,6 +948,40 @@ import * from "current.kite"  // Error: Circular import: File imports itself
 
 ---
 
+## Impossible Condition
+
+**File:** `impossible-condition.ts`
+
+Reports warning when conditions are mathematically impossible.
+
+```kite
+// Equality contradiction
+if (x == 5 && x == 6) { }  // Warning: x cannot equal both 5 and 6
+
+// Range contradiction
+if (x > 5 && x < 5) { }    // Warning: can never be true
+if (x > 10 && x < 5) { }   // Warning: can never be true
+if (x >= 10 && x <= 5) { } // Warning: can never be true
+
+// Equality vs range contradiction
+if (x == 5 && x > 5) { }   // Warning: can never be true
+if (x == 5 && x < 5) { }   // Warning: can never be true
+
+// OK examples
+if (x > 5 && x < 10) { }   // OK - valid range (5 < x < 10)
+if (x == 5 && x >= 5) { }  // OK - valid (x is exactly 5)
+if (x == 5 && y == 6) { }  // OK - different variables
+```
+
+**Detected patterns:**
+- `x == a && x == b` where a ≠ b (equality contradiction)
+- `x > a && x < b` where a ≥ b (impossible range)
+- `x >= a && x <= b` where a > b (impossible range)
+- `x == a && x > a` or `x == a && x < a` (equality vs range)
+- Also handles reversed comparisons (`5 > x`)
+
+---
+
 ## Indexed Access Validation
 
 **File:** `indexed-access.ts`
@@ -1027,4 +1061,5 @@ var x = db["staging"]  // Error: Key "staging" is not valid
 | Reserved names | Error | `reserved-names.ts` |
 | Missing properties | Error | `missing-properties.ts` |
 | Circular imports | Error | `circular-imports.ts` |
+| Impossible condition | Warning | `impossible-condition.ts` |
 | Indexed access | Error | `indexed-access.ts` |

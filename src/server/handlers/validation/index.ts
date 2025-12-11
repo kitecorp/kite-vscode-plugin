@@ -1,18 +1,23 @@
 /**
  * Document validation handler for the Kite language server.
+ *
+ * This module orchestrates all validation checks. Individual checks are
+ * implemented in separate modules for maintainability.
  */
 
 import {
     Diagnostic,
-    DiagnosticSeverity,
-    Range,
     Location,
 } from 'vscode-languageserver/node';
 import { TextDocument } from 'vscode-languageserver-textdocument';
-import { URI } from 'vscode-uri';
-import * as path from 'path';
-import { Declaration, ImportSuggestion, ImportInfo, BaseContext } from '../../types';
-import { DECORATORS } from '../../constants';
+import { ImportSuggestion, ImportInfo, BaseContext } from '../../types';
+
+// Import modular validation checks
+import { checkDecoratorArguments } from './decorator-arguments';
+import { checkResourceSchemaTypes, checkComponentInstantiationTypes, checkFunctionCalls } from './symbol-resolution';
+import { checkComponentDefinitionDuplicates } from './component-definition-validation';
+
+// Import individual check modules
 import { checkTypeMismatches } from './type-checking';
 import { checkUnusedImports } from './unused-imports';
 import { checkUnusedVariables } from './unused-variables';
@@ -47,6 +52,7 @@ import { checkDuplicateImport } from './duplicate-import';
 import { checkConstantCondition } from './constant-condition';
 import { checkTooManyParameters } from './too-many-parameters';
 import { checkRedundantCondition } from './redundant-condition';
+import { checkImpossibleCondition } from './impossible-condition';
 import { checkTypeCoercion } from './type-coercion';
 import { checkEmptyStringCheck } from './empty-string-check';
 import { checkRedundantBoolean } from './redundant-boolean';
@@ -58,8 +64,6 @@ import { checkImplicitAny } from './implicit-any';
 import { checkSyntaxErrors } from './syntax-errors';
 import { checkReturnTypeMismatch } from './return-type-mismatch';
 import { checkIndexedAccess } from './indexed-access';
-import { isInComment } from '../../utils/text-utils';
-import { findSymbolInWorkspace } from '../../utils/workspace-utils';
 
 /**
  * Context containing dependencies needed for validation
@@ -89,497 +93,30 @@ export function validateDocument(document: TextDocument, ctx: ValidationContext)
     const text = document.getText();
 
     // Check for syntax errors first (parsing errors)
-    const syntaxDiagnostics = checkSyntaxErrors(document);
-    diagnostics.push(...syntaxDiagnostics);
+    diagnostics.push(...checkSyntaxErrors(document));
 
-    // Find all decorator usages: @decoratorName or @decoratorName(args)
-    const decoratorRegex = /@(\w+)(\s*\(([^)]*)\))?/g;
-    let match;
+    // Check decorator arguments
+    diagnostics.push(...checkDecoratorArguments(document));
 
-    while ((match = decoratorRegex.exec(text)) !== null) {
-        const decoratorName = match[1];
-        const hasParens = match[2] !== undefined;
-        const argsStr = match[3]?.trim() || '';
-
-        // Find the decorator definition
-        const decoratorDef = DECORATORS.find(d => d.name === decoratorName);
-
-        if (!decoratorDef) {
-            // Unknown decorator - could add a warning but skip for now
-            continue;
-        }
-
-        const startPos = document.positionAt(match.index);
-        const endPos = document.positionAt(match.index + match[0].length);
-        const range = Range.create(startPos, endPos);
-
-        // Validate based on expected argument type
-        const expectedType = decoratorDef.argType;
-
-        if (expectedType === 'none') {
-            // Should not have arguments
-            if (hasParens && argsStr) {
-                diagnostics.push({
-                    severity: DiagnosticSeverity.Error,
-                    range,
-                    message: `@${decoratorName} does not take arguments`,
-                    source: 'kite'
-                });
-            }
-        } else if (expectedType === 'number') {
-            if (!hasParens || !argsStr) {
-                diagnostics.push({
-                    severity: DiagnosticSeverity.Error,
-                    range,
-                    message: `@${decoratorName} requires a number argument`,
-                    source: 'kite'
-                });
-            } else if (!/^\d+$/.test(argsStr) && !/^\w+$/.test(argsStr)) {
-                // Allow numbers or variable references
-                if (/^".*"$/.test(argsStr) || /^'.*'$/.test(argsStr)) {
-                    diagnostics.push({
-                        severity: DiagnosticSeverity.Error,
-                        range,
-                        message: `@${decoratorName} expects a number, got string`,
-                        source: 'kite'
-                    });
-                } else if (/^\[/.test(argsStr)) {
-                    diagnostics.push({
-                        severity: DiagnosticSeverity.Error,
-                        range,
-                        message: `@${decoratorName} expects a number, got array`,
-                        source: 'kite'
-                    });
-                } else if (/^\{/.test(argsStr)) {
-                    diagnostics.push({
-                        severity: DiagnosticSeverity.Error,
-                        range,
-                        message: `@${decoratorName} expects a number, got object`,
-                        source: 'kite'
-                    });
-                }
-            }
-        } else if (expectedType === 'string') {
-            if (!hasParens || !argsStr) {
-                diagnostics.push({
-                    severity: DiagnosticSeverity.Error,
-                    range,
-                    message: `@${decoratorName} requires a string argument`,
-                    source: 'kite'
-                });
-            } else if (!/^".*"$/.test(argsStr) && !/^'.*'$/.test(argsStr) && !/^\w+$/.test(argsStr)) {
-                // Allow string literals or variable references
-                if (/^\d+$/.test(argsStr)) {
-                    diagnostics.push({
-                        severity: DiagnosticSeverity.Error,
-                        range,
-                        message: `@${decoratorName} expects a string, got number`,
-                        source: 'kite'
-                    });
-                } else if (/^\[/.test(argsStr)) {
-                    // Allow arrays for @provider(["aws", "azure"])
-                    if (decoratorName !== 'provider') {
-                        diagnostics.push({
-                            severity: DiagnosticSeverity.Error,
-                            range,
-                            message: `@${decoratorName} expects a string, got array`,
-                            source: 'kite'
-                        });
-                    }
-                } else if (/^\{/.test(argsStr)) {
-                    diagnostics.push({
-                        severity: DiagnosticSeverity.Error,
-                        range,
-                        message: `@${decoratorName} expects a string, got object`,
-                        source: 'kite'
-                    });
-                }
-            }
-        } else if (expectedType === 'array') {
-            if (!hasParens || !argsStr) {
-                diagnostics.push({
-                    severity: DiagnosticSeverity.Error,
-                    range,
-                    message: `@${decoratorName} requires an array argument`,
-                    source: 'kite'
-                });
-            } else if (!/^\[/.test(argsStr) && !/^\w+$/.test(argsStr)) {
-                // Must start with [ or be a variable reference
-                if (/^".*"$/.test(argsStr) || /^'.*'$/.test(argsStr)) {
-                    diagnostics.push({
-                        severity: DiagnosticSeverity.Error,
-                        range,
-                        message: `@${decoratorName} expects an array, got string`,
-                        source: 'kite'
-                    });
-                } else if (/^\d+$/.test(argsStr)) {
-                    diagnostics.push({
-                        severity: DiagnosticSeverity.Error,
-                        range,
-                        message: `@${decoratorName} expects an array, got number`,
-                        source: 'kite'
-                    });
-                } else if (/^\{/.test(argsStr)) {
-                    diagnostics.push({
-                        severity: DiagnosticSeverity.Error,
-                        range,
-                        message: `@${decoratorName} expects an array, got object`,
-                        source: 'kite'
-                    });
-                }
-            }
-        } else if (expectedType === 'object') {
-            if (!hasParens || !argsStr) {
-                diagnostics.push({
-                    severity: DiagnosticSeverity.Error,
-                    range,
-                    message: `@${decoratorName} requires an argument`,
-                    source: 'kite'
-                });
-            }
-            // @tags accepts object, array, or string - so we allow all for it
-        } else if (expectedType === 'named') {
-            // Named arguments like @validate(regex: "pattern")
-            if (!hasParens || !argsStr) {
-                diagnostics.push({
-                    severity: DiagnosticSeverity.Error,
-                    range,
-                    message: `@${decoratorName} requires named arguments (e.g., regex: "pattern")`,
-                    source: 'kite'
-                });
-            } else if (!/\w+\s*:/.test(argsStr)) {
-                // Must have named argument format
-                diagnostics.push({
-                    severity: DiagnosticSeverity.Error,
-                    range,
-                    message: `@${decoratorName} requires named arguments (e.g., regex: "pattern")`,
-                    source: 'kite'
-                });
-            }
-        }
-        // 'reference' type is flexible - accepts identifiers or arrays
-    }
-
-    // Validate resource schema types
-    const currentFilePath = URI.parse(document.uri).fsPath;
-    const currentDir = path.dirname(currentFilePath);
+    // Setup for symbol resolution checks
     const imports = ctx.extractImports(text);
-
-    // Clear previous diagnostic data for this document
     ctx.clearDiagnosticData(document.uri);
     const docDiagnosticData = ctx.getDiagnosticData(document.uri);
 
-    // Check resource declarations: resource SchemaName instanceName {
-    const resourceRegex = /\bresource\s+([\w.]+)\s+(\w+)\s*\{/g;
-    let resourceMatch;
-    while ((resourceMatch = resourceRegex.exec(text)) !== null) {
-        // Skip if inside a comment
-        if (isInComment(text, resourceMatch.index)) continue;
+    // Check resource schema types
+    diagnostics.push(...checkResourceSchemaTypes(document, ctx, imports, docDiagnosticData));
 
-        const schemaName = resourceMatch[1];
-        // Find the actual position of the schema name in the match
-        const matchText = resourceMatch[0];
-        const schemaOffsetInMatch = matchText.indexOf(schemaName);
-        const schemaStart = resourceMatch.index + schemaOffsetInMatch;
-        const schemaEnd = schemaStart + schemaName.length;
+    // Check component instantiation types
+    diagnostics.push(...checkComponentInstantiationTypes(document, ctx, imports, docDiagnosticData));
 
-        // Check if schema exists in current file
-        const schemaInCurrentFile = ctx.findSchemaDefinition(text, schemaName, document.uri);
-        if (schemaInCurrentFile) continue;
+    // Check function calls
+    diagnostics.push(...checkFunctionCalls(document, ctx, imports, docDiagnosticData));
 
-        // Check if schema is in other files
-        const schemaSearch = findSymbolInWorkspace(
-            ctx, currentFilePath, document.uri,
-            (content, path) => ctx.findSchemaDefinition(content, schemaName, path)
-        );
-        const foundInFile = schemaSearch.filePath;
+    // Check for duplicate names in component definitions
+    diagnostics.push(...checkComponentDefinitionDuplicates(document));
 
-        const startPos = document.positionAt(schemaStart);
-        const endPos = document.positionAt(schemaEnd);
-        const range = Range.create(startPos, endPos);
-
-        if (foundInFile) {
-            // Schema exists but might not be imported
-            if (!ctx.isSymbolImported(imports, schemaName, foundInFile, currentFilePath)) {
-                // Calculate import path
-                let importPath = path.relative(currentDir, foundInFile);
-                importPath = importPath.replace(/\\/g, '/');
-
-                const diagnosticKey = `${startPos.line}:${startPos.character}:${schemaName}`;
-                docDiagnosticData.set(diagnosticKey, {
-                    symbolName: schemaName,
-                    filePath: foundInFile,
-                    importPath
-                });
-
-                diagnostics.push({
-                    severity: DiagnosticSeverity.Error,
-                    range,
-                    message: `Schema '${schemaName}' is not imported. Found in '${path.basename(foundInFile)}'.`,
-                    source: 'kite',
-                    data: diagnosticKey
-                });
-            }
-        } else {
-            // Schema not found anywhere
-            diagnostics.push({
-                severity: DiagnosticSeverity.Error,
-                range,
-                message: `Cannot resolve schema '${schemaName}'`,
-                source: 'kite'
-            });
-        }
-    }
-
-    // Check component instantiations: component TypeName instanceName {
-    // Must have TWO identifiers (type and instance name) - definitions only have one
-    const componentInstRegex = /\bcomponent\s+(\w+)\s+(\w+)\s*\{/g;
-    let componentMatch;
-    while ((componentMatch = componentInstRegex.exec(text)) !== null) {
-        // Skip if inside a comment
-        if (isInComment(text, componentMatch.index)) continue;
-
-        const componentType = componentMatch[1];
-        // Find the actual position of the type name in the match
-        const matchText = componentMatch[0];
-        const typeOffsetInMatch = matchText.indexOf(componentType);
-        const typeStart = componentMatch.index + typeOffsetInMatch;
-        const typeEnd = typeStart + componentType.length;
-
-        // Check if component exists in current file
-        const componentInCurrentFile = ctx.findComponentDefinition(text, componentType, document.uri);
-        if (componentInCurrentFile) continue;
-
-        // Check if component is in other files
-        const componentSearch = findSymbolInWorkspace(
-            ctx, currentFilePath, document.uri,
-            (content, path) => ctx.findComponentDefinition(content, componentType, path)
-        );
-        const foundInFile = componentSearch.filePath;
-
-        const startPos = document.positionAt(typeStart);
-        const endPos = document.positionAt(typeEnd);
-        const range = Range.create(startPos, endPos);
-
-        if (foundInFile) {
-            // Component exists but might not be imported
-            if (!ctx.isSymbolImported(imports, componentType, foundInFile, currentFilePath)) {
-                // Calculate import path
-                let importPath = path.relative(currentDir, foundInFile);
-                importPath = importPath.replace(/\\/g, '/');
-
-                const diagnosticKey = `${startPos.line}:${startPos.character}:${componentType}`;
-                docDiagnosticData.set(diagnosticKey, {
-                    symbolName: componentType,
-                    filePath: foundInFile,
-                    importPath
-                });
-
-                diagnostics.push({
-                    severity: DiagnosticSeverity.Error,
-                    range,
-                    message: `Component '${componentType}' is not imported. Found in '${path.basename(foundInFile)}'.`,
-                    source: 'kite',
-                    data: diagnosticKey
-                });
-            }
-        } else {
-            // Component not found anywhere
-            diagnostics.push({
-                severity: DiagnosticSeverity.Error,
-                range,
-                message: `Cannot resolve component '${componentType}'`,
-                source: 'kite'
-            });
-        }
-    }
-
-    // Check function calls: functionName(
-    // We need to find function calls that are NOT definitions and NOT in declarations cache
-    const functionCallRegex = /\b([a-z]\w*)\s*\(/g;
-    let funcMatch;
+    // Get local declarations for checks that need them
     const localDeclarations = ctx.getDeclarations(document.uri) || [];
-    // Get all local names to exclude (inputs, outputs, variables, etc.)
-    const localNames = new Set(localDeclarations.map(d => d.name));
-
-    // Built-in functions to ignore
-    const builtinFunctions = new Set(['println', 'print', 'len', 'toString', 'toNumber', 'typeof']);
-
-    while ((funcMatch = functionCallRegex.exec(text)) !== null) {
-        // Skip if inside a comment
-        if (isInComment(text, funcMatch.index)) continue;
-
-        const funcName = funcMatch[1];
-
-        // Skip if it's a builtin function
-        if (builtinFunctions.has(funcName)) continue;
-
-        // Skip if it's a local declaration (function, variable, input, output, etc.)
-        if (localNames.has(funcName)) continue;
-
-        // Skip if it's a keyword that might be followed by (
-        if (['if', 'while', 'for', 'fun', 'return'].includes(funcName)) continue;
-
-        // Skip function definitions: fun funcName(
-        const beforeMatch = text.substring(Math.max(0, funcMatch.index - 20), funcMatch.index);
-        if (/\bfun\s+$/.test(beforeMatch)) continue;
-
-        // Skip decorators: @decoratorName(
-        if (/@\s*$/.test(beforeMatch)) continue;
-
-        // Find the position
-        const funcStart = funcMatch.index;
-        const funcEnd = funcStart + funcName.length;
-
-        // Check if function exists in current file
-        const funcInCurrentFile = ctx.findFunctionDefinition(text, funcName, document.uri);
-        if (funcInCurrentFile) continue;
-
-        // Check if function is in other files
-        const funcSearch = findSymbolInWorkspace(
-            ctx, currentFilePath, document.uri,
-            (content, path) => ctx.findFunctionDefinition(content, funcName, path)
-        );
-        const foundInFile = funcSearch.filePath;
-
-        const startPos = document.positionAt(funcStart);
-        const endPos = document.positionAt(funcEnd);
-        const range = Range.create(startPos, endPos);
-
-        if (foundInFile) {
-            // Function exists but might not be imported
-            if (!ctx.isSymbolImported(imports, funcName, foundInFile, currentFilePath)) {
-                // Calculate import path
-                let importPath = path.relative(currentDir, foundInFile);
-                importPath = importPath.replace(/\\/g, '/');
-
-                const diagnosticKey = `${startPos.line}:${startPos.character}:${funcName}`;
-                docDiagnosticData.set(diagnosticKey, {
-                    symbolName: funcName,
-                    filePath: foundInFile,
-                    importPath
-                });
-
-                diagnostics.push({
-                    severity: DiagnosticSeverity.Error,
-                    range,
-                    message: `Function '${funcName}' is not imported. Found in '${path.basename(foundInFile)}'.`,
-                    source: 'kite',
-                    data: diagnosticKey
-                });
-            }
-        } else {
-            // Function not found anywhere - could be undefined or a method call
-            // Only show error if it looks like a standalone function call
-            diagnostics.push({
-                severity: DiagnosticSeverity.Error,
-                range,
-                message: `Cannot resolve function '${funcName}'`,
-                source: 'kite'
-            });
-        }
-    }
-
-    // Validate unique names within component definitions
-    // Find all component definitions: component TypeName { (without instance name)
-    const compDefRegex = /\bcomponent\s+(\w+)\s*\{/g;
-    let compDefMatch;
-    while ((compDefMatch = compDefRegex.exec(text)) !== null) {
-        // Check if this is a definition (not instantiation) by looking for instance name
-        const fullMatch = compDefMatch[0];
-        const afterComponent = fullMatch.substring(10).trim(); // after "component "
-        const parts = afterComponent.split(/\s+/);
-
-        // Definition has: TypeName { -> parts = ["TypeName", "{"]
-        // Instantiation has: TypeName instanceName { -> parts = ["TypeName", "instanceName", "{"]
-        if (parts.length !== 2 || parts[1] !== '{') {
-            continue; // This is an instantiation, skip
-        }
-
-        const componentName = compDefMatch[1];
-        const braceStart = compDefMatch.index + compDefMatch[0].length - 1;
-
-        // Find matching closing brace
-        let braceDepth = 1;
-        let pos = braceStart + 1;
-        while (pos < text.length && braceDepth > 0) {
-            if (text[pos] === '{') braceDepth++;
-            else if (text[pos] === '}') braceDepth--;
-            pos++;
-        }
-        const braceEnd = pos;
-        const bodyText = text.substring(braceStart + 1, braceEnd - 1);
-        const bodyOffset = braceStart + 1;
-
-        // Track all names within this component with their positions
-        interface NameDecl {
-            name: string;
-            type: string;
-            offset: number;
-        }
-        const nameDeclarations: NameDecl[] = [];
-
-        // Find inputs: input type name
-        const inputRegex = /\binput\s+\w+(?:\[\])?\s+(\w+)/g;
-        let inputMatch;
-        while ((inputMatch = inputRegex.exec(bodyText)) !== null) {
-            const nameOffset = bodyOffset + inputMatch.index + inputMatch[0].lastIndexOf(inputMatch[1]);
-            nameDeclarations.push({ name: inputMatch[1], type: 'input', offset: nameOffset });
-        }
-
-        // Find outputs: output type name
-        const outputRegex = /\boutput\s+\w+(?:\[\])?\s+(\w+)/g;
-        let outputMatch;
-        while ((outputMatch = outputRegex.exec(bodyText)) !== null) {
-            const nameOffset = bodyOffset + outputMatch.index + outputMatch[0].lastIndexOf(outputMatch[1]);
-            nameDeclarations.push({ name: outputMatch[1], type: 'output', offset: nameOffset });
-        }
-
-        // Find variables: var [type] name =
-        const varRegex = /\bvar\s+(?:\w+\s+)?(\w+)\s*=/g;
-        let varMatch;
-        while ((varMatch = varRegex.exec(bodyText)) !== null) {
-            const nameOffset = bodyOffset + varMatch.index + varMatch[0].indexOf(varMatch[1]);
-            nameDeclarations.push({ name: varMatch[1], type: 'variable', offset: nameOffset });
-        }
-
-        // Find resources: resource Schema name {
-        const resRegex = /\bresource\s+[\w.]+\s+(\w+)\s*\{/g;
-        let resMatch;
-        while ((resMatch = resRegex.exec(bodyText)) !== null) {
-            const nameOffset = bodyOffset + resMatch.index + resMatch[0].lastIndexOf(resMatch[1]);
-            nameDeclarations.push({ name: resMatch[1], type: 'resource', offset: nameOffset });
-        }
-
-        // Find nested component instances: component Type name {
-        const nestedCompRegex = /\bcomponent\s+\w+\s+(\w+)\s*\{/g;
-        let nestedCompMatch;
-        while ((nestedCompMatch = nestedCompRegex.exec(bodyText)) !== null) {
-            const nameOffset = bodyOffset + nestedCompMatch.index + nestedCompMatch[0].lastIndexOf(nestedCompMatch[1]);
-            nameDeclarations.push({ name: nestedCompMatch[1], type: 'component', offset: nameOffset });
-        }
-
-        // Check for duplicates
-        const seenNames = new Map<string, NameDecl>();
-        for (const decl of nameDeclarations) {
-            const existing = seenNames.get(decl.name);
-            if (existing) {
-                // Duplicate found - report error on the second occurrence
-                const startPos = document.positionAt(decl.offset);
-                const endPos = document.positionAt(decl.offset + decl.name.length);
-                const range = Range.create(startPos, endPos);
-
-                diagnostics.push({
-                    severity: DiagnosticSeverity.Error,
-                    range,
-                    message: `Duplicate name '${decl.name}' in component '${componentName}'. Already declared as ${existing.type}.`,
-                    source: 'kite'
-                });
-            } else {
-                seenNames.set(decl.name, decl);
-            }
-        }
-    }
 
     // Check for type mismatches
     const typeDiagnostics = checkTypeMismatches(document);
@@ -716,6 +253,10 @@ export function validateDocument(document: TextDocument, ctx: ValidationContext)
     // Check for redundant conditions (x && x, x || x)
     const redundantConditionDiagnostics = checkRedundantCondition(document);
     diagnostics.push(...redundantConditionDiagnostics);
+
+    // Check for impossible conditions (x > 5 && x < 5)
+    const impossibleConditionDiagnostics = checkImpossibleCondition(document);
+    diagnostics.push(...impossibleConditionDiagnostics);
 
     // Check for type coercion in comparisons
     const typeCoercionDiagnostics = checkTypeCoercion(document);

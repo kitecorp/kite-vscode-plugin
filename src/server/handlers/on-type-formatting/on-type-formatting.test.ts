@@ -30,7 +30,7 @@ describe('On Type Formatting', () => {
                 defaultOptions
             );
 
-            expect(edits).toHaveLength(1);
+            expect(edits.length).toBeGreaterThanOrEqual(1);
             expect(edits[0].newText).toBe('    '); // 4 spaces indent
             expect(edits[0].range.start.line).toBe(1);
         });
@@ -45,7 +45,7 @@ describe('On Type Formatting', () => {
                 defaultOptions
             );
 
-            expect(edits).toHaveLength(1);
+            expect(edits.length).toBeGreaterThanOrEqual(1);
             expect(edits[0].newText).toBe('    ');
         });
 
@@ -59,7 +59,7 @@ describe('On Type Formatting', () => {
                 defaultOptions
             );
 
-            expect(edits).toHaveLength(1);
+            expect(edits.length).toBeGreaterThanOrEqual(1);
             expect(edits[0].newText).toBe('    ');
         });
 
@@ -73,7 +73,7 @@ describe('On Type Formatting', () => {
                 defaultOptions
             );
 
-            expect(edits).toHaveLength(1);
+            expect(edits.length).toBeGreaterThanOrEqual(1);
             expect(edits[0].newText).toBe('    ');
         });
 
@@ -87,7 +87,7 @@ describe('On Type Formatting', () => {
                 defaultOptions
             );
 
-            expect(edits).toHaveLength(1);
+            expect(edits.length).toBeGreaterThanOrEqual(1);
             expect(edits[0].newText).toBe('    ');
         });
 
@@ -101,7 +101,7 @@ describe('On Type Formatting', () => {
                 defaultOptions
             );
 
-            expect(edits).toHaveLength(1);
+            expect(edits.length).toBeGreaterThanOrEqual(1);
             expect(edits[0].newText).toBe('    ');
         });
 
@@ -115,7 +115,7 @@ describe('On Type Formatting', () => {
                 { tabSize: 4, insertSpaces: false }
             );
 
-            expect(edits).toHaveLength(1);
+            expect(edits.length).toBeGreaterThanOrEqual(1);
             expect(edits[0].newText).toBe('\t');
         });
     });
@@ -132,7 +132,7 @@ describe('On Type Formatting', () => {
                 defaultOptions
             );
 
-            expect(edits).toHaveLength(1);
+            expect(edits.length).toBeGreaterThanOrEqual(1);
             expect(edits[0].newText).toBe('        '); // 8 spaces
         });
 
@@ -241,8 +241,73 @@ describe('On Type Formatting', () => {
                 defaultOptions
             );
 
-            expect(edits).toHaveLength(1);
+            expect(edits.length).toBeGreaterThanOrEqual(1);
             expect(edits[0].newText).toBe('    ');
+        });
+    });
+
+    describe('Auto-close brace', () => {
+        it('should auto-insert closing brace after Enter on line ending with {', () => {
+            // User typed { then Enter - brace is not closed yet
+            const doc = createDocument(`schema Config {
+`);
+            const edits = handleOnTypeFormatting(
+                doc,
+                Position.create(1, 0),
+                '\n',
+                defaultOptions
+            );
+
+            // Should have 2 edits: indent + closing brace
+            expect(edits).toHaveLength(2);
+            expect(edits[0].newText).toBe('    '); // Indent for cursor line
+            expect(edits[1].newText).toBe('\n}'); // Closing brace on next line
+        });
+
+        it('should not auto-insert closing brace if already closed', () => {
+            // Brace is already closed
+            const doc = createDocument(`schema Config {
+}
+`);
+            const edits = handleOnTypeFormatting(
+                doc,
+                Position.create(1, 0),
+                '\n',
+                defaultOptions
+            );
+
+            // Should only have indent, no extra closing brace
+            expect(edits.length).toBeLessThanOrEqual(1);
+        });
+
+        it('should auto-insert closing brace with proper indent for nested blocks', () => {
+            const doc = createDocument(`schema Config {
+    fun process() {
+`);
+            const edits = handleOnTypeFormatting(
+                doc,
+                Position.create(2, 0),
+                '\n',
+                defaultOptions
+            );
+
+            expect(edits).toHaveLength(2);
+            expect(edits[0].newText).toBe('        '); // Double indent for cursor
+            expect(edits[1].newText).toBe('\n    }'); // Closing brace with single indent
+        });
+
+        it('should not auto-insert closing brace when { is inside string', () => {
+            const doc = createDocument(`var msg = "hello {
+`);
+            const edits = handleOnTypeFormatting(
+                doc,
+                Position.create(1, 0),
+                '\n',
+                defaultOptions
+            );
+
+            // Should not insert closing brace because { is inside string
+            expect(edits.every(e => !e.newText.includes('}'))).toBe(true);
         });
     });
 
@@ -257,7 +322,7 @@ describe('On Type Formatting', () => {
                 { tabSize: 2, insertSpaces: true }
             );
 
-            expect(edits).toHaveLength(1);
+            expect(edits.length).toBeGreaterThanOrEqual(1);
             expect(edits[0].newText).toBe('  '); // 2 spaces
         });
 
@@ -271,7 +336,7 @@ describe('On Type Formatting', () => {
                 { tabSize: 8, insertSpaces: true }
             );
 
-            expect(edits).toHaveLength(1);
+            expect(edits.length).toBeGreaterThanOrEqual(1);
             expect(edits[0].newText).toBe('        '); // 8 spaces
         });
     });

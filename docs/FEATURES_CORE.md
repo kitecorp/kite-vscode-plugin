@@ -144,6 +144,39 @@ component WebServer █    // Shows: webServer, server, srv, myWebServer, mainWe
 - Ignores context inside strings and comments
 - Does not trigger for component definitions (single name before `{`)
 
+### String Interpolation Completions
+
+**File:** `src/server/handlers/completion/string-interpolation-completions.ts`
+
+When typing after a dot inside a string interpolation `"${variable.}"`, suggests type-appropriate methods:
+
+```kite
+var name = "hello"
+var greeting = "Hello ${name.█"  // Shows: toUpperCase, toLowerCase, length, trim, etc.
+
+var items = [1, 2, 3]
+var msg = "Count: ${items.█"     // Shows: length, join, includes, map, filter, etc.
+
+var count = 42
+var text = "Value: ${count.█"    // Shows: toString, toFixed, abs, ceil, floor, etc.
+```
+
+#### Method Categories by Type:
+
+| Type | Methods |
+|------|---------|
+| **string** | `length`, `toUpperCase`, `toLowerCase`, `trim`, `split`, `substring`, `replace`, `includes`, `startsWith`, `endsWith`, `indexOf`, `charAt`, `concat`, `repeat`, `padStart`, `padEnd` |
+| **array** | `length`, `join`, `includes`, `indexOf`, `slice`, `concat`, `reverse`, `sort`, `first`, `last`, `isEmpty`, `filter`, `map`, `find`, `findIndex`, `every`, `some`, `reduce` |
+| **number** | `toString`, `toFixed`, `toPrecision`, `toExponential`, `abs`, `ceil`, `floor`, `round` |
+| **boolean** | `toString` |
+| **object/any** | `toString`, `keys`, `values`, `entries`, `hasKey` |
+
+#### Features:
+- Detects cursor position inside `${...}` interpolation
+- Resolves variable type from declarations
+- Falls back to generic completions for unknown variables
+- Only works inside double-quoted strings (single quotes don't support interpolation)
+
 ---
 
 ### Import Completions:

@@ -37,6 +37,7 @@ import { addKeywordCompletions, addTypeCompletions, addDeclarationCompletions } 
 import { getAutoImportCompletions } from './auto-import-completions';
 import { getIndexCompletions, isIndexedResource } from '../../utils/indexed-resources';
 import { getInstanceNameCompletions } from './instance-name-completions';
+import { getStringInterpolationCompletions } from './string-interpolation-completions';
 
 // Re-export types and utilities
 export { CompletionContext } from './types';
@@ -79,6 +80,13 @@ export function handleCompletion(
     const importCompletions = getImportSymbolCompletions(text, offset, uri, ctx);
     if (importCompletions !== null) {
         return importCompletions;
+    }
+
+    // Check if we're inside a string interpolation (e.g., "${name.???}")
+    const declarations = ctx.getDeclarations(uri) || [];
+    const interpCompletions = getStringInterpolationCompletions(text, offset, declarations);
+    if (interpCompletions !== null) {
+        return interpCompletions;
     }
 
     // Check if we're after a dot (property access) - use AST utility

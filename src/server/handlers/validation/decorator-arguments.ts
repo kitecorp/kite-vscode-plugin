@@ -3,96 +3,50 @@
  * Validates that decorator arguments match expected types.
  */
 
-import { Diagnostic, DiagnosticSeverity, Range } from 'vscode-languageserver/node';
+import {
+    Diagnostic,
+    DiagnosticSeverity,
+    Range,
+} from 'vscode-languageserver/node';
 import { TextDocument } from 'vscode-languageserver-textdocument';
+import { DECORATORS } from '../../constants';
+import { isInComment } from '../../utils/text-utils';
 
 /**
- * Argument type requirements for decorators
- */
-type ArgType = 'number' | 'string' | 'array' | 'object' | 'identifier' | 'none' | 'named';
-
-interface DecoratorArgConfig {
-    /** Expected argument type(s) - multiple means any of these is valid */
-    types: ArgType[];
-    /** For 'named' type - the required named parameter keys */
-    namedParams?: string[];
-    /** Error message when wrong type is provided */
-    errorMessage?: string;
-}
-
-/**
- * Decorator argument requirements based on DECORATORS.md
- */
-const DECORATOR_ARGS: Record<string, DecoratorArgConfig> = {
-    // Number arguments
-    minValue: { types: ['number', 'identifier'], errorMessage: '@minValue requires a number argument' },
-    maxValue: { types: ['number', 'identifier'], errorMessage: '@maxValue requires a number argument' },
-    minLength: { types: ['number', 'identifier'], errorMessage: '@minLength requires a number argument' },
-    maxLength: { types: ['number', 'identifier'], errorMessage: '@maxLength requires a number argument' },
-    count: { types: ['number', 'identifier'], errorMessage: '@count requires a number argument' },
-
-    // String arguments
-    description: { types: ['string'], errorMessage: '@description requires a string argument' },
-    existing: { types: ['string'], errorMessage: '@existing requires a string argument (ARN, URL, or ID)' },
-
-    // Array arguments
-    allowed: { types: ['array'], errorMessage: '@allowed requires an array argument' },
-
-    // No arguments
-    nonEmpty: { types: ['none'], errorMessage: '@nonEmpty takes no arguments' },
-    sensitive: { types: ['none'], errorMessage: '@sensitive takes no arguments' },
-    unique: { types: ['none'], errorMessage: '@unique takes no arguments' },
-
-    // Flexible types
-    tags: { types: ['object', 'array', 'string'], errorMessage: '@tags requires an object, array, or string argument' },
-    provider: { types: ['string', 'array'], errorMessage: '@provider requires a string or array argument' },
-    dependsOn: { types: ['identifier', 'array'], errorMessage: '@dependsOn requires a resource reference or array of references' },
-
-    // Named arguments
-    validate: { types: ['named'], namedParams: ['regex', 'preset'], errorMessage: '@validate requires named argument: regex: or preset:' },
-};
-
-/**
- * Check decorator arguments in a document
+ * Validate decorator arguments and return diagnostics
  */
 export function checkDecoratorArguments(document: TextDocument): Diagnostic[] {
     const diagnostics: Diagnostic[] = [];
     const text = document.getText();
 
-    // Match decorators with optional arguments: @name or @name(...)
-    const decoratorRegex = /@(\w+)(?:\s*\(([^)]*)\))?/g;
+    // Find all decorator usages: @decoratorName or @decoratorName(args)
+    const decoratorRegex = /@(\w+)(\s*\(([^)]*)\))?/g;
     let match;
 
     while ((match = decoratorRegex.exec(text)) !== null) {
+        // Skip if inside a comment
+        if (isInComment(text, match.index)) continue;
+
         const decoratorName = match[1];
-        const argsString = match[2];
-        const decoratorStart = match.index;
+        const hasParens = match[2] !== undefined;
+        const argsStr = match[3]?.trim() || '';
 
-        // Skip if in comment
-        if (isInComment(text, decoratorStart)) {
+        // Find the decorator definition
+        const decoratorDef = DECORATORS.find(d => d.name === decoratorName);
+
+        if (!decoratorDef) {
+            // Unknown decorator - handled by unknown-decorator check
             continue;
         }
 
-        // Check if this is a known decorator
-        const config = DECORATOR_ARGS[decoratorName];
-        if (!config) {
-            // Unknown decorator - skip validation
-            continue;
-        }
+        const startPos = document.positionAt(match.index);
+        const endPos = document.positionAt(match.index + match[0].length);
+        const range = Range.create(startPos, endPos);
 
-        const argType = parseArgumentType(argsString);
-        const isValid = validateArgument(config, argType, argsString);
-
-        if (!isValid) {
-            const startPos = document.positionAt(decoratorStart);
-            const endPos = document.positionAt(decoratorStart + match[0].length);
-
-            diagnostics.push({
-                severity: DiagnosticSeverity.Error,
-                range: Range.create(startPos, endPos),
-                message: config.errorMessage || `Invalid argument for @${decoratorName}`,
-                source: 'kite',
-            });
+        // Validate based on expected argument type
+        const diagnostic = validateDecoratorArg(decoratorName, decoratorDef.argType, hasParens, argsStr, range);
+        if (diagnostic) {
+            diagnostics.push(diagnostic);
         }
     }
 
@@ -100,111 +54,265 @@ export function checkDecoratorArguments(document: TextDocument): Diagnostic[] {
 }
 
 /**
- * Determine the type of an argument string
+ * Validate a single decorator's argument against expected type
  */
-function parseArgumentType(argsString: string | undefined): ArgType | null {
-    if (argsString === undefined) {
-        // No parentheses at all - no arguments
-        return null;
+function validateDecoratorArg(
+    decoratorName: string,
+    expectedType: string,
+    hasParens: boolean,
+    argsStr: string,
+    range: Range
+): Diagnostic | null {
+    if (expectedType === 'none') {
+        // Should not have arguments
+        if (hasParens && argsStr) {
+            return {
+                severity: DiagnosticSeverity.Error,
+                range,
+                message: `@${decoratorName} does not take arguments`,
+                source: 'kite'
+            };
+        }
+    } else if (expectedType === 'number') {
+        return validateNumberArg(decoratorName, hasParens, argsStr, range);
+    } else if (expectedType === 'string') {
+        return validateStringArg(decoratorName, hasParens, argsStr, range);
+    } else if (expectedType === 'array') {
+        return validateArrayArg(decoratorName, hasParens, argsStr, range);
+    } else if (expectedType === 'object') {
+        if (!hasParens || !argsStr) {
+            return {
+                severity: DiagnosticSeverity.Error,
+                range,
+                message: `@${decoratorName} requires an argument`,
+                source: 'kite'
+            };
+        }
+        // @tags accepts object, array, or string - but not plain numbers
+        if (/^\d+$/.test(argsStr)) {
+            return {
+                severity: DiagnosticSeverity.Error,
+                range,
+                message: `@${decoratorName} expects an object, array, or string, got number`,
+                source: 'kite'
+            };
+        }
+    } else if (expectedType === 'named') {
+        return validateNamedArg(decoratorName, hasParens, argsStr, range);
+    } else if (expectedType === 'reference') {
+        return validateReferenceArg(decoratorName, hasParens, argsStr, range);
     }
 
-    const trimmed = argsString.trim();
-
-    if (trimmed === '') {
-        // Empty parentheses - like @minValue()
-        return null;
-    }
-
-    // Check for named argument (contains ':')
-    if (/^\w+\s*:/.test(trimmed)) {
-        return 'named';
-    }
-
-    // Check for array literal
-    if (trimmed.startsWith('[')) {
-        return 'array';
-    }
-
-    // Check for object literal
-    if (trimmed.startsWith('{')) {
-        return 'object';
-    }
-
-    // Check for string literal
-    if (trimmed.startsWith('"') || trimmed.startsWith("'")) {
-        return 'string';
-    }
-
-    // Check for number literal
-    if (/^-?\d+(\.\d+)?$/.test(trimmed)) {
-        return 'number';
-    }
-
-    // Check for boolean
-    if (trimmed === 'true' || trimmed === 'false') {
-        return 'identifier'; // treat as identifier for validation purposes
-    }
-
-    // Must be an identifier (variable reference)
-    if (/^[a-zA-Z_]\w*$/.test(trimmed)) {
-        return 'identifier';
-    }
-
-    // Unknown - probably an expression
-    return 'identifier';
+    return null;
 }
 
 /**
- * Validate that the argument matches the expected type
+ * Validate reference argument (identifier or array of identifiers)
  */
-function validateArgument(config: DecoratorArgConfig, argType: ArgType | null, argsString?: string): boolean {
-    // Handle 'none' type - should have no arguments
-    if (config.types.includes('none')) {
-        return argType === null;
+function validateReferenceArg(
+    decoratorName: string,
+    hasParens: boolean,
+    argsStr: string,
+    range: Range
+): Diagnostic | null {
+    // Reference decorators require an argument (identifier or array)
+    if (!hasParens || !argsStr) {
+        return {
+            severity: DiagnosticSeverity.Error,
+            range,
+            message: `@${decoratorName} requires a reference argument`,
+            source: 'kite'
+        };
     }
 
-    // All other types require arguments
-    if (argType === null) {
-        return false;
-    }
-
-    // Handle named arguments
-    if (config.types.includes('named')) {
-        if (argType !== 'named') {
-            return false;
+    // Must be an identifier or array (identifiers must start with letter)
+    if (!/^[a-zA-Z_]\w*$/.test(argsStr) && !/^\[/.test(argsStr)) {
+        // Check if it's a number (invalid)
+        if (/^\d+$/.test(argsStr)) {
+            return {
+                severity: DiagnosticSeverity.Error,
+                range,
+                message: `@${decoratorName} expects a reference, got number`,
+                source: 'kite'
+            };
         }
-        // Check if a valid named parameter is present
-        if (config.namedParams && argsString) {
-            const hasValidParam = config.namedParams.some(param =>
-                new RegExp(`\\b${param}\\s*:`).test(argsString)
-            );
-            return hasValidParam;
-        }
-        return true;
     }
 
-    // Check if argument type matches any allowed type
-    return config.types.includes(argType);
+    return null;
 }
 
 /**
- * Check if position is inside a comment
+ * Validate number argument
  */
-function isInComment(text: string, position: number): boolean {
-    // Check for line comment
-    const lineStart = text.lastIndexOf('\n', position) + 1;
-    const linePrefix = text.substring(lineStart, position);
-    if (linePrefix.includes('//')) {
-        return true;
+function validateNumberArg(
+    decoratorName: string,
+    hasParens: boolean,
+    argsStr: string,
+    range: Range
+): Diagnostic | null {
+    if (!hasParens || !argsStr) {
+        return {
+            severity: DiagnosticSeverity.Error,
+            range,
+            message: `@${decoratorName} requires a number argument`,
+            source: 'kite'
+        };
     }
 
-    // Check for block comment (simplified)
-    const beforeText = text.substring(0, position);
-    const lastBlockStart = beforeText.lastIndexOf('/*');
-    const lastBlockEnd = beforeText.lastIndexOf('*/');
-    if (lastBlockStart > lastBlockEnd) {
-        return true;
+    // Allow numbers or variable references (identifiers must start with letter)
+    if (!/^\d+$/.test(argsStr) && !/^[a-zA-Z_]\w*$/.test(argsStr)) {
+        if (/^".*"$/.test(argsStr) || /^'.*'$/.test(argsStr)) {
+            return {
+                severity: DiagnosticSeverity.Error,
+                range,
+                message: `@${decoratorName} expects a number, got string`,
+                source: 'kite'
+            };
+        } else if (/^\[/.test(argsStr)) {
+            return {
+                severity: DiagnosticSeverity.Error,
+                range,
+                message: `@${decoratorName} expects a number, got array`,
+                source: 'kite'
+            };
+        } else if (/^\{/.test(argsStr)) {
+            return {
+                severity: DiagnosticSeverity.Error,
+                range,
+                message: `@${decoratorName} expects a number, got object`,
+                source: 'kite'
+            };
+        }
     }
 
-    return false;
+    return null;
+}
+
+/**
+ * Validate string argument
+ */
+function validateStringArg(
+    decoratorName: string,
+    hasParens: boolean,
+    argsStr: string,
+    range: Range
+): Diagnostic | null {
+    if (!hasParens || !argsStr) {
+        return {
+            severity: DiagnosticSeverity.Error,
+            range,
+            message: `@${decoratorName} requires a string argument`,
+            source: 'kite'
+        };
+    }
+
+    // Allow string literals or variable references (identifiers must start with letter)
+    if (!/^".*"$/.test(argsStr) && !/^'.*'$/.test(argsStr) && !/^[a-zA-Z_]\w*$/.test(argsStr)) {
+        if (/^\d/.test(argsStr)) {
+            return {
+                severity: DiagnosticSeverity.Error,
+                range,
+                message: `@${decoratorName} expects a string, got number`,
+                source: 'kite'
+            };
+        } else if (/^\[/.test(argsStr)) {
+            // Allow arrays for @provider(["aws", "azure"])
+            if (decoratorName !== 'provider') {
+                return {
+                    severity: DiagnosticSeverity.Error,
+                    range,
+                    message: `@${decoratorName} expects a string, got array`,
+                    source: 'kite'
+                };
+            }
+        } else if (/^\{/.test(argsStr)) {
+            return {
+                severity: DiagnosticSeverity.Error,
+                range,
+                message: `@${decoratorName} expects a string, got object`,
+                source: 'kite'
+            };
+        }
+    }
+
+    return null;
+}
+
+/**
+ * Validate array argument
+ */
+function validateArrayArg(
+    decoratorName: string,
+    hasParens: boolean,
+    argsStr: string,
+    range: Range
+): Diagnostic | null {
+    if (!hasParens || !argsStr) {
+        return {
+            severity: DiagnosticSeverity.Error,
+            range,
+            message: `@${decoratorName} requires an array argument`,
+            source: 'kite'
+        };
+    }
+
+    // Must start with [ or be a variable reference (identifiers must start with letter)
+    if (!/^\[/.test(argsStr) && !/^[a-zA-Z_]\w*$/.test(argsStr)) {
+        if (/^".*"$/.test(argsStr) || /^'.*'$/.test(argsStr)) {
+            return {
+                severity: DiagnosticSeverity.Error,
+                range,
+                message: `@${decoratorName} expects an array, got string`,
+                source: 'kite'
+            };
+        } else if (/^\d+$/.test(argsStr)) {
+            return {
+                severity: DiagnosticSeverity.Error,
+                range,
+                message: `@${decoratorName} expects an array, got number`,
+                source: 'kite'
+            };
+        } else if (/^\{/.test(argsStr)) {
+            return {
+                severity: DiagnosticSeverity.Error,
+                range,
+                message: `@${decoratorName} expects an array, got object`,
+                source: 'kite'
+            };
+        }
+    }
+
+    return null;
+}
+
+/**
+ * Validate named argument
+ */
+function validateNamedArg(
+    decoratorName: string,
+    hasParens: boolean,
+    argsStr: string,
+    range: Range
+): Diagnostic | null {
+    // Named arguments like @validate(regex: "pattern")
+    if (!hasParens || !argsStr) {
+        return {
+            severity: DiagnosticSeverity.Error,
+            range,
+            message: `@${decoratorName} requires named arguments (e.g., regex: "pattern")`,
+            source: 'kite'
+        };
+    }
+
+    // Must have named argument format
+    if (!/\w+\s*:/.test(argsStr)) {
+        return {
+            severity: DiagnosticSeverity.Error,
+            range,
+            message: `@${decoratorName} requires named arguments (e.g., regex: "pattern")`,
+            source: 'kite'
+        };
+    }
+
+    return null;
 }

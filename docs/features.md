@@ -2,7 +2,7 @@
 
 This document provides an overview of all implemented features in the Kite Language VS Code extension.
 
-**Total: 28 features + 39 validation checks**
+**Total: 28 features + 40 validation checks**
 
 ---
 
